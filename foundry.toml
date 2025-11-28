@@ -10,6 +10,12 @@ remappings = [
     "forge-std/=lib/forge-std/src/"
 ]
 
+[rpc_endpoints]
+gnosis = "https://rpc.gnosischain.com"
+
+# [etherscan]
+# gnosis = { key = "${GNOSISSCAN_API_KEY}", url = "https://api.gnosisscan.io/api" }
+
 [fmt]
 line_length = 100
 number_underscore = "thousands"
