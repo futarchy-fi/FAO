@@ -1,66 +1,65 @@
-## Foundry
+# Futarchy Autonomous Optimizer (FAO)
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
-Foundry consists of:
+## Contracts
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+### `FAOToken`
+- ERC20 token with burn support and AccessControl-based minting.
+- Token name: **Futarchy Autonomous Optimizer**
+- Symbol: **FAO**
+- The deployer supplies an admin address that can manage the `MINTER_ROLE`.
 
-## Documentation
+### `FAOSale`
+A sale, treasury, and ragequit contract that manages ETH-for-FAO purchases and redemptions.
 
-https://book.getfoundry.sh/
+Key behavior:
+- **Sale phases**
+  - Starts with an admin-triggered two-week initial phase at a fixed price of 0.0001 ETH per FAO (whole token units).
+  - Once the initial phase is finalized, pricing follows a **linear bonding curve** based on initial net sales.
+- **Token distribution per sale**
+  - 1.0x FAO to the buyer.
+  - 0.5x FAO to the contract treasury.
+  - 0.2x FAO to the configured incentive contract (optional).
+  - 0.3x FAO to the insider vesting contract (optional).
+- **Ragequit**
+  - Users can burn FAO to redeem a pro-rata share of the contract's ETH balance and any configured ERC20 "ragequit" tokens.
+  - Ragequits during the initial phase reduce the initial sale/tally to keep accounting accurate.
+- **Administration**
+  - Uses OpenZeppelin `AccessControl`; intended to be governed by a `TimelockController`.
+  - Admin functions include starting the sale, configuring incentive/insider addresses, managing ragequit token lists, and withdrawing ETH/ERC20 (excluding FAO).
 
-## Usage
+The FAO tokens minted to the contract itself, as well as the tokens minted to the incentive contract, and the insider vesting contract, are not counted in the ragequit pro-rata denominator. This, coupled with the intended usage of an OpenZeppelin TimelockController, ensures that buyers can withdraw the totality of funds during the timelock window, before any admin transaction is executed.
+
+## Development
+
+The project uses Foundry. Install it via the upstream instructions if you don't already have `forge` available.
 
 ### Build
-
-```shell
-$ forge build
+```bash
+forge build
 ```
 
 ### Test
-
-```shell
-$ forge test
+```bash
+forge test
 ```
 
 ### Format
-
-```shell
-$ forge fmt
+```bash
+forge fmt
 ```
 
-### Gas Snapshots
-
-```shell
-$ forge snapshot
+### Gas snapshots
+```bash
+forge snapshot
 ```
 
-### Anvil
+## Repository layout
+- `src/FAOToken.sol`: FAO ERC20 implementation with minting controls and burn support.
+- `src/FAOSale.sol`: Sale/treasury/ragequit logic with bonding curve pricing and distribution.
+- `script/`: Deployment and scripting utilities (if present).
+- `test/`: Foundry tests.
 
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+## Status
+The repository currently focuses on the FAO token and sale contracts described above. There is no frontend included in this project.
