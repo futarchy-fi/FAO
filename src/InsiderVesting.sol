@@ -28,16 +28,16 @@ contract InsiderVesting is ReentrancyGuard {
     uint256 public constant BOND_SIZE = 0.1 ether;
 
     struct Tranche {
-        uint256 unlocked;    // cumulative FAO unlocked
-        uint256 withdrawn;   // cumulative FAO withdrawn
-        uint256 lastUpdate;  // last time this tranche was synced
-        bool    active;      // whether this tranche was active after lastUpdate
+        uint256 unlocked; // cumulative FAO unlocked
+        uint256 withdrawn; // cumulative FAO withdrawn
+        uint256 lastUpdate; // last time this tranche was synced
+        bool active; // whether this tranche was active after lastUpdate
     }
 
     struct Bond {
         address provider;
         uint256 remainingEth;
-        bool    active;
+        bool active;
     }
 
     // ----------------------------------------------------------------------
@@ -81,10 +81,7 @@ contract InsiderVesting is ReentrancyGuard {
     event BondCreated(uint256 indexed tranche, address indexed provider, uint256 amountEth);
     event BondCancelled(uint256 indexed tranche, address indexed provider, uint256 refundEth);
     event BondFilled(
-        uint256 indexed tranche,
-        address indexed seller,
-        uint256 faoSold,
-        uint256 ethPaid
+        uint256 indexed tranche, address indexed seller, uint256 faoSold, uint256 ethPaid
     );
 
     event BeneficiaryUpdated(address indexed oldBeneficiary, address indexed newBeneficiary);
@@ -124,16 +121,16 @@ contract InsiderVesting is ReentrancyGuard {
 
         // Hardcoded price levels (ETH per FAO, wei)
         // base = 0.0001 ETH; we start at 2x = 0.0002 ETH
-        tranchePrices[0] = 200000000000000;      // 0.0002 ETH = 2×
-        tranchePrices[1] = 400000000000000;      // 0.0004 ETH = 4×
-        tranchePrices[2] = 800000000000000;      // 0.0008 ETH = 8×
-        tranchePrices[3] = 1600000000000000;     // 0.0016 ETH = 16×
-        tranchePrices[4] = 3200000000000000;     // 0.0032 ETH = 32×
-        tranchePrices[5] = 6400000000000000;     // 0.0064 ETH = 64×
-        tranchePrices[6] = 12800000000000000;    // 0.0128 ETH = 128×
-        tranchePrices[7] = 25600000000000000;    // 0.0256 ETH = 256×
-        tranchePrices[8] = 51200000000000000;    // 0.0512 ETH = 512×
-        tranchePrices[9] = 102400000000000000;   // 0.1024 ETH = 1024×
+        tranchePrices[0] = 200_000_000_000_000; // 0.0002 ETH = 2×
+        tranchePrices[1] = 400_000_000_000_000; // 0.0004 ETH = 4×
+        tranchePrices[2] = 800_000_000_000_000; // 0.0008 ETH = 8×
+        tranchePrices[3] = 1_600_000_000_000_000; // 0.0016 ETH = 16×
+        tranchePrices[4] = 3_200_000_000_000_000; // 0.0032 ETH = 32×
+        tranchePrices[5] = 6_400_000_000_000_000; // 0.0064 ETH = 64×
+        tranchePrices[6] = 12_800_000_000_000_000; // 0.0128 ETH = 128×
+        tranchePrices[7] = 25_600_000_000_000_000; // 0.0256 ETH = 256×
+        tranchePrices[8] = 51_200_000_000_000_000; // 0.0512 ETH = 512×
+        tranchePrices[9] = 102_400_000_000_000_000; // 0.1024 ETH = 1024×
 
         highestActiveTranche = NUM_TRANCHES;
         lastTotalReceived = 0;
@@ -212,7 +209,7 @@ contract InsiderVesting is ReentrancyGuard {
 
     function _recomputeActiveTranches() internal {
         uint256 highest = NUM_TRANCHES;
-        for (uint256 i = NUM_TRANCHES; i > 0; ) {
+        for (uint256 i = NUM_TRANCHES; i > 0;) {
             unchecked {
                 i--;
             }
@@ -243,10 +240,7 @@ contract InsiderVesting is ReentrancyGuard {
         _poke();
     }
 
-    function withdrawFromTranche(uint256 trancheIndex, uint256 amount)
-        external
-        nonReentrant
-    {
+    function withdrawFromTranche(uint256 trancheIndex, uint256 amount) external nonReentrant {
         require(trancheIndex < NUM_TRANCHES, "withdraw: bad tranche");
         require(amount > 0, "withdraw: amount is zero");
 
@@ -300,7 +294,7 @@ contract InsiderVesting is ReentrancyGuard {
         require(amount > 0, "amount=0");
         require(address(this).balance >= amount, "insufficient ETH");
 
-        (bool ok, ) = beneficiary.call{value: amount}("");
+        (bool ok,) = beneficiary.call{value: amount}("");
         require(ok, "ETH transfer failed");
     }
 
@@ -343,16 +337,13 @@ contract InsiderVesting is ReentrancyGuard {
 
         _recomputeActiveTranches();
 
-        (bool ok, ) = msg.sender.call{value: refund}("");
+        (bool ok,) = msg.sender.call{value: refund}("");
         require(ok, "cancelBond: ETH refund failed");
 
         emit BondCancelled(trancheIndex, msg.sender, refund);
     }
 
-    function sellIntoBond(uint256 trancheIndex, uint256 faoAmountIn)
-        external
-        nonReentrant
-    {
+    function sellIntoBond(uint256 trancheIndex, uint256 faoAmountIn) external nonReentrant {
         require(trancheIndex < NUM_TRANCHES, "sellIntoBond: bad tranche");
         require(faoAmountIn > 0, "sellIntoBond: amount is zero");
 
@@ -384,7 +375,7 @@ contract InsiderVesting is ReentrancyGuard {
 
         TOKEN.safeTransferFrom(msg.sender, b.provider, faoToSell);
 
-        (bool ok, ) = msg.sender.call{value: ethOut}("");
+        (bool ok,) = msg.sender.call{value: ethOut}("");
         require(ok, "sellIntoBond: ETH payment failed");
 
         emit BondFilled(trancheIndex, msg.sender, faoToSell, ethOut);
