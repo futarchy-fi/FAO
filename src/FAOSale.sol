@@ -25,10 +25,6 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    // --- Roles ---
-
-    bytes32 public constant CURVE_SETTER_ROLE = keccak256("CURVE_SETTER_ROLE");
-
     // --- Core config ---
 
     FAOToken public immutable TOKEN;
@@ -59,9 +55,6 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // Long target: 200,000,000 FAO sold to buyers (whole tokens)
     uint256 public constant LONG_TARGET_TOKENS = 200_000_000;
 
-    // Curve control
-    bool public curvePaused;
-
     // Ragequit tokens (ERC20s, not including FAO)
     address[] public ragequitTokens;
     mapping(address => bool) public isRagequitToken;
@@ -69,8 +62,6 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Events ---
 
     event SaleStarted(uint256 startTime, uint256 initialPhaseEnd);
-    event CurvePaused();
-    event CurveUnpaused();
     event Purchase(address indexed buyer, uint256 numTokens, uint256 costWei);
     event Ragequit(address indexed user, uint256 faoBurned, uint256 ethReturned);
     event RagequitTokenAdded(address indexed token);
@@ -110,7 +101,6 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         insiderVestingContract = _insider;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(CURVE_SETTER_ROLE, _admin);
     }
 
     // --- View helpers ---
@@ -160,24 +150,12 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Admin: sale lifecycle / curve control ---
 
     /// @notice Start the sale and the 2-week initial phase
-    function startSale() external onlyRole(CURVE_SETTER_ROLE) {
+    function startSale() external onlyAdmin {
         require(saleStart == 0, "Sale already started");
         saleStart = block.timestamp;
         initialPhaseEnd = block.timestamp + 14 days;
 
         emit SaleStarted(saleStart, initialPhaseEnd);
-    }
-
-    /// @notice Pause the bonding curve (buys disabled)
-    function pauseCurve() external onlyRole(CURVE_SETTER_ROLE) {
-        curvePaused = true;
-        emit CurvePaused();
-    }
-
-    /// @notice Unpause the bonding curve
-    function unpauseCurve() external onlyRole(CURVE_SETTER_ROLE) {
-        curvePaused = false;
-        emit CurveUnpaused();
     }
 
     // --- Admin: ragequit token list ---
@@ -230,11 +208,10 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     /// @dev
     /// - 1 FAO = 1e18 units in the token contract
     /// - User must send exactly the required ETH
-    /// - Reverts if sale not started, paused, or ended (long target + 1 year)
+    /// - Reverts if sale not started or ended (long target + 1 year)
     function buy(uint256 numTokens) external payable nonReentrant {
         require(numTokens > 0, "numTokens=0");
         require(saleStart != 0, "Sale not started");
-        require(!curvePaused, "Curve paused");
 
         // Check if sale period ended due to long target + 1 year
         if (longTargetReachedAt != 0) {
