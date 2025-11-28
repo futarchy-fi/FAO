@@ -44,6 +44,28 @@ tokens_to_readable() {
     echo "scale=2; $val / 1000000000000000000" | bc
 }
 
+# Format transaction result with explorer links
+print_tx_result() {
+    local tx_output="$1"
+    local tx_hash=$(echo "$tx_output" | grep "^transactionHash" | awk '{print $2}')
+    local status=$(echo "$tx_output" | grep "^status" | awk '{print $2}')
+    local gas_used=$(echo "$tx_output" | grep "^gasUsed" | awk '{print $2}')
+
+    echo ""
+    if [ "$status" = "1" ]; then
+        echo -e "${GREEN}✓ Transaction successful!${NC}"
+    else
+        echo -e "${RED}✗ Transaction failed!${NC}"
+    fi
+    echo ""
+    echo -e "${BLUE}Transaction Hash:${NC} $tx_hash"
+    echo -e "${BLUE}Gas Used:${NC} $gas_used"
+    echo ""
+    echo -e "${CYAN}View on explorers:${NC}"
+    echo -e "  Gnosisscan:  https://gnosisscan.io/tx/$tx_hash"
+    echo -e "  Blockscout:  https://gnosis.blockscout.com/tx/$tx_hash"
+}
+
 # View functions
 get_sale_info() {
     print_section "Sale Information"
@@ -194,12 +216,12 @@ buy_tokens() {
     fi
 
     echo -e "\n${BLUE}Sending transaction...${NC}"
-    cast send $FAO_SALE "buy(uint256)" $num_tokens \
+    local tx_result=$(cast send $FAO_SALE "buy(uint256)" $num_tokens \
         --value $cost_wei \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "\n${GREEN}Purchase complete!${NC}"
+    print_tx_result "$tx_result"
 }
 
 approve_ragequit() {
@@ -219,11 +241,11 @@ approve_ragequit() {
     fi
 
     echo -e "\n${BLUE}Sending approval...${NC}"
-    cast send $FAO_TOKEN "approve(address,uint256)" $FAO_SALE $amount \
+    local tx_result=$(cast send $FAO_TOKEN "approve(address,uint256)" $FAO_SALE $amount \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "\n${GREEN}Approval complete!${NC}"
+    print_tx_result "$tx_result"
 }
 
 ragequit() {
@@ -282,11 +304,11 @@ ragequit() {
     fi
 
     echo -e "\n${BLUE}Sending ragequit transaction...${NC}"
-    cast send $FAO_SALE "ragequit(uint256)" $num_tokens \
+    local tx_result=$(cast send $FAO_SALE "ragequit(uint256)" $num_tokens \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "\n${GREEN}Ragequit complete!${NC}"
+    print_tx_result "$tx_result"
 }
 
 # Admin functions
@@ -323,11 +345,12 @@ set_incentive_contract() {
         echo ""
     fi
 
-    cast send $FAO_SALE "setIncentiveContract(address)" $addr \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "setIncentiveContract(address)" $addr \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}Incentive contract set!${NC}"
+    print_tx_result "$tx_result"
 }
 
 set_insider_contract() {
@@ -338,11 +361,12 @@ set_insider_contract() {
         echo ""
     fi
 
-    cast send $FAO_SALE "setInsiderVestingContract(address)" $addr \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "setInsiderVestingContract(address)" $addr \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}Insider vesting contract set!${NC}"
+    print_tx_result "$tx_result"
 }
 
 add_ragequit_token() {
@@ -353,11 +377,12 @@ add_ragequit_token() {
         echo ""
     fi
 
-    cast send $FAO_SALE "addRagequitToken(address)" $addr \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "addRagequitToken(address)" $addr \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}Ragequit token added!${NC}"
+    print_tx_result "$tx_result"
 }
 
 remove_ragequit_token() {
@@ -368,11 +393,12 @@ remove_ragequit_token() {
         echo ""
     fi
 
-    cast send $FAO_SALE "removeRagequitToken(address)" $addr \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "removeRagequitToken(address)" $addr \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}Ragequit token removed!${NC}"
+    print_tx_result "$tx_result"
 }
 
 admin_withdraw_eth() {
@@ -386,11 +412,12 @@ admin_withdraw_eth() {
         echo ""
     fi
 
-    cast send $FAO_SALE "adminWithdrawEth(uint256,address)" $amount_wei $recipient \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "adminWithdrawEth(uint256,address)" $amount_wei $recipient \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}ETH withdrawn!${NC}"
+    print_tx_result "$tx_result"
 }
 
 admin_rescue_token() {
@@ -403,11 +430,12 @@ admin_rescue_token() {
         echo ""
     fi
 
-    cast send $FAO_SALE "adminRescueToken(address,uint256,address)" $token $amount $recipient \
+    echo -e "\n${BLUE}Sending transaction...${NC}"
+    local tx_result=$(cast send $FAO_SALE "adminRescueToken(address,uint256,address)" $token $amount $recipient \
         --private-key $PRIVATE_KEY \
-        --rpc-url $RPC_URL
+        --rpc-url $RPC_URL 2>&1)
 
-    echo -e "${GREEN}Token rescued!${NC}"
+    print_tx_result "$tx_result"
 }
 
 # Main menu
