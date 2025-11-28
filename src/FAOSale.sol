@@ -291,9 +291,8 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
         // Disallow ragequit from treasury, incentive, and insider contracts
         require(
-            msg.sender != address(this) &&
-                msg.sender != incentiveContract &&
-                msg.sender != insiderVestingContract,
+            msg.sender != address(this) && msg.sender != incentiveContract
+                && msg.sender != insiderVestingContract,
             "ragequit: not allowed for treasury/incentive/insider"
         );
 
