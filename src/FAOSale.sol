@@ -105,6 +105,16 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
     // --- View helpers ---
 
+    /// @return min tokens sold at initial phase
+    function minInitialPhaseSold() public view returns (uint256) {
+        return MIN_INITIAL_PHASE_SOLD;
+    }
+
+    /// @return initial phase end
+    function initialPhaseEndTime() public view returns (uint256) {
+        return initialPhaseEnd;
+    }
+
     /// @return total tokens sold to buyers (whole tokens) including both phases
     function totalSaleTokens() public view returns (uint256) {
         if (!initialPhaseFinalized) {
