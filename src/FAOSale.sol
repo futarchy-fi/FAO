@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { Address } from "@openzeppelin/contracts/utils/Address.sol";
-import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { FAOToken } from "./FAOToken.sol";
+import {FAOToken} from "./FAOToken.sol";
 
 /// @title FAO Sale / Treasury / Ragequit Contract
 /// @notice
@@ -91,7 +91,13 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     /// @param _admin Initial admin (likely an OZ TimelockController)
     /// @param _incentive Initial incentive contract address
     /// @param _insider Initial insider vesting contract address
-    constructor(FAOToken _token, uint256 _minInitialPhaseSold, address _admin, address _incentive, address _insider) {
+    constructor(
+        FAOToken _token,
+        uint256 _minInitialPhaseSold,
+        address _admin,
+        address _incentive,
+        address _insider
+    ) {
         require(address(_token) != address(0), "FAO: zero token");
         require(_admin != address(0), "FAO: zero admin");
         require(_minInitialPhaseSold > 0, "minInitialPhaseSold must be > 0");
@@ -208,7 +214,10 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Internal: finalize initial phase ---
 
     function _finalizeInitialPhaseIfNeeded() internal {
-        if (!initialPhaseFinalized && saleStart != 0 && block.timestamp >= initialPhaseEnd && initialTokensSold >= MIN_INITIAL_PHASE_SOLD) {
+        if (
+            !initialPhaseFinalized && saleStart != 0 && block.timestamp >= initialPhaseEnd
+                && initialTokensSold >= MIN_INITIAL_PHASE_SOLD
+        ) {
             initialPhaseFinalized = true;
             initialNetSale = initialTokensSold;
             // initialFundsRaised already net (we adjust on in-phase ragequit)
@@ -247,8 +256,8 @@ contract FAOSale is AccessControl, ReentrancyGuard {
             // Bonding curve phase
             require(initialNetSale > 0, "No initial net sale");
             uint256 bcSale = bondingCurveSaleTokens();
-            uint256 priceWeiPerToken =
-                INITIAL_PRICE_WEI_PER_TOKEN + (INITIAL_PRICE_WEI_PER_TOKEN * bcSale) / initialNetSale;
+            uint256 priceWeiPerToken = INITIAL_PRICE_WEI_PER_TOKEN
+                + (INITIAL_PRICE_WEI_PER_TOKEN * bcSale) / initialNetSale;
 
             costWei = numTokens * priceWeiPerToken;
             totalCurveTokensSold += numTokens;
@@ -300,7 +309,8 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
         // Calculate effective supply BEFORE burn
         uint256 totalSupply = TOKEN.totalSupply();
-        uint256 incentiveBal = incentiveContract == address(0) ? 0 : TOKEN.balanceOf(incentiveContract);
+        uint256 incentiveBal =
+            incentiveContract == address(0) ? 0 : TOKEN.balanceOf(incentiveContract);
         uint256 insiderBal =
             insiderVestingContract == address(0) ? 0 : TOKEN.balanceOf(insiderVestingContract);
         uint256 treasuryBal = TOKEN.balanceOf(address(this));

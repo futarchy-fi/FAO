@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Test } from "forge-std/Test.sol";
-import { FAOToken } from "../src/FAOToken.sol";
-import { FAOSale } from "../src/FAOSale.sol";
+import {Test} from "forge-std/Test.sol";
+import {FAOToken} from "../src/FAOToken.sol";
+import {FAOSale} from "../src/FAOSale.sol";
 
 contract FAOSmokeTest is Test {
     FAOToken token;
@@ -12,10 +12,10 @@ contract FAOSmokeTest is Test {
     function setUp() public {
         // for tests, this contract is admin
         token = new FAOToken(address(this));
-        sale  = new FAOSale(
+        sale = new FAOSale(
             token,
-            1000000,
-            address(this),   // admin
+            1_000_000,
+            address(this), // admin
             address(0),
             address(0)
         );
