@@ -201,6 +201,27 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
     // --- Internal: finalize initial phase ---
 
+    function _mintToBuyer(uint256 numTokens, address to) internal {
+        uint256 baseAmount = numTokens * 1e18;
+        TOKEN.mint(to, baseAmount);
+    }
+
+    function _mintToPools(uint256 numTokens) internal {
+        uint256 baseAmount = numTokens * 1e18;
+        // 0.5 to treasury
+        TOKEN.mint(address(this), baseAmount / 2);
+
+        // 0.2 to incentive
+        if (incentiveContract != address(0)) {
+            TOKEN.mint(incentiveContract, baseAmount / 5);
+        }
+
+        // 0.3 to insider
+        if (insiderVestingContract != address(0)) {
+            TOKEN.mint(insiderVestingContract, (baseAmount * 3) / 10);
+        }
+    }
+
     function _finalizeInitialPhaseIfNeeded() internal {
         if (
             !initialPhaseFinalized && saleStart != 0 && block.timestamp >= initialPhaseEnd
@@ -209,6 +230,10 @@ contract FAOSale is AccessControl, ReentrancyGuard {
             initialPhaseFinalized = true;
             initialNetSale = initialTokensSold;
             // initialFundsRaised already net (we adjust on in-phase ragequit)
+
+            // For token purchased on Phase I, tokens to the pools are minted when the phase is
+            // finalized.
+            _mintToPools(initialNetSale);
         }
     }
 
@@ -260,22 +285,13 @@ contract FAOSale is AccessControl, ReentrancyGuard {
             longTargetReachedAt = block.timestamp;
         }
 
-        // Mint FAO with distribution:
-        // 1.0 to buyer
-        // 0.5 to treasury (this)
-        // 0.2 to incentive
-        // 0.3 to insider
-        uint256 baseAmount = numTokens * 1e18; // 1 FAO per token
+        // During Phase I, mints to treasury + incentive + insider only when the phase is finalized.
+        // After that, mints for each sale.
 
-        TOKEN.mint(msg.sender, baseAmount); // 1.0
-        TOKEN.mint(address(this), baseAmount / 2); // 0.5
-        if (incentiveContract != address(0)) {
-            TOKEN.mint(incentiveContract, baseAmount / 5); // 0.2
+        _mintToBuyer(numTokens, msg.sender);
+        if (initialPhaseFinalized) {
+            _mintToPools(numTokens);
         }
-        if (insiderVestingContract != address(0)) {
-            TOKEN.mint(insiderVestingContract, (baseAmount * 3) / 10); // 0.3
-        }
-
         emit Purchase(msg.sender, numTokens, costWei);
     }
 
