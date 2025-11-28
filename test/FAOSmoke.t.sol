@@ -14,6 +14,7 @@ contract FAOSmokeTest is Test {
         token = new FAOToken(address(this));
         sale  = new FAOSale(
             token,
+            1000000,
             address(this),   // admin
             address(0),
             address(0)

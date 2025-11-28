@@ -20,6 +20,7 @@ contract DeployFAO is Script {
         // 2. Deploy the sale contract
         FAOSale sale = new FAOSale(
             token,
+            1000000,
             admin,      // admin (later this will be your Timelock)
             address(0), // incentive contract (can be set later)
             address(0)  // insider vesting contract (can be set later)
