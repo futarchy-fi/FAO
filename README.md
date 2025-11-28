@@ -29,6 +29,8 @@ Key behavior:
   - Uses OpenZeppelin `AccessControl`; intended to be governed by a `TimelockController`.
   - Admin functions include starting the sale, configuring incentive/insider addresses, managing ragequit token lists, and withdrawing ETH/ERC20 (excluding FAO).
 
+The FAO tokens minted to the contract itself, as well as the tokens minted to the incentive contract, and the insider vesting contract, are not counted in the ragequit pro-rata denominator. This, coupled with the intended usage of an OpenZeppelin TimelockController, ensures that buyers can withdraw the totality of funds during the timelock window, before any admin transaction is executed.
+
 ## Development
 
 The project uses Foundry. Install it via the upstream instructions if you don't already have `forge` available.
