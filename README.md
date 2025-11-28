@@ -31,6 +31,31 @@ Key behavior:
 
 The FAO tokens minted to the contract itself, as well as the tokens minted to the incentive contract, and the insider vesting contract, are not counted in the ragequit pro-rata denominator. This, coupled with the intended usage of an OpenZeppelin TimelockController, ensures that buyers can withdraw the totality of funds during the timelock window, before any admin transaction is executed.
 
+### `InsiderVesting`
+
+The InsiderVesting contract implements FAO insider vesting tied to objective, on-chain price milestones rather than time alone.
+
+Key mechanics:
+
+- 10 tranches, each representing 10% of all FAO ever received by the contract.
+
+- Each tranche unlocks linearly over 365 days, but only while the market demonstrates price support at or above that tranche’s milestone.
+
+- Price verification is entirely on-chain via 0.1 ETH bonds posted at fixed price levels (2×, 4×, …, 1024× the initial FAO sale price, starting at 0.0002 ETH/FAO).
+
+- A tranche becomes active when a bond exists at its price or any higher level.
+
+- Vesting uses the FAO total as of the previous poke(), preventing “back-vesting” when new tokens arrive.
+
+- Only one bond per level; “dust” bonds automatically deactivate.
+
+- Beneficiary-controlled: the beneficiary can self-update its address and can rescue non-FAO ERC-20s or ETH at any time.
+
+- Designed to receive FAO automatically from the sale contract (no deposit function).
+
+This mechanism ensures insiders vest only when the market shows real willingness to buy FAO at increasing price levels, creating a transparent, manipulation-resistant vesting schedule aligned with long-term value creation.
+
+
 ## Development
 
 The project uses Foundry. Install it via the upstream instructions if you don't already have `forge` available.
