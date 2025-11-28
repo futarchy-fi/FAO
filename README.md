@@ -95,7 +95,7 @@ chmod +x cli.sh
 ./cli.sh
 ```
 
-### Deployed Contracts (Gnosis Chain)
+### Deployed Contracts (Old Version, Gnosis Chain)
 | Contract | Address |
 |----------|---------|
 | FAO Token | `0xb222e2a6E065c2559a74168eeAbA298af91b84B9` |
