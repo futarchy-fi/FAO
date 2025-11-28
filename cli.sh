@@ -29,12 +29,19 @@ print_section() {
     echo -e "\n${YELLOW}─── $1 ───${NC}\n"
 }
 
+# Strip cast output format (e.g., "100000000000000 [1e14]" -> "100000000000000")
+strip_cast() {
+    echo "$1" | awk '{print $1}'
+}
+
 wei_to_eth() {
-    echo "scale=18; $1 / 1000000000000000000" | bc
+    local val=$(strip_cast "$1")
+    echo "scale=18; $val / 1000000000000000000" | bc
 }
 
 tokens_to_readable() {
-    echo "scale=2; $1 / 1000000000000000000" | bc
+    local val=$(strip_cast "$1")
+    echo "scale=2; $val / 1000000000000000000" | bc
 }
 
 # View functions
@@ -133,14 +140,19 @@ get_user_balance() {
 calculate_buy_cost() {
     print_section "Calculate Buy Cost"
 
-    read -p "Number of FAO tokens to buy: " num_tokens
+    read -p "Number of FAO tokens to buy (whole tokens only): " num_tokens
 
     if [ -z "$num_tokens" ]; then
         echo -e "${RED}No amount provided${NC}"
         return
     fi
 
-    local current_price=$(cast call $FAO_SALE "currentPriceWeiPerToken()(uint256)" --rpc-url $RPC_URL)
+    if ! [[ "$num_tokens" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Invalid amount. Please enter a whole number (no decimals).${NC}"
+        return
+    fi
+
+    local current_price=$(strip_cast "$(cast call $FAO_SALE "currentPriceWeiPerToken()(uint256)" --rpc-url $RPC_URL)")
     local cost_wei=$((num_tokens * current_price))
 
     echo -e "\n${GREEN}Tokens:${NC} $num_tokens FAO"
@@ -153,14 +165,19 @@ calculate_buy_cost() {
 buy_tokens() {
     print_section "Buy FAO Tokens"
 
-    read -p "Number of FAO tokens to buy: " num_tokens
+    read -p "Number of FAO tokens to buy (whole tokens only): " num_tokens
 
     if [ -z "$num_tokens" ]; then
         echo -e "${RED}No amount provided${NC}"
         return
     fi
 
-    local current_price=$(cast call $FAO_SALE "currentPriceWeiPerToken()(uint256)" --rpc-url $RPC_URL)
+    if ! [[ "$num_tokens" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Invalid amount. Please enter a whole number (no decimals).${NC}"
+        return
+    fi
+
+    local current_price=$(strip_cast "$(cast call $FAO_SALE "currentPriceWeiPerToken()(uint256)" --rpc-url $RPC_URL)")
     local cost_wei=$((num_tokens * current_price))
 
     echo -e "\n${YELLOW}You will buy $num_tokens FAO for $(wei_to_eth $cost_wei) xDAI${NC}"
@@ -212,16 +229,21 @@ approve_ragequit() {
 ragequit() {
     print_section "Ragequit (Burn FAO for xDAI)"
 
-    read -p "Number of FAO tokens to burn: " num_tokens
+    read -p "Number of FAO tokens to burn (whole tokens only): " num_tokens
 
     if [ -z "$num_tokens" ]; then
         echo -e "${RED}No amount provided${NC}"
         return
     fi
 
+    if ! [[ "$num_tokens" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Invalid amount. Please enter a whole number (no decimals).${NC}"
+        return
+    fi
+
     # Calculate approximate return
-    local eth_balance=$(cast balance $FAO_SALE --rpc-url $RPC_URL)
-    local total_supply=$(cast call $FAO_TOKEN "totalSupply()(uint256)" --rpc-url $RPC_URL)
+    local eth_balance=$(strip_cast "$(cast balance $FAO_SALE --rpc-url $RPC_URL)")
+    local total_supply=$(strip_cast "$(cast call $FAO_TOKEN "totalSupply()(uint256)" --rpc-url $RPC_URL)")
     local burn_amount=$((num_tokens * 1000000000000000000))
 
     echo -e "\n${YELLOW}You will burn $num_tokens FAO${NC}"
