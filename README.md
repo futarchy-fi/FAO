@@ -55,6 +55,60 @@ forge fmt
 forge snapshot
 ```
 
+## CLI Usage
+
+The repository includes an interactive CLI (`cli.sh`) for interacting with deployed contracts on Gnosis Chain.
+
+### Prerequisites
+- Foundry (`cast` command available)
+- `jq`
+- `bc`
+
+### Running the CLI
+```bash
+chmod +x cli.sh
+./cli.sh
+```
+
+### Deployed Contracts (Gnosis Chain)
+| Contract | Address |
+|----------|---------|
+| FAO Token | `0xb222e2a6E065c2559a74168eeAbA298af91b84B9` |
+| FAO Sale | `0x460915528ce37EC66A26b98b791Db512BC62DC17` |
+
+### Menu Options
+
+**View Functions (read-only):**
+| Option | Description |
+|--------|-------------|
+| 1 | Sale Info - Shows sale timing, current price, tokens sold, funds raised |
+| 2 | Token Info - Name, symbol, total supply |
+| 3 | Contract Balances - xDAI and FAO held by sale contract |
+| 4 | Check User Balance - Query any address for xDAI, FAO, and allowance |
+| 5 | Calculate Buy Cost - Estimate cost for purchasing tokens |
+
+**Write Functions (require private key):**
+| Option | Description |
+|--------|-------------|
+| 6 | Buy Tokens - Purchase FAO with xDAI |
+| 7 | Approve FAO for Ragequit - Set token approval for burning |
+| 8 | Ragequit - Burn FAO to receive pro-rata xDAI and ERC20s |
+
+**Admin Functions:**
+| Option | Description |
+|--------|-------------|
+| 9 | Admin Menu - Set incentive/insider contracts, manage ragequit tokens, withdraw ETH, rescue ERC20s |
+
+### Environment Variables
+
+For write operations, you can set `PRIVATE_KEY` in your environment to avoid being prompted:
+```bash
+export PRIVATE_KEY=0x...
+./cli.sh
+```
+
+If not set, the CLI will prompt for your private key when needed.
+
 ## Repository layout
 - `src/FAOToken.sol`: FAO ERC20 implementation with minting controls and burn support.
 - `src/FAOSale.sol`: Sale/treasury/ragequit logic with bonding curve pricing and distribution.
