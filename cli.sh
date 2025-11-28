@@ -241,10 +241,36 @@ ragequit() {
         return
     fi
 
-    # Calculate approximate return
-    local eth_balance=$(strip_cast "$(cast balance $FAO_SALE --rpc-url $RPC_URL)")
-    local total_supply=$(strip_cast "$(cast call $FAO_TOKEN "totalSupply()(uint256)" --rpc-url $RPC_URL)")
+    # Get private key first (needed for potential approval)
+    if [ -z "$PRIVATE_KEY" ]; then
+        read -sp "Enter private key (or set PRIVATE_KEY env): " PRIVATE_KEY
+        echo ""
+    fi
+
+    # Get user address from private key
+    local user_address=$(cast wallet address --private-key $PRIVATE_KEY)
+
+    # Calculate amounts
     local burn_amount=$((num_tokens * 1000000000000000000))
+    local eth_balance=$(strip_cast "$(cast balance $FAO_SALE --rpc-url $RPC_URL)")
+
+    # Check user's FAO balance
+    local fao_balance=$(strip_cast "$(cast call $FAO_TOKEN "balanceOf(address)(uint256)" $user_address --rpc-url $RPC_URL)")
+    if [ "$fao_balance" -lt "$burn_amount" ]; then
+        echo -e "${RED}Insufficient FAO balance. You have $(tokens_to_readable $fao_balance) FAO but need $num_tokens FAO.${NC}"
+        return
+    fi
+
+    # Check and handle allowance
+    local current_allowance=$(strip_cast "$(cast call $FAO_TOKEN "allowance(address,address)(uint256)" $user_address $FAO_SALE --rpc-url $RPC_URL)")
+    if [ "$current_allowance" -lt "$burn_amount" ]; then
+        echo -e "${YELLOW}Insufficient allowance. Current: $(tokens_to_readable $current_allowance) FAO, Need: $num_tokens FAO${NC}"
+        echo -e "${BLUE}Automatically approving FAO for ragequit...${NC}"
+        cast send $FAO_TOKEN "approve(address,uint256)" $FAO_SALE $burn_amount \
+            --private-key $PRIVATE_KEY \
+            --rpc-url $RPC_URL
+        echo -e "${GREEN}Approval complete!${NC}\n"
+    fi
 
     echo -e "\n${YELLOW}You will burn $num_tokens FAO${NC}"
     echo -e "${YELLOW}Contract has $(wei_to_eth $eth_balance) xDAI${NC}"
@@ -253,11 +279,6 @@ ragequit() {
     if [ "$confirm" != "y" ]; then
         echo -e "${RED}Cancelled${NC}"
         return
-    fi
-
-    if [ -z "$PRIVATE_KEY" ]; then
-        read -sp "Enter private key (or set PRIVATE_KEY env): " PRIVATE_KEY
-        echo ""
     fi
 
     echo -e "\n${BLUE}Sending ragequit transaction...${NC}"
