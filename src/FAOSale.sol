@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "./FAOToken.sol";
+import { FAOToken } from "./FAOToken.sol";
 
 /// @title FAO Sale / Treasury / Ragequit Contract
 /// @notice
@@ -31,14 +31,14 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
     // --- Core config ---
 
-    FAOToken public immutable token;
+    FAOToken public immutable TOKEN;
 
     // Addresses that receive minted FAO per sale
     address public incentiveContract;
     address public insiderVestingContract;
 
     // Initial price: 1 ETH = 10,000 FAO -> 1 FAO = 0.0001 ETH
-    uint256 public immutable initialPriceWeiPerToken; // e.g. 1e14 wei
+    uint256 public immutable INITIAL_PRICE_WEI_PER_TOKEN; // e.g. 1e14 wei
 
     // Sale timing
     uint256 public saleStart; // timestamp
@@ -94,8 +94,8 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         require(address(_token) != address(0), "FAO: zero token");
         require(_admin != address(0), "FAO: zero admin");
 
-        token = _token;
-        initialPriceWeiPerToken = 1e14; // 0.0001 ETH per whole FAO
+        TOKEN = _token;
+        INITIAL_PRICE_WEI_PER_TOKEN = 1e14; // 0.0001 ETH per whole FAO
 
         incentiveContract = _incentive;
         insiderVestingContract = _insider;
@@ -130,17 +130,17 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     function currentPriceWeiPerToken() public view returns (uint256) {
         if (!initialPhaseFinalized) {
             // Still in initial phase: flat initial price
-            return initialPriceWeiPerToken;
+            return INITIAL_PRICE_WEI_PER_TOKEN;
         }
 
         if (initialNetSale == 0) {
             // No net initial sale: fall back to initial price
-            return initialPriceWeiPerToken;
+            return INITIAL_PRICE_WEI_PER_TOKEN;
         }
 
         uint256 bcSale = bondingCurveSaleTokens();
         // price = initialPrice + (initialPrice * bondingCurveSale / initialNetSale)
-        return initialPriceWeiPerToken + (initialPriceWeiPerToken * bcSale) / initialNetSale;
+        return INITIAL_PRICE_WEI_PER_TOKEN + (INITIAL_PRICE_WEI_PER_TOKEN * bcSale) / initialNetSale;
     }
 
     /// @return number of ragequit ERC20 tokens currently configured
@@ -171,19 +171,12 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         emit CurveUnpaused();
     }
 
-    /// @notice (Optional) change initial price, only before sale start
-    function setInitialPrice(uint256 /*newPriceWeiPerToken*/ ) external onlyRole(CURVE_SETTER_ROLE) {
-        require(saleStart == 0, "Cannot change price after start");
-        // If you want this mutable, remove `immutable` on initialPriceWeiPerToken and implement here.
-        revert("Initial price immutable in this version");
-    }
-
     // --- Admin: ragequit token list ---
 
     function addRagequitToken(address erc20) external onlyAdmin {
         require(erc20 != address(0), "zero token");
         require(!isRagequitToken[erc20], "already added");
-        require(erc20 != address(token), "FAO not ragequittable");
+        require(erc20 != address(TOKEN), "FAO not ragequittable");
 
         ragequitTokens.push(erc20);
         isRagequitToken[erc20] = true;
@@ -244,7 +237,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
         if (!initialPhaseFinalized && block.timestamp < initialPhaseEnd) {
             // Initial fixed-price phase
-            costWei = numTokens * initialPriceWeiPerToken;
+            costWei = numTokens * INITIAL_PRICE_WEI_PER_TOKEN;
             initialTokensSold += numTokens;
             initialFundsRaised += costWei;
         } else {
@@ -252,7 +245,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
             require(initialNetSale > 0, "No initial net sale");
             uint256 bcSale = bondingCurveSaleTokens();
             uint256 priceWeiPerToken =
-                initialPriceWeiPerToken + (initialPriceWeiPerToken * bcSale) / initialNetSale;
+                INITIAL_PRICE_WEI_PER_TOKEN + (INITIAL_PRICE_WEI_PER_TOKEN * bcSale) / initialNetSale;
 
             costWei = numTokens * priceWeiPerToken;
             totalCurveTokensSold += numTokens;
@@ -275,13 +268,13 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         // 0.3 to insider
         uint256 baseAmount = numTokens * 1e18; // 1 FAO per token
 
-        token.mint(msg.sender, baseAmount); // 1.0
-        token.mint(address(this), baseAmount / 2); // 0.5
+        TOKEN.mint(msg.sender, baseAmount); // 1.0
+        TOKEN.mint(address(this), baseAmount / 2); // 0.5
         if (incentiveContract != address(0)) {
-            token.mint(incentiveContract, baseAmount / 5); // 0.2
+            TOKEN.mint(incentiveContract, baseAmount / 5); // 0.2
         }
         if (insiderVestingContract != address(0)) {
-            token.mint(insiderVestingContract, (baseAmount * 3) / 10); // 0.3
+            TOKEN.mint(insiderVestingContract, (baseAmount * 3) / 10); // 0.3
         }
 
         emit Purchase(msg.sender, numTokens, costWei);
@@ -299,22 +292,22 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
         uint256 burnAmount = numTokens * 1e18;
 
-        uint256 userBalance = token.balanceOf(msg.sender);
+        uint256 userBalance = TOKEN.balanceOf(msg.sender);
         require(userBalance >= burnAmount, "Insufficient FAO balance");
 
         // Calculate effective supply BEFORE burn
-        uint256 totalSupply = token.totalSupply();
-        uint256 incentiveBal = incentiveContract == address(0) ? 0 : token.balanceOf(incentiveContract);
+        uint256 totalSupply = TOKEN.totalSupply();
+        uint256 incentiveBal = incentiveContract == address(0) ? 0 : TOKEN.balanceOf(incentiveContract);
         uint256 insiderBal =
-            insiderVestingContract == address(0) ? 0 : token.balanceOf(insiderVestingContract);
-        uint256 treasuryBal = token.balanceOf(address(this));
+            insiderVestingContract == address(0) ? 0 : TOKEN.balanceOf(insiderVestingContract);
+        uint256 treasuryBal = TOKEN.balanceOf(address(this));
 
         uint256 effectiveSupply = totalSupply - incentiveBal - insiderBal - treasuryBal;
         require(effectiveSupply > 0, "No effective supply");
         require(burnAmount <= effectiveSupply, "Burn > effective supply");
 
         // Burn user's tokens (requires approval of this contract if using burnFrom)
-        token.burnFrom(msg.sender, burnAmount);
+        TOKEN.burnFrom(msg.sender, burnAmount);
 
         // Compute and transfer ETH share
         uint256 ethBalance = address(this).balance;
@@ -361,7 +354,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Admin withdrawals (timelocked via TimelockController) ---
 
     /// @notice Admin ETH withdrawal (not rate-limited, but should be timelocked)
-    function adminWithdrawETH(uint256 amountWei, address payable to)
+    function adminWithdrawEth(uint256 amountWei, address payable to)
         external
         onlyAdmin
         nonReentrant
@@ -377,7 +370,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         onlyAdmin
         nonReentrant
     {
-        require(erc20 != address(token), "cannot rescue FAO");
+        require(erc20 != address(TOKEN), "cannot rescue FAO");
         require(to != address(0), "zero to");
         IERC20(erc20).safeTransfer(to, amount);
     }

@@ -1,27 +1,66 @@
-# FAO
+## Foundry
 
-Futarchy Autonomous Optimizer smart contracts built with Foundry.
+**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-## Contracts
+Foundry consists of:
 
-- `FAOToken`: ERC20 with burn support and a configurable `MINTER_ROLE` for controlled supply
-  issuance.
-- `FAOSale`: ETH sale contract that handles the fixed-price launch phase, a linear bonding curve,
-  treasury/incentive/insider mint distribution, and a ragequit mechanism.
+- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
+- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
+- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
+- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
 
-Grant the `FAOSale` contract the `MINTER_ROLE` on `FAOToken` before starting the sale so it can
-mint distribution tranches on purchases and handle ragequit burns.
+## Documentation
 
-## Development
+https://book.getfoundry.sh/
 
-This repository uses Foundry. Install Foundry and fetch dependencies before building or testing:
+## Usage
 
-```bash
-foundryup              # install/update Foundry (if not already installed)
-forge install          # fetch dependencies (e.g., OpenZeppelin contracts)
-forge build
-forge test
+### Build
+
+```shell
+$ forge build
 ```
 
-Forge will place build artifacts in `out/` and the dependency tree in `lib/`, both of which are
-ignored from version control.
+### Test
+
+```shell
+$ forge test
+```
+
+### Format
+
+```shell
+$ forge fmt
+```
+
+### Gas Snapshots
+
+```shell
+$ forge snapshot
+```
+
+### Anvil
+
+```shell
+$ anvil
+```
+
+### Deploy
+
+```shell
+$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+
+### Cast
+
+```shell
+$ cast <subcommand>
+```
+
+### Help
+
+```shell
+$ forge --help
+$ anvil --help
+$ cast --help
+```
