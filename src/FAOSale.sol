@@ -42,6 +42,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
 
     // Sale timing
     uint256 public saleStart; // timestamp
+    uint256 public immutable MIN_INITIAL_PHASE_SOLD; // e.g. 1_000_000 * 10**decimals
     uint256 public initialPhaseEnd; // saleStart + 2 weeks
     bool public initialPhaseFinalized;
 
@@ -90,12 +91,14 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     /// @param _admin Initial admin (likely an OZ TimelockController)
     /// @param _incentive Initial incentive contract address
     /// @param _insider Initial insider vesting contract address
-    constructor(FAOToken _token, address _admin, address _incentive, address _insider) {
+    constructor(FAOToken _token, uint256 _minInitialPhaseSold, address _admin, address _incentive, address _insider) {
         require(address(_token) != address(0), "FAO: zero token");
         require(_admin != address(0), "FAO: zero admin");
+        require(_minInitialPhaseSold > 0, "minInitialPhaseSold must be > 0");
 
         TOKEN = _token;
         INITIAL_PRICE_WEI_PER_TOKEN = 1e14; // 0.0001 ETH per whole FAO
+        MIN_INITIAL_PHASE_SOLD = _minInitialPhaseSold;
 
         incentiveContract = _incentive;
         insiderVestingContract = _insider;
@@ -205,7 +208,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Internal: finalize initial phase ---
 
     function _finalizeInitialPhaseIfNeeded() internal {
-        if (!initialPhaseFinalized && saleStart != 0 && block.timestamp >= initialPhaseEnd) {
+        if (!initialPhaseFinalized && saleStart != 0 && block.timestamp >= initialPhaseEnd && initialTokensSold >= MIN_INITIAL_PHASE_SOLD) {
             initialPhaseFinalized = true;
             initialNetSale = initialTokensSold;
             // initialFundsRaised already net (we adjust on in-phase ragequit)
