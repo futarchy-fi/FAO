@@ -289,6 +289,14 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     function ragequit(uint256 numTokens) external nonReentrant {
         require(numTokens > 0, "numTokens=0");
 
+        // Disallow ragequit from treasury, incentive, and insider contracts
+        require(
+            msg.sender != address(this) &&
+                msg.sender != incentiveContract &&
+                msg.sender != insiderVestingContract,
+            "ragequit: not allowed for treasury/incentive/insider"
+        );
+
         uint256 burnAmount = numTokens * 1e18;
 
         uint256 userBalance = TOKEN.balanceOf(msg.sender);
