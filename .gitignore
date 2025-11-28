@@ -1,6 +1,13 @@
+# Foundry
 /out
 /cache
 /lib
 /broadcast
+
+# Environment
+.env
+.env.*
+
+# OS
 .DS_Store
 *~
