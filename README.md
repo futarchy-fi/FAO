@@ -141,4 +141,8 @@ If not set, the CLI will prompt for your private key when needed.
 - `test/`: Foundry tests.
 
 ## Status
-The repository currently focuses on the FAO token and sale contracts described above. There is no frontend included in this project.
+The repository currently focuses on the FAO token and sale contracts described above.
+
+## Site (static UI)
+
+A minimal, static UI for fao.eth lives in [`/site`](site). Open `site/index.html` directly or serve the directory with any static file server to view the stubbed sale and ragequit controls along with contract addresses and quick-start docs.
