@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAO | Futarchy Autonomous Optimizer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">fao.eth — canonical UI</p>
+      <h1>Futarchy Autonomous Optimizer</h1>
+      <p class="lede">Minimal, static controls for the FAO sale, redemption/ragequit, and on-chain docs.</p>
+      <div class="hero__cta">
+        <a class="button" href="#sale">Buy FAO</a>
+        <a class="button button--ghost" href="#redeem">Ragequit / Redeem</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrapper">
+    <section id="sale" class="card">
+      <div class="section__header">
+        <h2>Sale</h2>
+        <p>Two-week fixed-price launch followed by a linear bonding curve.</p>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h3>Current phase</h3>
+          <p class="muted">Initial fixed price, then bonding curve based on net sales.</p>
+          <div class="status">Status: <span class="badge badge--pending">Stubbed</span></div>
+          <p class="note">On-chain reads/writes will be wired in a later iteration.</p>
+        </div>
+        <div class="panel panel--action">
+          <h3>Buy FAO</h3>
+          <label class="field">
+            <span class="field__label">Pay (ETH / xDAI)</span>
+            <input type="number" placeholder="0.10" disabled>
+          </label>
+          <button class="button" disabled>Calculate &amp; buy (coming soon)</button>
+          <p class="hint">Purchases mint FAO to the buyer, treasury, incentive, and insider vesting contracts.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="redeem" class="card">
+      <div class="section__header">
+        <h2>Redemption / Ragequit</h2>
+        <p>Burn FAO for a pro-rata share of ETH and configured ragequit tokens.</p>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h3>Balances</h3>
+          <p class="muted">Token and ETH balances will display here once wired.</p>
+          <ul class="list">
+            <li><strong>FAO balance:</strong> <span class="muted">TBD</span></li>
+            <li><strong>ETH/xDAI per FAO:</strong> <span class="muted">TBD</span></li>
+            <li><strong>Ragequit tokens:</strong> <span class="muted">List pending</span></li>
+          </ul>
+        </div>
+        <div class="panel panel--action">
+          <h3>Burn &amp; redeem</h3>
+          <label class="field">
+            <span class="field__label">FAO to burn</span>
+            <input type="number" placeholder="100" disabled>
+          </label>
+          <button class="button" disabled>Redeem (coming soon)</button>
+          <p class="hint">Redemptions during the initial phase reduce the initial sale tally.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="contracts" class="card">
+      <div class="section__header">
+        <h2>Contract addresses</h2>
+        <p>Canonical deployments and legacy references.</p>
+      </div>
+      <div class="table">
+        <div class="table__row table__row--head">
+          <div>Contract</div>
+          <div>Network</div>
+          <div>Address</div>
+          <div>Status</div>
+        </div>
+        <div class="table__row">
+          <div>FAO Token</div>
+          <div>Gnosis</div>
+          <div><code>0xb222e2a6E065c2559a74168eeAbA298af91b84B9</code></div>
+          <div><span class="badge">Legacy</span></div>
+        </div>
+        <div class="table__row">
+          <div>FAO Sale</div>
+          <div>Gnosis</div>
+          <div><code>0x460915528ce37EC66A26b98b791Db512BC62DC17</code></div>
+          <div><span class="badge">Legacy</span></div>
+        </div>
+        <div class="table__row">
+          <div>FAO Token</div>
+          <div>Mainnet</div>
+          <div><code>— update when live —</code></div>
+          <div><span class="badge badge--pending">Pending</span></div>
+        </div>
+        <div class="table__row">
+          <div>FAO Sale</div>
+          <div>Mainnet</div>
+          <div><code>— update when live —</code></div>
+          <div><span class="badge badge--pending">Pending</span></div>
+        </div>
+      </div>
+      <p class="note">Add new deployments here as they go live. The Gnosis addresses come from the initial launch tools.</p>
+    </section>
+
+    <section id="docs" class="card">
+      <div class="section__header">
+        <h2>Docs &amp; references</h2>
+        <p>What FAO is, how the sale works, and where to learn more.</p>
+      </div>
+      <div class="grid grid--docs">
+        <div class="panel">
+          <h3>Sale mechanics</h3>
+          <ul class="list">
+            <li>Two-week fixed-price phase at 0.0001 ETH per FAO.</li>
+            <li>Post-finalization: linear bonding curve based on net sales.</li>
+            <li>Mint splits: 1.0× buyer, 0.5× treasury, 0.2× incentive, 0.3× insider vesting.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Ragequit rules</h3>
+          <ul class="list">
+            <li>Burn FAO to redeem ETH and ERC20s held by the sale contract.</li>
+            <li>Initial-phase redemptions reduce the recorded initial sale tally.</li>
+            <li>Admin actions go through an OZ TimelockController to protect exit windows.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Resources</h3>
+          <ul class="list">
+            <li><a href="https://github.com/fao-labs/fao" target="_blank" rel="noreferrer">Repository</a></li>
+            <li><a href="https://book.getfoundry.sh/" target="_blank" rel="noreferrer">Foundry docs</a></li>
+            <li><a href="/README.md" target="_blank" rel="noreferrer">Project README</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrapper footer__content">
+      <div>
+        <p class="muted">Built for fao.eth — static first; wire to RPC + wallet connectors next.</p>
+      </div>
+      <div class="footer__links">
+        <a href="#sale">Sale</a>
+        <a href="#redeem">Redeem</a>
+        <a href="#contracts">Contracts</a>
+        <a href="#docs">Docs</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
