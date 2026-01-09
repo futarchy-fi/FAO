@@ -259,7 +259,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         uint256 costWei;
         uint256 currentTotalSaleTokensBefore = totalSaleTokens();
 
-        if (!initialPhaseFinalized && block.timestamp < initialPhaseEnd) {
+        if (!initialPhaseFinalized) {
             // Initial fixed-price phase
             costWei = numTokens * INITIAL_PRICE_WEI_PER_TOKEN;
             initialTokensSold += numTokens;
