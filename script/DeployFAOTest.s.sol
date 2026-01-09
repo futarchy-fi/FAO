@@ -6,7 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {FAOToken} from "../src/FAOToken.sol";
 import {FAOSale} from "../src/FAOSale.sol";
 
-contract DeployFAO is Script {
+contract DeployFAOTest is Script {
     function run() external {
         // Read private key from env
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -17,11 +17,11 @@ contract DeployFAO is Script {
         // 1. Deploy the FAO token with the EOA as admin for now
         FAOToken token = new FAOToken(admin);
 
-        // 2. Deploy the sale contract
+        // 2. Deploy the sale contract (test-friendly parameters)
         FAOSale sale = new FAOSale(
             token,
-            1_000_000,
-            14 days,
+            10_000,
+            2 hours,
             admin, // admin (later this will be your Timelock)
             address(0), // incentive contract (can be set later)
             address(0) // insider vesting contract (can be set later)
