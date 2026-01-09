@@ -39,6 +39,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // Sale timing
     uint256 public saleStart; // timestamp
     uint256 public immutable MIN_INITIAL_PHASE_SOLD; // e.g. 1_000_000 * 10**decimals
+    uint256 public immutable INITIAL_PHASE_DURATION;
     uint256 public initialPhaseEnd; // saleStart + 2 weeks
     bool public initialPhaseFinalized;
 
@@ -85,6 +86,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     constructor(
         FAOToken _token,
         uint256 _minInitialPhaseSold,
+        uint256 _initialPhaseDuration,
         address _admin,
         address _incentive,
         address _insider
@@ -92,10 +94,12 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         require(address(_token) != address(0), "FAO: zero token");
         require(_admin != address(0), "FAO: zero admin");
         require(_minInitialPhaseSold > 0, "minInitialPhaseSold must be > 0");
+        require(_initialPhaseDuration > 0, "initialPhaseDuration must be > 0");
 
         TOKEN = _token;
         INITIAL_PRICE_WEI_PER_TOKEN = 1e14; // 0.0001 ETH per whole FAO
         MIN_INITIAL_PHASE_SOLD = _minInitialPhaseSold;
+        INITIAL_PHASE_DURATION = _initialPhaseDuration;
 
         incentiveContract = _incentive;
         insiderVestingContract = _insider;
@@ -108,6 +112,11 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     /// @return min tokens sold at initial phase
     function minInitialPhaseSold() public view returns (uint256) {
         return MIN_INITIAL_PHASE_SOLD;
+    }
+
+    /// @return initial phase duration
+    function initialPhaseDuration() public view returns (uint256) {
+        return INITIAL_PHASE_DURATION;
     }
 
     /// @return initial phase end
@@ -163,7 +172,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     function startSale() external onlyAdmin {
         require(saleStart == 0, "Sale already started");
         saleStart = block.timestamp;
-        initialPhaseEnd = block.timestamp + 14 days;
+        initialPhaseEnd = block.timestamp + INITIAL_PHASE_DURATION;
 
         emit SaleStarted(saleStart, initialPhaseEnd);
     }
