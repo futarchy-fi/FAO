@@ -55,6 +55,23 @@ Key mechanics:
 
 This mechanism ensures insiders vest only when the market shows real willingness to buy FAO at increasing price levels, creating a transparent, manipulation-resistant vesting schedule aligned with long-term value creation.
 
+### `FutarchyLiquidityManager`
+- ERC20 share token (`fLP`) that holds and routes FAO + wrapped native liquidity.
+- Seeded by `FAOSale`; when seeded, `FAOSale` automatically adds `fLP` as a ragequit token.
+- Supports permissionless deposits and share minting, pro-rata redemption, and migration between spot/conditional venues.
+- Conditional migration path uses futarchy router `splitPosition/mergePositions/redeemPositions` to route liquidity through YES/NO wrapped outcome pools.
+- Includes owner-gated emergency controls with enforced exit delay.
+
+### `FutarchyOfficialProposalSource`
+- Owner-managed source of a single official proposal at a time.
+- Supports either manual settlement flagging or optional external settlement oracle.
+- Resolves YES/NO pool addresses through an Algebra factory on Gnosis.
+
+### `SwaprAlgebraLiquidityAdapter`
+- Adapter for Swapr V3 (Algebra) full-range liquidity positions.
+- Manages one position per ordered token pair.
+- Supports optional pool create+initialize on first mint (`sqrtPriceX96`) while preserving legacy add params encoding.
+
 
 ## Development
 
@@ -70,6 +87,14 @@ forge build
 forge test
 ```
 
+Gnosis fork check for proposal token wiring (`FAO -> YES_FAO/NO_FAO`):
+```bash
+RUN_GNOSIS_FORK_TESTS=true \
+TEST_FAO_PROPOSAL=0x81829a8ee62D306e3fD9D5b79D02C7624437BE37 \
+TEST_FAO_TOKEN=0x9494C281a02c9ae5f72b224B514793ad2DD8cA17 \
+forge test --match-contract FutarchyProposalWiringForkTest
+```
+
 ### Format
 ```bash
 forge fmt
@@ -79,6 +104,27 @@ forge fmt
 ```bash
 forge snapshot
 ```
+
+## Gnosis Liquidity Stack Deploy
+
+Deploy `FutarchyOfficialProposalSource`, two Swapr adapters (spot/conditional), and `FutarchyLiquidityManager`:
+
+```bash
+PRIVATE_KEY=0x... \
+SALE_ADDRESS=0x... \
+FAO_TOKEN_ADDRESS=0x... \
+OFFICIAL_PROPOSER=0x... \
+forge script script/DeployLiquidityStackGnosis.s.sol:DeployLiquidityStackGnosis \
+  --rpc-url gnosis --broadcast
+```
+
+Optional env vars:
+- `STACK_OWNER` (defaults to deployer; use timelock in production)
+- `WRAPPED_NATIVE` (default WXDAI)
+- `SWAPR_POSITION_MANAGER` (default Gnosis Swapr NFPM)
+- `ALGEBRA_FACTORY` (default Gnosis Swapr Algebra factory)
+- `FUTARCHY_ROUTER` (default Gnosis futarchy router)
+- `DEFAULT_TICK_LOWER` / `DEFAULT_TICK_UPPER` (defaults to full range)
 
 ## CLI Usage
 
