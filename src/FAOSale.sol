@@ -7,6 +7,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {FAOToken} from "./FAOToken.sol";
+import {IFutarchyLiquidityManager} from "./interfaces/IFutarchyLiquidityManager.sol";
 
 /// @title FAO Sale / Treasury / Ragequit Contract
 /// @notice
@@ -28,6 +29,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     // --- Core config ---
 
     FAOToken public immutable TOKEN;
+    address public admin;
 
     // Addresses that receive minted FAO per sale
     address public incentiveContract;
@@ -69,6 +71,8 @@ contract FAOSale is AccessControl, ReentrancyGuard {
     event RagequitTokenRemoved(address indexed token);
     event IncentiveContractSet(address indexed incentive);
     event InsiderVestingContractSet(address indexed insider);
+    event LiquidityManagerSeeded(address indexed manager, uint256 faoAmount, uint256 nativeAmount);
+    event AdminUpdated(address indexed oldAdmin, address indexed newAdmin);
 
     // --- Modifiers ---
 
@@ -104,6 +108,7 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         incentiveContract = _incentive;
         insiderVestingContract = _insider;
 
+        admin = _admin;
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
@@ -208,6 +213,48 @@ contract FAOSale is AccessControl, ReentrancyGuard {
         emit InsiderVestingContractSet(_insider);
     }
 
+    function setAdmin(address newAdmin) external onlyAdmin {
+        require(newAdmin != address(0), "FAO: zero admin");
+        require(newAdmin != admin, "FAO: same admin");
+
+        address oldAdmin = admin;
+        admin = newAdmin;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
+        _revokeRole(DEFAULT_ADMIN_ROLE, oldAdmin);
+
+        emit AdminUpdated(oldAdmin, newAdmin);
+    }
+
+    /// @notice Sends FAO + native funds from sale treasury to liquidity manager and seeds spot LP.
+    /// @dev Intended to be timelocked in production.
+    function seedLiquidityManager(
+        address manager,
+        uint256 faoAmount,
+        uint256 nativeAmount,
+        bytes calldata spotAddData
+    ) external onlyAdmin nonReentrant {
+        require(manager != address(0), "zero manager");
+        require(faoAmount > 0 || nativeAmount > 0, "zero seed");
+        require(address(this).balance >= nativeAmount, "insufficient ETH");
+
+        if (faoAmount > 0) {
+            IERC20(address(TOKEN)).safeTransfer(manager, faoAmount);
+        }
+
+        IFutarchyLiquidityManager(manager).initializeFromSale{value: nativeAmount}(
+            faoAmount, spotAddData
+        );
+
+        // The LP share token (fLP) should be ragequittable once seeded.
+        if (!isRagequitToken[manager]) {
+            ragequitTokens.push(manager);
+            isRagequitToken[manager] = true;
+            emit RagequitTokenAdded(manager);
+        }
+
+        emit LiquidityManagerSeeded(manager, faoAmount, nativeAmount);
+    }
     // --- Internal: finalize initial phase ---
 
     function _mintToBuyer(uint256 numTokens, address to) internal {
