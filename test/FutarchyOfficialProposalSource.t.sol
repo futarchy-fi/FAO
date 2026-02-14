@@ -6,7 +6,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {FutarchyOfficialProposalSource} from "../src/FutarchyOfficialProposalSource.sol";
 import {IAlgebraFactoryLike} from "../src/interfaces/IAlgebraFactoryLike.sol";
-import {IFutarchyOfficialProposalSource} from "../src/interfaces/IFutarchyOfficialProposalSource.sol";
+import {
+    IFutarchyOfficialProposalSource
+} from "../src/interfaces/IFutarchyOfficialProposalSource.sol";
 import {MockAlgebraFactoryLike} from "./mocks/MockAlgebraFactoryLike.sol";
 import {MockFutarchyProposalLike} from "./mocks/MockFutarchyProposalLike.sol";
 import {MockProposalSettlementOracle} from "./mocks/MockProposalSettlementOracle.sol";
@@ -41,10 +43,12 @@ contract FutarchyOfficialProposalSourceTest is Test {
         factory.setPool(yesComp, yesCurr, yesPool);
         factory.setPool(noComp, noCurr, noPool);
 
-        MockFutarchyProposalLike proposal =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
+        MockFutarchyProposalLike proposal = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond"), yesComp, noComp, yesCurr, noCurr
+        );
 
-        source.setOfficialProposal(1, address(proposal), officialProposer);
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(1, address(proposal));
 
         (
             uint256 proposalId,
@@ -76,10 +80,47 @@ contract FutarchyOfficialProposalSourceTest is Test {
         assertEq(extended.noCurrencyToken, noCurr);
     }
 
+    function test_official_proposer_can_set_official_proposal_without_owner() public {
+        factory.setPool(yesComp, yesCurr, yesPool);
+        factory.setPool(noComp, noCurr, noPool);
+
+        MockFutarchyProposalLike proposal = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond"), yesComp, noComp, yesCurr, noCurr
+        );
+
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(1, address(proposal));
+
+        (
+            uint256 proposalId,
+            address creator,
+            bool exists,,
+            address proposalToken,
+            address collateralToken,,
+        ) = source.officialProposal();
+        assertEq(proposalId, 1);
+        assertEq(creator, officialProposer);
+        assertTrue(exists);
+        assertEq(proposalToken, fao);
+        assertEq(collateralToken, wxdai);
+    }
+
+    function test_only_official_proposer_can_call_set_official_proposal_from_proposer() public {
+        MockFutarchyProposalLike proposal = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond"), yesComp, noComp, yesCurr, noCurr
+        );
+
+        vm.prank(nonOwner);
+        vm.expectRevert(FutarchyOfficialProposalSource.NotOfficialProposer.selector);
+        source.setOfficialProposalFromOfficialProposer(1, address(proposal));
+    }
+
     function test_settled_with_manual_flag() public {
-        MockFutarchyProposalLike proposal =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
-        source.setOfficialProposal(7, address(proposal), officialProposer);
+        MockFutarchyProposalLike proposal = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond"), yesComp, noComp, yesCurr, noCurr
+        );
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(7, address(proposal));
 
         source.setManualSettled(true);
         (,,, bool settled,,,,) = source.officialProposal();
@@ -87,9 +128,11 @@ contract FutarchyOfficialProposalSourceTest is Test {
     }
 
     function test_settled_with_oracle_override() public {
-        MockFutarchyProposalLike proposal =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
-        source.setOfficialProposal(9, address(proposal), officialProposer);
+        MockFutarchyProposalLike proposal = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond"), yesComp, noComp, yesCurr, noCurr
+        );
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(9, address(proposal));
         source.setManualSettled(false);
         source.setSettlementOracle(address(oracle));
 
@@ -99,25 +142,33 @@ contract FutarchyOfficialProposalSourceTest is Test {
     }
 
     function test_cannot_set_new_unsettled_official_proposal() public {
-        MockFutarchyProposalLike p1 =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
-        MockFutarchyProposalLike p2 =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
+        MockFutarchyProposalLike p1 = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond1"), yesComp, noComp, yesCurr, noCurr
+        );
+        MockFutarchyProposalLike p2 = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond2"), yesComp, noComp, yesCurr, noCurr
+        );
 
-        source.setOfficialProposal(1, address(p1), officialProposer);
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(1, address(p1));
         vm.expectRevert(FutarchyOfficialProposalSource.ActiveOfficialProposalExists.selector);
-        source.setOfficialProposal(2, address(p2), officialProposer);
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(2, address(p2));
     }
 
     function test_can_replace_after_settlement() public {
-        MockFutarchyProposalLike p1 =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
-        MockFutarchyProposalLike p2 =
-            new MockFutarchyProposalLike(fao, wxdai, yesComp, noComp, yesCurr, noCurr);
+        MockFutarchyProposalLike p1 = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond1"), yesComp, noComp, yesCurr, noCurr
+        );
+        MockFutarchyProposalLike p2 = new MockFutarchyProposalLike(
+            fao, wxdai, bytes32("cond2"), yesComp, noComp, yesCurr, noCurr
+        );
 
-        source.setOfficialProposal(1, address(p1), officialProposer);
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(1, address(p1));
         source.setManualSettled(true);
-        source.setOfficialProposal(2, address(p2), officialProposer);
+        vm.prank(officialProposer);
+        source.setOfficialProposalFromOfficialProposer(2, address(p2));
 
         (uint256 proposalId,, bool exists,,,,,) = source.officialProposal();
         assertEq(proposalId, 2);

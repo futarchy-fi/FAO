@@ -52,6 +52,7 @@ contract FutarchyOfficialProposalSource is IFutarchyOfficialProposalSource, Owna
 
     error ZeroAddress();
     error ActiveOfficialProposalExists();
+    error NotOfficialProposer();
 
     event OfficialProposerUpdated(address indexed oldProposer, address indexed newProposer);
     event SettlementOracleUpdated(address indexed oldOracle, address indexed newOracle);
@@ -90,20 +91,23 @@ contract FutarchyOfficialProposalSource is IFutarchyOfficialProposalSource, Owna
         emit SettlementOracleUpdated(old, newOracle);
     }
 
-    function setOfficialProposal(uint256 proposalId, address proposal, address creator)
+    /// @notice Sets a new official proposal, callable only by the configured official proposer.
+    /// @dev This is intended for an "atomic proposer/orchestrator" contract. It prevents any
+    /// other address from creating an official proposal outside that structure.
+    function setOfficialProposalFromOfficialProposer(uint256 proposalId, address proposal)
         external
-        onlyOwner
     {
-        if (proposal == address(0) || creator == address(0)) revert ZeroAddress();
+        if (msg.sender != officialProposer) revert NotOfficialProposer();
+        if (proposal == address(0)) revert ZeroAddress();
         if (_official.exists && !_isSettled(_official)) revert ActiveOfficialProposalExists();
 
         _official.id = proposalId;
         _official.proposal = proposal;
-        _official.creator = creator;
+        _official.creator = msg.sender;
         _official.exists = true;
         _official.manualSettled = false;
 
-        emit OfficialProposalSet(proposalId, proposal, creator);
+        emit OfficialProposalSet(proposalId, proposal, msg.sender);
     }
 
     function clearOfficialProposal() external onlyOwner {
