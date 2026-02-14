@@ -6,8 +6,20 @@ optimizer = true
 optimizer_runs = 200
 
 remappings = [
-    "@openzeppelin/=lib/openzeppelin-contracts/",
-    "forge-std/=lib/forge-std/src/"
+    # Use SnapshotX-pinned OpenZeppelin versions (v4.x) to avoid OZ v5 init signature mismatches
+    "@openzeppelin/contracts-upgradeable/=lib/sx-evm/lib/openzeppelin-contracts-upgradeable/contracts/",
+    "@openzeppelin/contracts/=lib/sx-evm/lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/=lib/sx-evm/lib/openzeppelin-contracts/", 
+    "forge-std/=lib/forge-std/src/",
+
+    # Snapshot X EVM (vendored as a Foundry lib)
+    "sx/=lib/sx-evm/src/",
+    "forge-gas-snapshot/=lib/sx-evm/lib/forge-gas-snapshot/src/",
+    "@prb/test/=lib/sx-evm/lib/prb-test/src/",
+    "@zodiac/=lib/sx-evm/lib/zodiac/contracts/",
+    "@gnosis.pm/safe-contracts/=lib/sx-evm/lib/safe-contracts/",
+    "@murky/=lib/sx-evm/lib/murky/src/",
+    "@herodotus-evm-v2/=lib/sx-evm/lib/herodotus-evm-v2/src/"
 ]
 
 [rpc_endpoints]

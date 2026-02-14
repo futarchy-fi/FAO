@@ -164,7 +164,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         IFutarchyLiquidityAdapter conditionalAdapter,
         IFutarchyConditionalRouter conditionalRouter,
         address initialOwner
-    ) ERC20("Futarchy LP", "fLP") Ownable(initialOwner) {
+    ) ERC20("Futarchy LP", "fLP") {
         if (
             sale == address(0) || address(faoToken) == address(0)
                 || address(wrappedNative) == address(0) || officialProposer == address(0)
@@ -188,9 +188,21 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         TOKEN0 = faoFirst ? address(faoToken) : address(wrappedNative);
         TOKEN1 = faoFirst ? address(wrappedNative) : address(faoToken);
         FAO_IS_TOKEN0 = faoFirst;
+
+        _transferOwnership(initialOwner);
     }
 
     receive() external payable {}
+
+    /// @dev OpenZeppelin v4 SafeERC20 does not include `forceApprove`.
+    ///      This helper provides the same semantics: set allowance to 0 first when needed.
+    function _forceApprove(IERC20 token, address spender, uint256 value) internal {
+        uint256 current = token.allowance(address(this), spender);
+        if (current != 0) {
+            token.safeApprove(spender, 0);
+        }
+        token.safeApprove(spender, value);
+    }
 
     function initializeFromSale(uint256 faoAmount, bytes calldata spotAddData)
         external
@@ -784,7 +796,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
 
     function _splitCollateral(address proposal, address collateralToken, uint256 amount) internal {
         if (amount == 0) return;
-        IERC20(collateralToken).forceApprove(address(CONDITIONAL_ROUTER), amount);
+        _forceApprove(IERC20(collateralToken), address(CONDITIONAL_ROUTER), amount);
         CONDITIONAL_ROUTER.splitPosition(proposal, collateralToken, amount);
     }
 
@@ -832,8 +844,8 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 mergeAmount = _min(yesBal, noBal);
         if (mergeAmount == 0) return;
 
-        IERC20(yesToken).forceApprove(address(CONDITIONAL_ROUTER), mergeAmount);
-        IERC20(noToken).forceApprove(address(CONDITIONAL_ROUTER), mergeAmount);
+        _forceApprove(IERC20(yesToken), address(CONDITIONAL_ROUTER), mergeAmount);
+        _forceApprove(IERC20(noToken), address(CONDITIONAL_ROUTER), mergeAmount);
         CONDITIONAL_ROUTER.mergePositions(proposal, collateralToken, mergeAmount);
     }
 
@@ -849,8 +861,8 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 redeemAmount = _max(yesBal, noBal);
         if (redeemAmount == 0) return;
 
-        IERC20(yesToken).forceApprove(address(CONDITIONAL_ROUTER), redeemAmount);
-        IERC20(noToken).forceApprove(address(CONDITIONAL_ROUTER), redeemAmount);
+        _forceApprove(IERC20(yesToken), address(CONDITIONAL_ROUTER), redeemAmount);
+        _forceApprove(IERC20(noToken), address(CONDITIONAL_ROUTER), redeemAmount);
 
         try CONDITIONAL_ROUTER.redeemPositions(proposal, collateralToken, redeemAmount) {} catch {}
     }
@@ -979,10 +991,10 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 amount1
     ) internal {
         if (amount0 > 0) {
-            IERC20(token0).forceApprove(address(adapter), amount0);
+            _forceApprove(IERC20(token0), address(adapter), amount0);
         }
         if (amount1 > 0) {
-            IERC20(token1).forceApprove(address(adapter), amount1);
+            _forceApprove(IERC20(token1), address(adapter), amount1);
         }
     }
 
@@ -1026,10 +1038,10 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         internal
     {
         if (amount0 > 0) {
-            IERC20(TOKEN0).forceApprove(address(adapter), amount0);
+            _forceApprove(IERC20(TOKEN0), address(adapter), amount0);
         }
         if (amount1 > 0) {
-            IERC20(TOKEN1).forceApprove(address(adapter), amount1);
+            _forceApprove(IERC20(TOKEN1), address(adapter), amount1);
         }
     }
 

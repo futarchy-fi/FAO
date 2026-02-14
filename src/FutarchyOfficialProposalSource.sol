@@ -66,13 +66,15 @@ contract FutarchyOfficialProposalSource is IFutarchyOfficialProposalSource, Owna
         address initialOwner,
         address initialOfficialProposer,
         IAlgebraFactoryLike algebraFactory
-    ) Ownable(initialOwner) {
+    ) Ownable() {
         if (
             initialOwner == address(0) || initialOfficialProposer == address(0)
                 || address(algebraFactory) == address(0)
         ) {
             revert ZeroAddress();
         }
+
+        _transferOwnership(initialOwner);
 
         officialProposer = initialOfficialProposer;
         ALGEBRA_FACTORY = algebraFactory;
