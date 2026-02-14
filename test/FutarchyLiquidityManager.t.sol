@@ -317,7 +317,7 @@ contract FutarchyLiquidityManagerTest is Test {
         uint256 saleFaoBefore = token.balanceOf(address(sale));
 
         vm.prank(buyer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, buyer));
+        vm.expectRevert("Ownable: caller is not the owner");
         manager.sweepIdleToSale(true);
 
         manager.sweepIdleToSale(true);
@@ -342,7 +342,7 @@ contract FutarchyLiquidityManagerTest is Test {
         vm.stopPrank();
 
         vm.prank(buyer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, buyer));
+        vm.expectRevert("Ownable: caller is not the owner");
         manager.armEmergencyExit();
 
         manager.armEmergencyExit();
@@ -374,9 +374,7 @@ contract FutarchyLiquidityManagerTest is Test {
         manager.sync(params);
 
         vm.prank(depositor);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, depositor)
-        );
+        vm.expectRevert("Ownable: caller is not the owner");
         manager.disarmEmergencyExit();
 
         manager.disarmEmergencyExit();
@@ -405,7 +403,7 @@ contract FutarchyLiquidityManagerTest is Test {
         manager.armEmergencyExit();
 
         vm.prank(buyer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, buyer));
+        vm.expectRevert("Ownable: caller is not the owner");
         manager.armEmergencyExit();
 
         vm.expectRevert(FutarchyLiquidityManager.EmergencyExitDelayActive.selector);
@@ -440,9 +438,7 @@ contract FutarchyLiquidityManagerTest is Test {
             altOwner
         );
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
-        );
+        vm.expectRevert("Ownable: caller is not the owner");
         altManager.armEmergencyExit();
 
         vm.prank(altOwner);

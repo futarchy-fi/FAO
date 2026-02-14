@@ -126,9 +126,7 @@ contract FutarchyOfficialProposalSourceTest is Test {
 
     function test_only_owner_guards() public {
         vm.prank(nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, nonOwner)
-        );
+        vm.expectRevert("Ownable: caller is not the owner");
         source.setOfficialProposer(address(0xCAFE));
     }
 }
