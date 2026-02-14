@@ -4,8 +4,11 @@ pragma solidity ^0.8.20;
 import {
     IFutarchyOfficialProposalSource
 } from "../../src/interfaces/IFutarchyOfficialProposalSource.sol";
+import {IAlgebraFactoryLike} from "../../src/interfaces/IAlgebraFactoryLike.sol";
 
 contract MockOfficialProposalSource is IFutarchyOfficialProposalSource {
+    IAlgebraFactoryLike public ALGEBRA_FACTORY;
+
     uint256 public proposalId;
     address public proposal;
     address public creator;
@@ -19,6 +22,10 @@ contract MockOfficialProposalSource is IFutarchyOfficialProposalSource {
     address public noCurrencyToken;
     address public yesPool;
     address public noPool;
+
+    function setAlgebraFactory(IAlgebraFactoryLike factory) external {
+        ALGEBRA_FACTORY = factory;
+    }
 
     function createProposal(
         address _creator,

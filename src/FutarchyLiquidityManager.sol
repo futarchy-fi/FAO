@@ -11,11 +11,16 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {IFutarchyLiquidityAdapter} from "./interfaces/IFutarchyLiquidityAdapter.sol";
 import {IFutarchyOfficialProposalSource} from "./interfaces/IFutarchyOfficialProposalSource.sol";
 import {IFutarchyConditionalRouter} from "./interfaces/IFutarchyConditionalRouter.sol";
+import {IAlgebraPoolLike} from "./interfaces/IAlgebraPoolLike.sol";
 
 interface IWrappedNative is IERC20 {
     function deposit() external payable;
 
     function withdraw(uint256 amount) external;
+}
+
+interface IFutarchyProposalConditionLike {
+    function conditionId() external view returns (bytes32);
 }
 
 /// @title FutarchyLiquidityManager
@@ -28,6 +33,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint256 public constant MIGRATION_BPS = 8000;
     uint256 public constant EMERGENCY_EXIT_DELAY = 2 days;
+    uint24 public constant MAX_EXIT_TICK_DELTA = 200; // ~2% price band (1.0001^200 ~= 1.0202)
 
     IERC20 public immutable FAO_TOKEN;
     IWrappedNative public immutable WRAPPED_NATIVE;
@@ -509,6 +515,10 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         }
         if (!proposal.settled) return SyncAction.None;
 
+        // After settlement, wait until spot price has converged to the winning conditional price
+        // before migrating back. This avoids adding back to spot at an obviously stale price.
+        if (!_isExitPriceAligned(proposal)) return SyncAction.None;
+
         uint128 condLiq = conditionalLiquidity;
         uint128 spotAddedBack;
         if (condLiq > 0) {
@@ -545,6 +555,50 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         emit LiquidityMigratedBackToSpot(activeProposalId, condLiq, spotAddedBack);
         _clearConditionalModeState();
         return SyncAction.MigratedBackToSpot;
+    }
+
+    function _isExitPriceAligned(ProposalData memory proposal) internal view returns (bool) {
+        // Resolve winning outcome from CTF.
+        bytes32 conditionId = IFutarchyProposalConditionLike(proposal.proposal).conditionId();
+        bool[] memory winning = CONDITIONAL_ROUTER.getWinningOutcomes(conditionId);
+        if (winning.length < 2) return false;
+        bool yesWins = winning[0];
+        bool noWins = winning[1];
+        if (yesWins == noWins) return false; // either unresolved (both false) or ambiguous (both
+        // true)
+
+        address spotPool = PROPOSAL_SOURCE.ALGEBRA_FACTORY().poolByPair(TOKEN0, TOKEN1);
+        if (spotPool == address(0)) return false;
+        int24 spotTick = _economicTick(spotPool, address(FAO_TOKEN), address(WRAPPED_NATIVE));
+
+        address winPool = yesWins ? proposal.yesPool : proposal.noPool;
+        if (winPool == address(0)) return false;
+        address winBase = yesWins ? proposal.yesCompanyToken : proposal.noCompanyToken;
+        address winQuote = yesWins ? proposal.yesCurrencyToken : proposal.noCurrencyToken;
+        int24 winTick = _economicTick(winPool, winBase, winQuote);
+
+        uint256 delta = _absDiff(int256(spotTick), int256(winTick));
+        return delta <= MAX_EXIT_TICK_DELTA;
+    }
+
+    function _economicTick(address pool, address base, address quote)
+        internal
+        view
+        returns (int24)
+    {
+        IAlgebraPoolLike p = IAlgebraPoolLike(pool);
+        address t0 = p.token0();
+        address t1 = p.token1();
+        (, int24 tick,,,,,) = p.globalState();
+
+        if (t0 == base && t1 == quote) return tick;
+        if (t0 == quote && t1 == base) return -tick;
+        revert InvalidProposalConfig();
+    }
+
+    function _absDiff(int256 a, int256 b) internal pure returns (uint256) {
+        int256 d = a - b;
+        return uint256(d < 0 ? -d : d);
     }
 
     function _compoundActive(SyncParams calldata params) internal {
