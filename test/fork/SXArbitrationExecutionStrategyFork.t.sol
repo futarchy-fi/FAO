@@ -8,16 +8,14 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Space} from "sx-evm/src/Space.sol";
 import {VanillaAuthenticator} from "sx-evm/src/authenticators/VanillaAuthenticator.sol";
 import {VanillaVotingStrategy} from "sx-evm/src/voting-strategies/VanillaVotingStrategy.sol";
-import {VanillaExecutionStrategy} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
-import {VanillaProposalValidationStrategy} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
-
 import {
-    Choice,
-    Strategy,
-    IndexedStrategy,
-    InitializeCalldata,
-    ProposalStatus
-} from "sx/types.sol";
+    VanillaExecutionStrategy
+} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
+import {
+    VanillaProposalValidationStrategy
+} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
+
+import {Choice, Strategy, IndexedStrategy, InitializeCalldata, ProposalStatus} from "sx/types.sol";
 
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 
@@ -35,8 +33,10 @@ contract MockArbitration {
 
 contract SXArbitrationExecutionStrategyForkTest is Test {
     // Selectors copied from sx-evm test utils
-    bytes4 internal constant PROPOSE_SELECTOR = bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
-    bytes4 internal constant VOTE_SELECTOR = bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
+    bytes4 internal constant PROPOSE_SELECTOR =
+        bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
+    bytes4 internal constant VOTE_SELECTOR =
+        bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
 
     Space internal masterSpace;
     Space internal space;
@@ -84,7 +84,9 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
             votingDelay: 0,
             minVotingDuration: 0,
             maxVotingDuration: 1000,
-            proposalValidationStrategy: Strategy(address(vanillaProposalValidationStrategy), new bytes(0)),
+            proposalValidationStrategy: Strategy(
+                address(vanillaProposalValidationStrategy), new bytes(0)
+            ),
             proposalValidationStrategyMetadataURI: "",
             daoURI: "dao",
             metadataURI: "space",
@@ -93,7 +95,13 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
             authenticators: authenticators
         });
 
-        space = Space(address(new ERC1967Proxy(address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init))));
+        space = Space(
+            address(
+                new ERC1967Proxy(
+                    address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init)
+                )
+            )
+        );
 
         userVotingStrategies.push(IndexedStrategy(0, new bytes(0)));
 
@@ -101,7 +109,9 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
         gated = new SXArbitrationExecutionStrategy(address(arb), address(vanillaExecutionStrategy));
     }
 
-    function testFork_blocksExecuteUntilArbitrationAccepted_andStatusShowsVotingPeriodAccepted() public {
+    function testFork_blocksExecuteUntilArbitrationAccepted_andStatusShowsVotingPeriodAccepted()
+        public
+    {
         if (!vm.envOr("RUN_GNOSIS_FORK_TESTS", false)) return;
 
         bytes memory payload = abi.encodePacked("hello");
@@ -110,12 +120,20 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
         uint256 proposalId = _createProposal(author, "p", execStrat);
         _vote(voter, proposalId, Choice.For);
 
-        // Voting accepted, but arbitration not accepted: wrapper should expose VotingPeriodAccepted.
-        assertEq(uint256(space.getProposalStatus(proposalId)), uint256(ProposalStatus.VotingPeriodAccepted));
+        // Voting accepted, but arbitration not accepted: wrapper should expose
+        // VotingPeriodAccepted.
+        assertEq(
+            uint256(space.getProposalStatus(proposalId)),
+            uint256(ProposalStatus.VotingPeriodAccepted)
+        );
 
         uint256 arbId = uint256(keccak256(payload));
 
-        vm.expectRevert(abi.encodeWithSelector(SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId
+            )
+        );
         space.execute(proposalId, payload);
 
         arb.setAccepted(arbId, true);
@@ -127,10 +145,11 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
         space.execute(proposalId, payload);
     }
 
-    function _createProposal(address _author, string memory _metadataURI, Strategy memory _executionStrategy)
-        internal
-        returns (uint256)
-    {
+    function _createProposal(
+        address _author,
+        string memory _metadataURI,
+        Strategy memory _executionStrategy
+    ) internal returns (uint256) {
         vanillaAuthenticator.authenticate(
             address(space),
             PROPOSE_SELECTOR,

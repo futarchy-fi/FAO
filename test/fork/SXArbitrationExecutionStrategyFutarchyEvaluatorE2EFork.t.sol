@@ -9,16 +9,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Space} from "sx-evm/src/Space.sol";
 import {VanillaAuthenticator} from "sx-evm/src/authenticators/VanillaAuthenticator.sol";
 import {VanillaVotingStrategy} from "sx-evm/src/voting-strategies/VanillaVotingStrategy.sol";
-import {VanillaExecutionStrategy} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
-import {VanillaProposalValidationStrategy} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
-
 import {
-    Choice,
-    Strategy,
-    IndexedStrategy,
-    InitializeCalldata,
-    ProposalStatus
-} from "sx/types.sol";
+    VanillaExecutionStrategy
+} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
+import {
+    VanillaProposalValidationStrategy
+} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
+
+import {Choice, Strategy, IndexedStrategy, InitializeCalldata, ProposalStatus} from "sx/types.sol";
 
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
@@ -34,19 +32,21 @@ interface IFutarchyProposalWithConditionLike {
 }
 
 /// @notice Full fork E2E for the Phase 8 claim:
-///         graduate -> (bind futarchy proposal) -> resolve via CTF -> settle arbitration -> execute Snapshot X.
-///
+///         graduate -> (bind futarchy proposal) -> resolve via CTF -> settle arbitration -> execute
+/// Snapshot X.
 /// Notes:
-/// - Requires a resolved Futarchy proposal on Gnosis (ConditionalTokens payouts set). When unresolved,
-///   the test returns early after asserting execute() is blocked.
+/// - Requires a resolved Futarchy proposal on Gnosis (ConditionalTokens payouts set). When
+/// unresolved, the test returns early after asserting execute() is blocked.
 ///
 /// Env:
 /// - RUN_GNOSIS_FORK_TESTS=true
 /// - Optional: TEST_FAO_PROPOSAL=<address> (must expose conditionId())
 contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
     // Selectors copied from sx-evm test utils
-    bytes4 internal constant PROPOSE_SELECTOR = bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
-    bytes4 internal constant VOTE_SELECTOR = bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
+    bytes4 internal constant PROPOSE_SELECTOR =
+        bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
+    bytes4 internal constant VOTE_SELECTOR =
+        bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
 
     address internal constant DEFAULT_TEST_PROPOSAL = 0x81829a8ee62D306e3fD9D5b79D02C7624437BE37;
     address internal constant GNOSIS_CTF = 0xCeAfDD6bc0bEF976fdCd1112955828E00543c0Ce;
@@ -101,7 +101,9 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
             votingDelay: 0,
             minVotingDuration: 0,
             maxVotingDuration: 1000,
-            proposalValidationStrategy: Strategy(address(vanillaProposalValidationStrategy), new bytes(0)),
+            proposalValidationStrategy: Strategy(
+                address(vanillaProposalValidationStrategy), new bytes(0)
+            ),
             proposalValidationStrategyMetadataURI: "",
             daoURI: "dao",
             metadataURI: "space",
@@ -110,7 +112,13 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
             authenticators: authenticators
         });
 
-        space = Space(address(new ERC1967Proxy(address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init))));
+        space = Space(
+            address(
+                new ERC1967Proxy(
+                    address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init)
+                )
+            )
+        );
 
         userVotingStrategies.push(IndexedStrategy(0, new bytes(0)));
 
@@ -119,7 +127,9 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         evaluator = new FutarchyEvaluator(address(arbitration), GNOSIS_CTF, owner);
         arbitration.setEvaluator(address(evaluator));
 
-        gated = new SXArbitrationExecutionStrategy(address(arbitration), address(vanillaExecutionStrategy));
+        gated = new SXArbitrationExecutionStrategy(
+            address(arbitration), address(vanillaExecutionStrategy)
+        );
     }
 
     function testFork_endToEnd_executeAfterFutarchyEvaluatorResolutionWhenCTFResolved() public {
@@ -131,25 +141,35 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         uint256 sxProposalId = _createProposal(author, "p", execStrat);
         _vote(voter, sxProposalId, Choice.For);
 
-        // Voting accepted, but arbitration not accepted: wrapper should expose VotingPeriodAccepted.
-        assertEq(uint256(space.getProposalStatus(sxProposalId)), uint256(ProposalStatus.VotingPeriodAccepted));
+        // Voting accepted, but arbitration not accepted: wrapper should expose
+        // VotingPeriodAccepted.
+        assertEq(
+            uint256(space.getProposalStatus(sxProposalId)),
+            uint256(ProposalStatus.VotingPeriodAccepted)
+        );
 
         uint256 arbId = uint256(keccak256(payload));
 
         // Create arbitration proposal with aligned deterministic id.
-        // Note: FutarchyArbitration defaults baseX=100e18, and graduation requires YES flip >= baseX.
+        // Note: FutarchyArbitration defaults baseX=100e18, and graduation requires YES flip >=
+        // baseX.
         uint256 m = arbitration.baseX();
         arbitration.createProposalWithId(arbId, FutarchyArbitration.ProposalType.A, m);
 
         // Not accepted yet => execute should fail.
-        vm.expectRevert(abi.encodeWithSelector(SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId
+            )
+        );
         space.execute(sxProposalId, payload);
 
         // Bind a real futarchy proposal (needs conditionId()).
         address proposalAddress = vm.envOr("TEST_FAO_PROPOSAL", DEFAULT_TEST_PROPOSAL);
         bytes32 conditionId = IFutarchyProposalWithConditionLike(proposalAddress).conditionId();
 
-        // If unresolved, do not proceed (avoid flaky tests). Ensure evaluator reverts on unresolved.
+        // If unresolved, do not proceed (avoid flaky tests). Ensure evaluator reverts on
+        // unresolved.
         IConditionalTokensLike ctf = IConditionalTokensLike(GNOSIS_CTF);
         uint256 denom = ctf.payoutDenominator(conditionId);
         if (denom == 0) {
@@ -174,7 +194,11 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
 
         if (!accepted) {
             // If rejected by futarchy, execution must remain blocked.
-            vm.expectRevert(abi.encodeWithSelector(SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId));
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId
+                )
+            );
             space.execute(sxProposalId, payload);
             return;
         }
@@ -211,10 +235,11 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         assertEq(arbitration.activeEvaluationProposalId(), arbId, "active eval id mismatch");
     }
 
-    function _createProposal(address _author, string memory _metadataURI, Strategy memory _executionStrategy)
-        internal
-        returns (uint256)
-    {
+    function _createProposal(
+        address _author,
+        string memory _metadataURI,
+        Strategy memory _executionStrategy
+    ) internal returns (uint256) {
         vanillaAuthenticator.authenticate(
             address(space),
             PROPOSE_SELECTOR,

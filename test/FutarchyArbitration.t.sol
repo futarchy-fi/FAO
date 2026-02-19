@@ -12,24 +12,15 @@ contract FutarchyArbitrationTest is Test {
     FutarchyArbitration arb;
 
     // Canonical Gnosis WXDAI address hardcoded into contract.
-    address internal constant WXDAI =
-        0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
 
     function setUp() public {
         arb = new FutarchyArbitration();
 
         // We don't need a full ERC20 implementation for most tests; SafeERC20 only
         // requires transfer/transferFrom to return true (or return no data).
-        vm.mockCall(
-            WXDAI,
-            abi.encodeWithSelector(IERC20.transferFrom.selector),
-            abi.encode(true)
-        );
-        vm.mockCall(
-            WXDAI,
-            abi.encodeWithSelector(IERC20.transfer.selector),
-            abi.encode(true)
-        );
+        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true));
+        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true));
     }
 
     function testDeploy() public view {
@@ -42,11 +33,8 @@ contract FutarchyArbitrationTest is Test {
     function testCreateProposalWithExplicitId() public {
         uint256 explicitId = uint256(keccak256("arbId"));
 
-        uint256 returned = arb.createProposalWithId(
-            explicitId,
-            FutarchyArbitration.ProposalType.A,
-            1e18
-        );
+        uint256 returned =
+            arb.createProposalWithId(explicitId, FutarchyArbitration.ProposalType.A, 1e18);
         assertEq(returned, explicitId);
 
         FutarchyArbitration.Proposal memory p = arb.getProposal(explicitId);
@@ -58,10 +46,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testCannotNoBidInactive() public {
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            1e18
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
         arb.placeNoBond(proposalId, 1e18);
@@ -69,10 +54,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testFirstYesRequiresAtLeastM() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         vm.expectRevert(FutarchyArbitration.BondTooSmall.selector);
         arb.placeYesBond(proposalId, m - 1);
@@ -83,10 +65,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testYesToNoRequiresAtLeast2xYes() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         uint256 yes = m;
         arb.placeYesBond(proposalId, yes);
@@ -100,10 +79,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testNoToYesRequiresAtLeastMaxMOr2xNo() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         // Drive state to NO with an initial YES then a flipping NO.
         uint256 yes = m;
@@ -122,10 +98,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testNoNonFlippingBidsAllowed() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         // INACTIVE -> YES
         arb.placeYesBond(proposalId, m);
@@ -144,10 +117,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testReplacingYesAfterInterveningFlipRefundsPreviousYesBond() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         address yesBidder1 = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -174,10 +144,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testReplacingNoAfterInterveningFlipRefundsPreviousNoBond() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         address yesBidder = vm.addr(1);
         address noBidder1 = vm.addr(2);
@@ -212,10 +179,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testTimeoutSettlementAfter72hCreditsWinnerWithBothBonds() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -246,10 +210,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testSettlementIdempotenceAndPostSettlementBiddingReverts() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -286,10 +247,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testWithdrawWorksAndCannotDoubleWithdraw() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -338,10 +296,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testGraduationTriggersOnlyOnNoToYesFlip() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         // Even if first activation is huge, it should NOT graduate (only flips).
         arb.placeYesBond(proposalId, 200e18);
@@ -443,10 +398,7 @@ contract FutarchyArbitrationTest is Test {
 
         {
             FutarchyArbitration.Proposal memory p2 = arb.getProposal(proposalId);
-            assertEq(
-                uint256(p2.state),
-                uint256(FutarchyArbitration.ProposalState.EVALUATING)
-            );
+            assertEq(uint256(p2.state), uint256(FutarchyArbitration.ProposalState.EVALUATING));
         }
 
         // Any bids while EVALUATING should revert.
@@ -459,10 +411,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testStartNextEvaluationMovesHeadToEvaluating() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(
-            FutarchyArbitration.ProposalType.A,
-            m
-        );
+        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
 
         // Drive into QUEUED via NO -> YES graduation.
         arb.placeYesBond(proposalId, 200e18);
@@ -479,10 +428,7 @@ contract FutarchyArbitrationTest is Test {
         assertEq(arb.activeEvaluationProposalId(), proposalId);
 
         FutarchyArbitration.Proposal memory p2 = arb.getProposal(proposalId);
-        assertEq(
-            uint256(p2.state),
-            uint256(FutarchyArbitration.ProposalState.EVALUATING)
-        );
+        assertEq(uint256(p2.state), uint256(FutarchyArbitration.ProposalState.EVALUATING));
 
         // Cannot start another while one is active.
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);

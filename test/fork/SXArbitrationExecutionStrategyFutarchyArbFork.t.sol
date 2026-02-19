@@ -9,16 +9,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Space} from "sx-evm/src/Space.sol";
 import {VanillaAuthenticator} from "sx-evm/src/authenticators/VanillaAuthenticator.sol";
 import {VanillaVotingStrategy} from "sx-evm/src/voting-strategies/VanillaVotingStrategy.sol";
-import {VanillaExecutionStrategy} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
-import {VanillaProposalValidationStrategy} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
-
 import {
-    Choice,
-    Strategy,
-    IndexedStrategy,
-    InitializeCalldata,
-    ProposalStatus
-} from "sx/types.sol";
+    VanillaExecutionStrategy
+} from "sx-evm/src/execution-strategies/VanillaExecutionStrategy.sol";
+import {
+    VanillaProposalValidationStrategy
+} from "sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
+
+import {Choice, Strategy, IndexedStrategy, InitializeCalldata, ProposalStatus} from "sx/types.sol";
 
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
@@ -26,8 +24,10 @@ import {ManualEvaluator} from "../../src/ManualEvaluator.sol";
 
 contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
     // Selectors copied from sx-evm test utils
-    bytes4 internal constant PROPOSE_SELECTOR = bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
-    bytes4 internal constant VOTE_SELECTOR = bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
+    bytes4 internal constant PROPOSE_SELECTOR =
+        bytes4(keccak256("propose(address,string,(address,bytes),bytes)"));
+    bytes4 internal constant VOTE_SELECTOR =
+        bytes4(keccak256("vote(address,uint256,uint8,(uint8,bytes)[],string)"));
 
     Space internal masterSpace;
     Space internal space;
@@ -79,7 +79,9 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
             votingDelay: 0,
             minVotingDuration: 0,
             maxVotingDuration: 1000,
-            proposalValidationStrategy: Strategy(address(vanillaProposalValidationStrategy), new bytes(0)),
+            proposalValidationStrategy: Strategy(
+                address(vanillaProposalValidationStrategy), new bytes(0)
+            ),
             proposalValidationStrategyMetadataURI: "",
             daoURI: "dao",
             metadataURI: "space",
@@ -88,7 +90,13 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
             authenticators: authenticators
         });
 
-        space = Space(address(new ERC1967Proxy(address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init))));
+        space = Space(
+            address(
+                new ERC1967Proxy(
+                    address(masterSpace), abi.encodeWithSelector(Space.initialize.selector, init)
+                )
+            )
+        );
 
         userVotingStrategies.push(IndexedStrategy(0, new bytes(0)));
 
@@ -97,7 +105,9 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
         evaluator = new ManualEvaluator(address(arbitration), owner);
         arbitration.setEvaluator(address(evaluator));
 
-        gated = new SXArbitrationExecutionStrategy(address(arbitration), address(vanillaExecutionStrategy));
+        gated = new SXArbitrationExecutionStrategy(
+            address(arbitration), address(vanillaExecutionStrategy)
+        );
     }
 
     function testFork_endToEnd_executeOnlyAfterFutarchyArbitrationAccepted() public {
@@ -109,8 +119,12 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
         uint256 sxProposalId = _createProposal(author, "p", execStrat);
         _vote(voter, sxProposalId, Choice.For);
 
-        // Voting accepted, but arbitration not accepted: wrapper should expose VotingPeriodAccepted.
-        assertEq(uint256(space.getProposalStatus(sxProposalId)), uint256(ProposalStatus.VotingPeriodAccepted));
+        // Voting accepted, but arbitration not accepted: wrapper should expose
+        // VotingPeriodAccepted.
+        assertEq(
+            uint256(space.getProposalStatus(sxProposalId)),
+            uint256(ProposalStatus.VotingPeriodAccepted)
+        );
 
         uint256 arbId = uint256(keccak256(payload));
 
@@ -119,7 +133,11 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
         arbitration.createProposalWithId(arbId, FutarchyArbitration.ProposalType.A, m);
 
         // Not accepted yet => execute should fail.
-        vm.expectRevert(abi.encodeWithSelector(SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SXArbitrationExecutionStrategy.ArbitrationNotAccepted.selector, arbId
+            )
+        );
         space.execute(sxProposalId, payload);
 
         // Drive arbitration to SETTLED+accepted via evaluator path.
@@ -156,10 +174,11 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
         space.execute(sxProposalId, payload);
     }
 
-    function _createProposal(address _author, string memory _metadataURI, Strategy memory _executionStrategy)
-        internal
-        returns (uint256)
-    {
+    function _createProposal(
+        address _author,
+        string memory _metadataURI,
+        Strategy memory _executionStrategy
+    ) internal returns (uint256) {
         vanillaAuthenticator.authenticate(
             address(space),
             PROPOSE_SELECTOR,

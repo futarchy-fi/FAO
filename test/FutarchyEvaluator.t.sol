@@ -39,7 +39,9 @@ contract FutarchyEvaluatorTest is Test {
     function testResolveRevertsIfMissingMapping() public {
         arb.setActive(7);
 
-        vm.expectRevert(abi.encodeWithSelector(FutarchyEvaluator.MissingFutarchyProposal.selector, 7));
+        vm.expectRevert(
+            abi.encodeWithSelector(FutarchyEvaluator.MissingFutarchyProposal.selector, 7)
+        );
         eval.resolve(7);
     }
 
@@ -54,7 +56,9 @@ contract FutarchyEvaluatorTest is Test {
         // denom==0 => unresolved
         ctf.setPayout(conditionId, 0, 0, 0);
 
-        vm.expectRevert(abi.encodeWithSelector(FutarchyEvaluator.FutarchyNotResolved.selector, conditionId));
+        vm.expectRevert(
+            abi.encodeWithSelector(FutarchyEvaluator.FutarchyNotResolved.selector, conditionId)
+        );
         eval.resolve(7);
     }
 

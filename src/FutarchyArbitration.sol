@@ -216,10 +216,7 @@ contract FutarchyArbitration is ReentrancyGuard {
 
     // --- Phase 4: Evaluator wiring (T84) ---
     event EvaluationResolved(
-        uint256 indexed proposalId,
-        bool accepted,
-        address indexed winner,
-        uint256 payout
+        uint256 indexed proposalId, bool accepted, address indexed winner, uint256 payout
     );
 
     /// @notice Set the evaluator module address.
@@ -269,10 +266,7 @@ contract FutarchyArbitration is ReentrancyGuard {
 
     // --- Phase 1: Events (continued) ---
     event FinalizedByTimeout(
-        uint256 indexed proposalId,
-        bool accepted,
-        address indexed winner,
-        uint256 payout
+        uint256 indexed proposalId, bool accepted, address indexed winner, uint256 payout
     );
 
     /// @notice Create a new arbitration proposal.
@@ -292,13 +286,14 @@ contract FutarchyArbitration is ReentrancyGuard {
     }
 
     /// @notice Create a proposal with an explicit id.
-    /// @dev This supports integrations that need deterministic ids (e.g. Snapshot X wrappers that use
-    /// `arbId := uint256(executionPayloadHash)`).
+    /// @dev This supports integrations that need deterministic ids (e.g. Snapshot X wrappers that
+    /// use `arbId := uint256(executionPayloadHash)`).
     /// Reverts if the proposalId is already used.
-    function createProposalWithId(uint256 proposalId, ProposalType proposalType, uint256 minActivationBond)
-        external
-        returns (uint256)
-    {
+    function createProposalWithId(
+        uint256 proposalId,
+        ProposalType proposalType,
+        uint256 minActivationBond
+    ) external returns (uint256) {
         if (minActivationBond == 0) revert InvalidMinActivationBond();
         if (proposalId == 0) revert InvalidState();
         if (proposals[proposalId].exists) revert ProposalAlreadyExists();
@@ -362,9 +357,7 @@ contract FutarchyArbitration is ReentrancyGuard {
         p.state = ProposalState.YES;
         p.lastStateChangeAt = uint64(block.timestamp);
 
-        emit BondPlaced(
-            proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount
-        );
+        emit BondPlaced(proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount);
 
         // --- Phase 6: accounting (T91) ---
         // Leaving NO state -> NO bonds are no longer active.
@@ -431,9 +424,7 @@ contract FutarchyArbitration is ReentrancyGuard {
         // --- Phase 6: accounting (T91) ---
         totalActiveNoBonds += amount;
 
-        emit BondPlaced(
-            proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount
-        );
+        emit BondPlaced(proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount);
     }
 
     /// @notice Finalize an active proposal by timeout.

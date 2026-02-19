@@ -2,23 +2,25 @@
 
 pragma solidity ^0.8.18;
 
-import { IExecutionStrategy } from "sx/interfaces/IExecutionStrategy.sol";
-import { Proposal, ProposalStatus } from "sx/types.sol";
+import {IExecutionStrategy} from "sx/interfaces/IExecutionStrategy.sol";
+import {Proposal, ProposalStatus} from "sx/types.sol";
 
 interface IFutarchyArbitrationLike {
     function isAccepted(uint256 proposalId) external view returns (bool);
 }
 
 /// @title SXArbitrationExecutionStrategy
-/// @notice Snapshot X execution strategy wrapper that gates execution on an external FutarchyArbitration decision.
-///
-/// @dev Snapshot X's IExecutionStrategy.getProposalStatus(...) does NOT receive the execution payload, so it cannot
-///      decode an arbitration id (arbId) from calldata. To support status-level gating, this strategy derives the
+/// @notice Snapshot X execution strategy wrapper that gates execution on an external
+/// FutarchyArbitration decision.
+/// @dev Snapshot X's IExecutionStrategy.getProposalStatus(...) does NOT receive the execution
+/// payload, so it cannot decode an arbitration id (arbId) from calldata. To support status-level
+/// gating, this strategy derives the
 ///      arbId deterministically from the proposal's executionPayloadHash:
 ///
 ///      arbId := uint256(proposal.executionPayloadHash)
 ///
-///      Then execute(...) uses that derived arbId to require arbitration acceptance before forwarding to `inner`.
+///      Then execute(...) uses that derived arbId to require arbitration acceptance before
+/// forwarding to `inner`.
 contract SXArbitrationExecutionStrategy is IExecutionStrategy {
     error ArbitrationNotAccepted(uint256 arbId);
 
@@ -50,7 +52,9 @@ contract SXArbitrationExecutionStrategy is IExecutionStrategy {
         uint256 votesAgainst,
         uint256 votesAbstain
     ) external view override returns (ProposalStatus) {
-        ProposalStatus innerStatus = inner.getProposalStatus(proposal, votesFor, votesAgainst, votesAbstain);
+        ProposalStatus innerStatus = inner.getProposalStatus(
+            proposal, votesFor, votesAgainst, votesAbstain
+        );
 
         // If voting isn't in an "Accepted"-eligible state yet, don't add extra gating logic.
         if (innerStatus != ProposalStatus.Accepted) return innerStatus;

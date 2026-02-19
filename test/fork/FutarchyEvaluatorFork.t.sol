@@ -16,7 +16,8 @@ interface IConditionalTokensLike {
 contract FutarchyEvaluatorForkTest is Test {
     address internal constant DEFAULT_TEST_PROPOSAL = 0x81829a8ee62D306e3fD9D5b79D02C7624437BE37;
 
-    // Canonical ConditionalTokens on Gnosis (also documented in docs/futarchy-evaluator-integration.md).
+    // Canonical ConditionalTokens on Gnosis (also documented in
+    // docs/futarchy-evaluator-integration.md).
     address internal constant GNOSIS_CTF = 0xCeAfDD6bc0bEF976fdCd1112955828E00543c0Ce;
 
     function testFork_outcomeIndexMapping_yesIs0_noIs1_andPayoutsConsistentIfResolved() public {
@@ -24,7 +25,8 @@ contract FutarchyEvaluatorForkTest is Test {
         vm.createSelectFork(vm.rpcUrl("gnosis"));
 
         address proposalAddress = vm.envOr("TEST_FAO_PROPOSAL", DEFAULT_TEST_PROPOSAL);
-        IFutarchyProposalWithConditionLike proposal = IFutarchyProposalWithConditionLike(proposalAddress);
+        IFutarchyProposalWithConditionLike proposal =
+            IFutarchyProposalWithConditionLike(proposalAddress);
 
         // Outcome-data bytes observed on-chain begin with ASCII YES_/NO_ prefixes for indices 0/1.
         (, bytes memory yesData) = proposal.wrappedOutcome(0);

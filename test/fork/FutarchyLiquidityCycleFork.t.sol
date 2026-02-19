@@ -112,7 +112,7 @@ contract FutarchyLiquidityCycleForkTest is Test {
                 sqrtPriceX96: SQRT_PRICE_1_1
             })
         );
-        sale.seedLiquidityManager(address(manager), 1_000 ether, 0.5 ether, spotAddData);
+        sale.seedLiquidityManager(address(manager), 1000 ether, 0.5 ether, spotAddData);
         assertEq(manager.balanceOf(address(sale)), manager.totalSupply());
         assertTrue(sale.isRagequitToken(address(manager)));
         assertGt(manager.balanceOf(address(sale)), 0);
@@ -200,9 +200,8 @@ contract FutarchyLiquidityCycleForkTest is Test {
 
         IERC20(address(faoToken)).approve(FUTARCHY_ROUTER, type(uint256).max);
         IERC20(GNOSIS_WXDAI).approve(FUTARCHY_ROUTER, type(uint256).max);
-        IFutarchyConditionalRouter(FUTARCHY_ROUTER).splitPosition(
-            proposal, address(faoToken), 2 ether
-        );
+        IFutarchyConditionalRouter(FUTARCHY_ROUTER)
+            .splitPosition(proposal, address(faoToken), 2 ether);
         IFutarchyConditionalRouter(FUTARCHY_ROUTER).splitPosition(proposal, GNOSIS_WXDAI, 2 ether);
 
         _createPoolWithDustLiquidity(yesCompany, yesCurrency);
@@ -223,19 +222,19 @@ contract FutarchyLiquidityCycleForkTest is Test {
         ISwaprAlgebraPositionManager pm = ISwaprAlgebraPositionManager(SWAPR_POSITION_MANAGER);
         pm.createAndInitializePoolIfNecessary(token0, token1, SQRT_PRICE_1_1);
 
-        ISwaprAlgebraPositionManager.MintParams memory mintParams = ISwaprAlgebraPositionManager
-            .MintParams({
-            token0: token0,
-            token1: token1,
-            tickLower: FULL_RANGE_LOWER,
-            tickUpper: FULL_RANGE_UPPER,
-            amount0Desired: amount0,
-            amount1Desired: amount1,
-            amount0Min: 0,
-            amount1Min: 0,
-            recipient: address(this),
-            deadline: block.timestamp + 1 hours
-        });
+        ISwaprAlgebraPositionManager.MintParams memory mintParams =
+            ISwaprAlgebraPositionManager.MintParams({
+                token0: token0,
+                token1: token1,
+                tickLower: FULL_RANGE_LOWER,
+                tickUpper: FULL_RANGE_UPPER,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: address(this),
+                deadline: block.timestamp + 1 hours
+            });
 
         (, uint128 liquidity,,) = pm.mint(mintParams);
         assertGt(liquidity, 0, "dust mint failed");

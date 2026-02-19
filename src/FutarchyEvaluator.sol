@@ -22,14 +22,15 @@ interface IConditionalTokens {
 /// @notice Evaluator that resolves FutarchyArbitration evaluations using CTF condition payouts.
 ///
 /// Design:
-/// - Maintains an owner-controlled mapping from arbitration `proposalId` -> futarchy proposal contract.
-/// - Reads the futarchy proposal's `conditionId()` and consults ConditionalTokens payouts.
+/// - Maintains an owner-controlled mapping from arbitration `proposalId` -> futarchy proposal
+/// contract. - Reads the futarchy proposal's `conditionId()` and consults ConditionalTokens
+/// payouts.
 /// - If resolved, calls `FutarchyArbitration.resolveActiveEvaluation(accepted)`.
 ///
 /// Assumptions (must match the futarchy proposal implementation):
 /// - Outcome index 0 corresponds to "YES/accepted" and index 1 to "NO/rejected".
-///   Evidence (Gnosis, DEFAULT_TEST_PROPOSAL 0x81829a8e...): `wrappedOutcome(0)` bytes start with ASCII `YES_FAO`,
-///   and `wrappedOutcome(1)` bytes start with ASCII `NO_FAO`.
+///   Evidence (Gnosis, DEFAULT_TEST_PROPOSAL 0x81829a8e...): `wrappedOutcome(0)` bytes start with
+/// ASCII `YES_FAO`, and `wrappedOutcome(1)` bytes start with ASCII `NO_FAO`.
 /// - Condition is resolved when payoutDenominator(conditionId) > 0.
 contract FutarchyEvaluator is Ownable, IFutarchyArbitrationEvaluator {
     error NoActiveEvaluation();
@@ -44,7 +45,14 @@ contract FutarchyEvaluator is Ownable, IFutarchyArbitrationEvaluator {
     mapping(uint256 proposalId => address futarchyProposal) public futarchyProposalOf;
 
     event FutarchyProposalBound(uint256 indexed proposalId, address indexed futarchyProposal);
-    event EvaluationResolved(uint256 indexed proposalId, bytes32 indexed conditionId, bool accepted, uint256 yesNumerator, uint256 noNumerator, uint256 denom);
+    event EvaluationResolved(
+        uint256 indexed proposalId,
+        bytes32 indexed conditionId,
+        bool accepted,
+        uint256 yesNumerator,
+        uint256 noNumerator,
+        uint256 denom
+    );
 
     constructor(address _arbitration, address _conditionalTokens, address _owner) Ownable(_owner) {
         arbitrationContract = _arbitration;
@@ -62,8 +70,9 @@ contract FutarchyEvaluator is Ownable, IFutarchyArbitrationEvaluator {
         emit FutarchyProposalBound(proposalId, futarchyProposal);
     }
 
-    /// @notice Resolve `proposalId` (must be the current active evaluation) using the bound futarchy proposal + CTF payouts.
-    /// Reverts if there is no active evaluation, mapping is missing, or futarchy is not resolved.
+    /// @notice Resolve `proposalId` (must be the current active evaluation) using the bound
+    /// futarchy proposal + CTF payouts. Reverts if there is no active evaluation, mapping is
+    /// missing, or futarchy is not resolved.
     function resolve(uint256 proposalId) external returns (bool accepted) {
         uint256 active = IFutarchyArbitrationLike(arbitrationContract).activeEvaluationProposalId();
         if (active == 0) revert NoActiveEvaluation();

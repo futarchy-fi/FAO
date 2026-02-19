@@ -41,9 +41,8 @@ contract ManualEvaluator is Ownable, IFutarchyArbitrationEvaluator {
 
     function _arbitrationResolveActiveEvaluation(bool accepted) internal {
         // Minimal interface for the Phase 4 hook implemented in FutarchyArbitration.
-        (bool ok,) = arbitration.call(
-            abi.encodeWithSignature("resolveActiveEvaluation(bool)", accepted)
-        );
+        (bool ok,) =
+            arbitration.call(abi.encodeWithSignature("resolveActiveEvaluation(bool)", accepted));
         require(ok, "ARBITRATION_RESOLVE_FAILED");
     }
 }

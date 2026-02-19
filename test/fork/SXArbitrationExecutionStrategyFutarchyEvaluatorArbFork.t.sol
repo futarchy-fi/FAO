@@ -16,8 +16,8 @@ interface IFutarchyProposalWithConditionLike {
 }
 
 /// @notice Fork test proving FutarchyArbitration evaluation can be resolved via FutarchyEvaluator
-///         using real ConditionalTokens payouts on Gnosis, when/if the referenced futarchy proposal is resolved.
-///
+///         using real ConditionalTokens payouts on Gnosis, when/if the referenced futarchy proposal
+/// is resolved.
 /// Env:
 /// - RUN_GNOSIS_FORK_TESTS=true
 /// - Optional: TEST_FAO_PROPOSAL=<address> (must expose conditionId())
@@ -38,7 +38,8 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
         address proposalAddress = vm.envOr("TEST_FAO_PROPOSAL", DEFAULT_TEST_PROPOSAL);
         bytes32 conditionId = IFutarchyProposalWithConditionLike(proposalAddress).conditionId();
 
-        // Create arbitration proposal with deterministic id to match Snapshot X-style arbId alignment.
+        // Create arbitration proposal with deterministic id to match Snapshot X-style arbId
+        // alignment.
         uint256 proposalId = uint256(conditionId);
         uint256 m = 100e18;
         arb.createProposalWithId(proposalId, FutarchyArbitration.ProposalType.A, m);
@@ -104,7 +105,9 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
 
     function _approveAll(address token, address spender) internal {
         // We keep it interface-free here to reduce imports; use low-level call.
-        (bool ok,) = token.call(abi.encodeWithSignature("approve(address,uint256)", spender, type(uint256).max));
+        (bool ok,) = token.call(
+            abi.encodeWithSignature("approve(address,uint256)", spender, type(uint256).max)
+        );
         require(ok, "approve failed");
     }
 }

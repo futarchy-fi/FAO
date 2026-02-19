@@ -6,7 +6,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {FutarchyOfficialProposalSource} from "../src/FutarchyOfficialProposalSource.sol";
 import {IAlgebraFactoryLike} from "../src/interfaces/IAlgebraFactoryLike.sol";
-import {IFutarchyOfficialProposalSource} from "../src/interfaces/IFutarchyOfficialProposalSource.sol";
+import {
+    IFutarchyOfficialProposalSource
+} from "../src/interfaces/IFutarchyOfficialProposalSource.sol";
 import {MockAlgebraFactoryLike} from "./mocks/MockAlgebraFactoryLike.sol";
 import {MockFutarchyProposalLike} from "./mocks/MockFutarchyProposalLike.sol";
 import {MockProposalSettlementOracle} from "./mocks/MockProposalSettlementOracle.sol";
