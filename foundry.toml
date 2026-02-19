@@ -14,6 +14,8 @@ remappings = [
 
     # Snapshot X EVM (vendored as a Foundry lib)
     "sx/=lib/sx-evm/src/",
+    # Resolve Snapshot X internal imports like "src/types.sol" to vendored sx-evm.
+    "src/=lib/sx-evm/src/",
     "forge-gas-snapshot/=lib/sx-evm/lib/forge-gas-snapshot/src/",
     "@prb/test/=lib/sx-evm/lib/prb-test/src/",
     "@zodiac/=lib/sx-evm/lib/zodiac/contracts/",
