@@ -7,3 +7,6 @@
 [submodule "lib/reality-eth-monorepo"]
 	path = lib/reality-eth-monorepo
 	url = https://github.com/RealityETH/reality-eth-monorepo.git
+[submodule "lib/sx-evm"]
+	path = lib/sx-evm
+	url = https://github.com/snapshot-labs/sx-evm.git
