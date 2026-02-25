@@ -95,13 +95,12 @@ contract WXDAIMock is IERC20 {
             vm.stopPrank();
         }
 
-        function no(uint256 proposalId, uint256 actorSeed, uint256 amtRaw) external {
+        function no(uint256 proposalId, uint256 actorSeed) external {
             address a = _actor(actorSeed);
-            uint256 amt = bound(amtRaw, 1, arb.baseX());
 
             vm.startPrank(a);
             IERC20(WXDAI).approve(address(arb), type(uint256).max);
-            try arb.placeNoBond(proposalId, amt) {} catch {}
+            try arb.placeNoBond(proposalId) {} catch {}
             vm.stopPrank();
         }
 

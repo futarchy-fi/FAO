@@ -33,8 +33,7 @@ contract FutarchyArbitrationTest is Test {
     function testCreateProposalWithExplicitId() public {
         uint256 explicitId = uint256(keccak256("arbId"));
 
-        uint256 returned =
-            arb.createProposalWithId(explicitId, 1e18);
+        uint256 returned = arb.createProposalWithId(explicitId, 1e18);
         assertEq(returned, explicitId);
 
         FutarchyArbitration.Proposal memory p = arb.getProposal(explicitId);
@@ -49,7 +48,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 proposalId = arb.createProposal(1e18);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
-        arb.placeNoBond(proposalId, 1e18);
+        arb.placeNoBond(proposalId);
     }
 
     function testFirstYesRequiresAtLeastM() public {
@@ -63,33 +62,29 @@ contract FutarchyArbitrationTest is Test {
         arb.placeYesBond(proposalId, m);
     }
 
-    function testYesToNoRequiresAtLeast2xYes() public {
+    function testNoBondMatchesYesExactly() public {
         uint256 m = 1e18;
         uint256 proposalId = arb.createProposal(m);
 
-        uint256 yes = m;
-        arb.placeYesBond(proposalId, yes);
+        arb.placeYesBond(proposalId, m);
 
-        // must be >= 2x current YES
-        vm.expectRevert(FutarchyArbitration.BondTooSmall.selector);
-        arb.placeNoBond(proposalId, (yes * 2) - 1);
+        // NO always matches YES — no amount parameter.
+        arb.placeNoBond(proposalId);
 
-        arb.placeNoBond(proposalId, yes * 2);
+        FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+        assertEq(p.noBond.amount, m);
+        assertEq(uint256(p.state), uint256(FutarchyArbitration.ProposalState.NO));
     }
 
-    function testNoToYesRequiresAtLeastMaxMOr2xNo() public {
+    function testNoToYesRequiresAtLeast2xNo() public {
         uint256 m = 1e18;
         uint256 proposalId = arb.createProposal(m);
 
-        // Drive state to NO with an initial YES then a flipping NO.
-        uint256 yes = m;
-        arb.placeYesBond(proposalId, yes);
+        // YES(m) → NO matches(m) → YES must be >= 2m
+        arb.placeYesBond(proposalId, m);
+        arb.placeNoBond(proposalId);
 
-        uint256 noBond = yes * 2;
-        arb.placeNoBond(proposalId, noBond);
-
-        // NO -> YES must be >= max(m, 2x current NO)
-        uint256 minFlip = noBond * 2;
+        uint256 minFlip = m * 2; // 2x NO bond (= 2x YES since NO matches)
         vm.expectRevert(FutarchyArbitration.BondTooSmall.selector);
         arb.placeYesBond(proposalId, minFlip - 1);
 
@@ -108,11 +103,11 @@ contract FutarchyArbitrationTest is Test {
         arb.placeYesBond(proposalId, m + 1);
 
         // YES -> NO
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // NO -> NO should revert (flip-only)
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
-        arb.placeNoBond(proposalId, (m * 2) + 1);
+        arb.placeNoBond(proposalId);
     }
 
     function testReplacingYesAfterInterveningFlipRefundsPreviousYesBond() public {
@@ -127,16 +122,16 @@ contract FutarchyArbitrationTest is Test {
         vm.prank(yesBidder1);
         arb.placeYesBond(proposalId, m);
 
-        // Flip to NO (requires >= 2x YES)
+        // Flip to NO (matches YES = m)
         vm.prank(noBidder);
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // No refunds yet: YES bond not replaced, only NO bond set.
         assertEq(arb.withdrawable(yesBidder1), 0);
 
-        // Flip back to YES with a new bidder (requires >= max(m, 2x current NO) = 4m)
+        // Flip back to YES with a new bidder (requires >= 2x NO = 2m)
         vm.prank(yesBidder2);
-        arb.placeYesBond(proposalId, m * 4);
+        arb.placeYesBond(proposalId, m * 2);
 
         // The replaced YES bond (from yesBidder1) should now be withdrawable.
         assertEq(arb.withdrawable(yesBidder1), m);
@@ -151,30 +146,30 @@ contract FutarchyArbitrationTest is Test {
         address yesBidder2 = vm.addr(3);
         address noBidder2 = vm.addr(4);
 
-        // INACTIVE -> YES
+        // INACTIVE -> YES(m)
         vm.prank(yesBidder);
         arb.placeYesBond(proposalId, m);
 
-        // YES -> NO (requires >= 2x YES)
+        // YES -> NO: matches m
         vm.prank(noBidder1);
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // NO bond not replaced yet.
         assertEq(arb.withdrawable(noBidder1), 0);
 
-        // NO -> YES (requires >= max(m, 2x NO) = 4m)
+        // NO -> YES (requires >= 2x NO = 2m)
         vm.prank(yesBidder2);
-        arb.placeYesBond(proposalId, m * 4);
+        arb.placeYesBond(proposalId, m * 2);
 
         // Still no refund: NO bond not replaced, only YES bond set.
         assertEq(arb.withdrawable(noBidder1), 0);
 
-        // YES -> NO with a new bidder (requires >= 2x current YES = 8m)
+        // YES -> NO: matches 2m
         vm.prank(noBidder2);
-        arb.placeNoBond(proposalId, m * 8);
+        arb.placeNoBond(proposalId);
 
-        // The replaced NO bond (from noBidder1) should now be withdrawable.
-        assertEq(arb.withdrawable(noBidder1), m * 2);
+        // The replaced NO bond (from noBidder1, amount=m) should now be withdrawable.
+        assertEq(arb.withdrawable(noBidder1), m);
     }
 
     function testTimeoutSettlementAfter72hCreditsWinnerWithBothBonds() public {
@@ -184,13 +179,13 @@ contract FutarchyArbitrationTest is Test {
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
 
-        // INACTIVE -> YES
+        // INACTIVE -> YES(m)
         vm.prank(yesBidder);
         arb.placeYesBond(proposalId, m);
 
-        // YES -> NO (requires >= 2x YES)
+        // YES -> NO: matches m
         vm.prank(noBidder);
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // Cannot finalize before 72h since last flip
         vm.warp(block.timestamp + 72 hours - 1);
@@ -201,7 +196,8 @@ contract FutarchyArbitrationTest is Test {
         vm.warp(block.timestamp + 1);
         arb.finalizeByTimeout(proposalId);
 
-        assertEq(arb.withdrawable(noBidder), m + (m * 2));
+        // Winner gets YES(m) + NO(m) = 2m
+        assertEq(arb.withdrawable(noBidder), 2 * m);
         assertEq(arb.withdrawable(yesBidder), 0);
 
         assertTrue(arb.isSettled(proposalId));
@@ -215,20 +211,20 @@ contract FutarchyArbitrationTest is Test {
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
 
-        // INACTIVE -> YES
+        // INACTIVE -> YES(m)
         vm.prank(yesBidder);
         arb.placeYesBond(proposalId, m);
 
-        // YES -> NO
+        // YES -> NO: matches m
         vm.prank(noBidder);
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // settle by timeout
         vm.warp(block.timestamp + 72 hours);
         arb.finalizeByTimeout(proposalId);
 
         uint256 winnerPayout = arb.withdrawable(noBidder);
-        assertEq(winnerPayout, m + (m * 2));
+        assertEq(winnerPayout, 2 * m);
 
         // idempotence: cannot finalize again
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
@@ -242,7 +238,7 @@ contract FutarchyArbitrationTest is Test {
         arb.placeYesBond(proposalId, m * 4);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
-        arb.placeNoBond(proposalId, m * 8);
+        arb.placeNoBond(proposalId);
     }
 
     function testWithdrawWorksAndCannotDoubleWithdraw() public {
@@ -252,19 +248,19 @@ contract FutarchyArbitrationTest is Test {
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
 
-        // INACTIVE -> YES
+        // INACTIVE -> YES(m)
         vm.prank(yesBidder);
         arb.placeYesBond(proposalId, m);
 
-        // YES -> NO
+        // YES -> NO: matches m
         vm.prank(noBidder);
-        arb.placeNoBond(proposalId, m * 2);
+        arb.placeNoBond(proposalId);
 
         // Settle by timeout; NO wins and gets both bonds
         vm.warp(block.timestamp + 72 hours);
         arb.finalizeByTimeout(proposalId);
 
-        uint256 payout = m + (m * 2);
+        uint256 payout = 2 * m;
         assertEq(arb.withdrawable(noBidder), payout);
 
         // First withdraw transfers WXDAI and clears withdrawable balance
@@ -294,6 +290,15 @@ contract FutarchyArbitrationTest is Test {
         assertEq(arb.requiredYes(4), 1600e18);
     }
 
+    // ── Helper: drive proposal from INACTIVE to QUEUED ──
+
+    function _graduateProposal(uint256 proposalId) internal {
+        arb.placeYesBond(proposalId, 25e18);
+        arb.placeNoBond(proposalId);
+        // YES >= graduation threshold is always accepted.
+        arb.placeYesBond(proposalId, 100e18);
+    }
+
     function testGraduationTriggersOnlyOnNoToYesFlip() public {
         uint256 m = 1e18;
         uint256 proposalId = arb.createProposal(m);
@@ -306,10 +311,10 @@ contract FutarchyArbitrationTest is Test {
             assertEq(p.queuePosition, 0);
         }
 
-        // Flip YES -> NO.
-        arb.placeNoBond(proposalId, 50e18);
+        // Flip YES -> NO: matches 25e18.
+        arb.placeNoBond(proposalId);
 
-        // Flip NO -> YES. YES >= baseX is always accepted.
+        // Flip NO -> YES. YES >= graduation threshold always accepted.
         // This meets requiredYes(0)=100e18, so it should graduate into QUEUED.
         arb.placeYesBond(proposalId, 100e18);
 
@@ -319,21 +324,18 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testYesFlipAboveThresholdGraduates() public {
-        // Make the NO->YES flip amount exactly equal to requiredYes(0)=100e18,
-        // while still satisfying the flip-only rule (>= 2x current NO).
         uint256 proposalId = arb.createProposal(1e18);
 
-        // YES -> NO where NO=50e18 is valid if YES was <= 25e18.
+        // YES(25e18) -> NO matches(25e18)
         arb.placeYesBond(proposalId, 25e18);
-        arb.placeNoBond(proposalId, 50e18);
+        arb.placeNoBond(proposalId);
 
         {
             FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
             assertEq(uint256(p.state), uint256(FutarchyArbitration.ProposalState.NO));
         }
 
-        // NO -> YES flip requires >= max(m, 2x NO)=100e18.
-        // This meets the graduation threshold requiredYes(0)=100e18, so it should enqueue.
+        // NO -> YES: 100e18 >= graduation threshold, always accepted.
         arb.placeYesBond(proposalId, arb.requiredYes(0));
 
         FutarchyArbitration.Proposal memory p2 = arb.getProposal(proposalId);
@@ -341,21 +343,54 @@ contract FutarchyArbitrationTest is Test {
         assertEq(p2.queuePosition, 1);
     }
 
+    function testTryGraduateWorksAfterQueueDrains() public {
+        ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
+        arb.setEvaluator(address(eval));
+
+        // Graduate pid1 into queue (queueLen becomes 1, threshold = 200e18).
+        uint256 pid1 = arb.createProposal(1e18);
+        _graduateProposal(pid1);
+
+        // pid2: YES(50e18) -> NO matches(50e18) -> YES(100e18)
+        // 100e18 < requiredYes(1)=200e18, so it stays in YES state, doesn't graduate.
+        uint256 pid2 = arb.createProposal(1e18);
+        arb.placeYesBond(pid2, 50e18);
+        arb.placeNoBond(pid2);
+        arb.placeYesBond(pid2, 100e18);
+
+        FutarchyArbitration.Proposal memory p = arb.getProposal(pid2);
+        assertEq(uint256(p.state), uint256(FutarchyArbitration.ProposalState.YES));
+
+        // tryGraduate should be a no-op because threshold is still 200e18.
+        arb.tryGraduate(pid2);
+        assertEq(
+            uint256(arb.getProposal(pid2).state),
+            uint256(FutarchyArbitration.ProposalState.YES)
+        );
+
+        // Resolve pid1 — queue drains, threshold drops to 100e18.
+        arb.startNextEvaluation();
+        eval.setDecision(pid1, true);
+        eval.resolve(pid1);
+
+        // Now tryGraduate should succeed: 100e18 >= requiredYes(0)=100e18.
+        arb.tryGraduate(pid2);
+
+        FutarchyArbitration.Proposal memory p2 = arb.getProposal(pid2);
+        assertEq(uint256(p2.state), uint256(FutarchyArbitration.ProposalState.QUEUED));
+    }
+
     function testGraduationRevertsIfQueueFull() public {
         uint256 maxQ = arb.MAX_QUEUE();
-        uint256 bx = arb.baseX();
 
         // Fill the queue to MAX_QUEUE with graduated proposals.
-        // Use small initial YES (25e18) and NO (50e18) so NO stays within baseX cap.
-        // The final YES flip uses requiredYes(i) which is always >= baseX and thus
-        // always accepted, triggering graduation.
         for (uint256 i = 0; i < maxQ; i++) {
             uint256 req = arb.requiredYes(i);
 
             uint256 pid = arb.createProposal(1e18);
 
             arb.placeYesBond(pid, 25e18);
-            arb.placeNoBond(pid, 50e18);
+            arb.placeNoBond(pid);
             arb.placeYesBond(pid, req);
 
             FutarchyArbitration.Proposal memory p = arb.getProposal(pid);
@@ -367,7 +402,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 reqFull = arb.requiredYes(maxQ);
         uint256 pid2 = arb.createProposal(1e18);
         arb.placeYesBond(pid2, 25e18);
-        arb.placeNoBond(pid2, 50e18);
+        arb.placeNoBond(pid2);
 
         vm.expectRevert(FutarchyArbitration.QueueFull.selector);
         arb.placeYesBond(pid2, reqFull);
@@ -377,9 +412,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 proposalId = arb.createProposal(1e18);
 
         // Drive into QUEUED via NO -> YES graduation.
-        arb.placeYesBond(proposalId, 25e18);
-        arb.placeNoBond(proposalId, 50e18);
-        arb.placeYesBond(proposalId, 100e18);
+        _graduateProposal(proposalId);
 
         {
             FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
@@ -388,7 +421,7 @@ contract FutarchyArbitrationTest is Test {
 
         // Any bids while QUEUED should revert.
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
-        arb.placeNoBond(proposalId, 50e18);
+        arb.placeNoBond(proposalId);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
         arb.placeYesBond(proposalId, 100e18);
@@ -403,7 +436,7 @@ contract FutarchyArbitrationTest is Test {
 
         // Any bids while EVALUATING should revert.
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
-        arb.placeNoBond(proposalId, 50e18);
+        arb.placeNoBond(proposalId);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
         arb.placeYesBond(proposalId, 100e18);
@@ -414,9 +447,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 proposalId = arb.createProposal(m);
 
         // Drive into QUEUED via NO -> YES graduation.
-        arb.placeYesBond(proposalId, 25e18);
-        arb.placeNoBond(proposalId, 50e18);
-        arb.placeYesBond(proposalId, 100e18);
+        _graduateProposal(proposalId);
 
         {
             FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
@@ -442,10 +473,8 @@ contract FutarchyArbitrationTest is Test {
 
         uint256 proposalId = arb.createProposal(1e18);
 
-        // Drive into QUEUED via NO -> YES graduation.
-        arb.placeYesBond(proposalId, 25e18);
-        arb.placeNoBond(proposalId, 50e18);
-        arb.placeYesBond(proposalId, 100e18);
+        // Drive into EVALUATING: YES(25) -> NO(25) -> YES(100) -> QUEUED -> EVALUATING
+        _graduateProposal(proposalId);
         arb.startNextEvaluation();
 
         eval.setDecision(proposalId, true);
@@ -459,9 +488,8 @@ contract FutarchyArbitrationTest is Test {
         assertEq(uint256(p.state), uint256(FutarchyArbitration.ProposalState.SETTLED));
         assertEq(arb.activeEvaluationProposalId(), 0);
 
-        // Payout should be credited to YES bidder (winner receives both bonds).
-        // Note: withdrawable also includes the replaced YES bond from the first flip.
-        assertEq(arb.withdrawable(address(this)), 25e18 + 50e18 + 100e18);
+        // Payout: replaced YES(25e18) + winner gets YES(100e18) + NO(25e18)
+        assertEq(arb.withdrawable(address(this)), 25e18 + 100e18 + 25e18);
     }
 
     function testEvaluationResolvesAndPaysCorrectWinner() public {
@@ -475,12 +503,12 @@ contract FutarchyArbitrationTest is Test {
         address noBidder = vm.addr(2);
         address yesBidder2 = vm.addr(3);
 
-        // Drive into QUEUED via NO -> YES graduation.
+        // YES(25e18) -> NO matches(25e18) -> YES(100e18) -> graduates
         vm.prank(yesBidder1);
         arb.placeYesBond(proposalId, 25e18);
 
         vm.prank(noBidder);
-        arb.placeNoBond(proposalId, 50e18);
+        arb.placeNoBond(proposalId);
 
         vm.prank(yesBidder2);
         arb.placeYesBond(proposalId, 100e18);
@@ -497,8 +525,8 @@ contract FutarchyArbitrationTest is Test {
         assertFalse(p.accepted);
         assertEq(uint256(p.state), uint256(FutarchyArbitration.ProposalState.SETTLED));
 
-        // Winner payout = current YES bond (100e18) + current NO bond (50e18)
-        assertEq(arb.withdrawable(noBidder), 150e18);
+        // Winner payout = current YES bond (100e18) + current NO bond (25e18)
+        assertEq(arb.withdrawable(noBidder), 125e18);
 
         // Replaced YES bond from yesBidder1 should be withdrawable as well.
         assertEq(arb.withdrawable(yesBidder1), 25e18);
@@ -518,13 +546,11 @@ contract FutarchyArbitrationTest is Test {
         uint256 pid2 = arb.createProposal(1e18);
 
         // Graduate pid1 into QUEUED.
-        arb.placeYesBond(pid1, 25e18);
-        arb.placeNoBond(pid1, 50e18);
-        arb.placeYesBond(pid1, 100e18);
+        _graduateProposal(pid1);
 
         // Graduate pid2 into QUEUED (requires requiredYes(1)=200e18).
         arb.placeYesBond(pid2, 25e18);
-        arb.placeNoBond(pid2, 50e18);
+        arb.placeNoBond(pid2);
         arb.placeYesBond(pid2, 200e18);
 
         // Evaluate and resolve the first queued item.
@@ -545,9 +571,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 proposalId = arb.createProposal(1e18);
 
         // Drive into EVALUATING.
-        arb.placeYesBond(proposalId, 25e18);
-        arb.placeNoBond(proposalId, 50e18);
-        arb.placeYesBond(proposalId, 100e18);
+        _graduateProposal(proposalId);
         arb.startNextEvaluation();
 
         // No evaluator set, so any caller should revert NotEvaluator.
@@ -558,21 +582,21 @@ contract FutarchyArbitrationTest is Test {
     function testTotalActiveNoBondsTracksActiveNoStateOnly() public {
         uint256 pid = arb.createProposal(1e18);
 
-        // INACTIVE -> YES
+        // INACTIVE -> YES(10e18)
         arb.placeYesBond(pid, 10e18);
         assertEq(arb.totalActiveNoBonds(), 0);
 
-        // YES -> NO, amount becomes active
-        arb.placeNoBond(pid, 20e18);
-        assertEq(arb.totalActiveNoBonds(), 20e18);
+        // YES -> NO: matches 10e18, amount becomes active
+        arb.placeNoBond(pid);
+        assertEq(arb.totalActiveNoBonds(), 10e18);
 
-        // NO -> YES, NO amount no longer active
-        arb.placeYesBond(pid, 40e18);
+        // NO -> YES(20e18): NO amount no longer active
+        arb.placeYesBond(pid, 20e18);
         assertEq(arb.totalActiveNoBonds(), 0);
 
-        // YES -> NO again: new NO amount becomes active
-        arb.placeNoBond(pid, 80e18);
-        assertEq(arb.totalActiveNoBonds(), 80e18);
+        // YES -> NO: matches 20e18, new NO amount becomes active
+        arb.placeNoBond(pid);
+        assertEq(arb.totalActiveNoBonds(), 20e18);
 
         // Settle by timeout while NO: should decrement
         vm.warp(block.timestamp + 72 hours);
@@ -585,9 +609,10 @@ contract FutarchyArbitrationTest is Test {
         assertFalse(arb.safetyModeActive());
 
         // Drive a proposal into NO with a NO bond >= threshold.
+        // YES(100e18) -> NO matches(100e18) -> totalActiveNoBonds = 100e18 = baseX.
         uint256 pid = arb.createProposal(1e18);
-        arb.placeYesBond(pid, 50e18);
-        arb.placeNoBond(pid, 100e18);
+        arb.placeYesBond(pid, 100e18);
+        arb.placeNoBond(pid);
 
         assertEq(arb.totalActiveNoBonds(), 100e18);
         assertTrue(arb.safetyModeActive());
@@ -595,9 +620,10 @@ contract FutarchyArbitrationTest is Test {
 
     function testSafetyModeBlocksYesTimeoutFinalizeButAllowsNoFinalize() public {
         // Proposal 1: create large NO exposure so safety mode is active.
+        // YES(100e18) -> NO matches(100e18) -> totalActiveNoBonds = baseX.
         uint256 noPid = arb.createProposal(1e18);
-        arb.placeYesBond(noPid, 50e18);
-        arb.placeNoBond(noPid, 100e18);
+        arb.placeYesBond(noPid, 100e18);
+        arb.placeNoBond(noPid);
         assertTrue(arb.safetyModeActive());
 
         // Proposal 2: left in YES state.
@@ -618,7 +644,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testEnumHasEvaluatingState() public {
-        // Compile-time guard: ensure the enum includes EVALUATING for Phase 3+.
+        // Compile-time guard: ensure the enum includes EVALUATING.
         FutarchyArbitration.ProposalState s = FutarchyArbitration.ProposalState.EVALUATING;
         assertEq(uint256(s), uint256(FutarchyArbitration.ProposalState.EVALUATING));
     }

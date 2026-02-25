@@ -159,7 +159,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     error InvalidState();
     error BondTooSmall();
     error TimeoutNotReached();
-    error NoBondExceedsGraduationThreshold();
     error SafetyModeActive();
     error QueueFull();
     error NotEvaluator();
@@ -215,11 +214,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Bond Escalation
     // ═══════════════════════════════════════════════════════
 
-    /// @notice Place a YES bond (flip-only).
+    /// @notice Place a YES bond.
     /// @dev INACTIVE → YES requires amount >= minActivationBond.
-    ///      NO → YES requires amount >= max(minActivationBond, 2x current NO bond),
-    ///      BUT a YES bond >= the current graduation threshold is always accepted —
-    ///      guaranteeing graduation is always reachable regardless of NO bond size.
+    ///      NO → YES requires amount >= 2x current NO bond (NO always matches previous
+    ///      YES, so this doubles the escalation level each flip).
+    ///      A YES bond >= the current graduation threshold is always accepted —
+    ///      guaranteeing graduation is always reachable.
     ///      On NO → YES flip, if the bond meets the graduation threshold, the proposal
     ///      enters the evaluation queue.
     function placeYesBond(uint256 proposalId, uint256 amount) external {
@@ -268,21 +268,19 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         }
     }
 
-    /// @notice Place a NO bond (flip-only).
-    /// @dev YES → NO requires amount >= 2x current YES bond, capped at the current
-    ///      graduation threshold. First activation must be YES (INACTIVE → NO is not allowed).
-    function placeNoBond(uint256 proposalId, uint256 amount) external {
+    /// @notice Place a NO bond (match-only).
+    /// @dev NO always matches the current YES bond exactly. No amount parameter.
+    ///      First activation must be YES (INACTIVE → NO is not allowed).
+    ///      Implicitly capped: any YES >= graduation threshold graduates immediately,
+    ///      so NO can never match a bond at or above the threshold.
+    function placeNoBond(uint256 proposalId) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
-        if (amount > requiredYes(_queuedCount())) revert NoBondExceedsGraduationThreshold();
 
         ProposalState s = p.state;
-        if (s == ProposalState.YES) {
-            uint256 minFlip = p.yesBond.amount * 2;
-            if (amount < minFlip) revert BondTooSmall();
-        } else {
-            revert InvalidState();
-        }
+        if (s != ProposalState.YES) revert InvalidState();
+
+        uint256 amount = p.yesBond.amount;
 
         WXDAI.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -355,6 +353,17 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     function requiredYes(uint256 queueLen) public view returns (uint256) {
         if (queueLen >= 256) revert InvalidState();
         return baseX * (uint256(1) << queueLen);
+    }
+
+    /// @notice Graduate a YES-state proposal if it now meets the graduation threshold.
+    /// @dev Useful after the queue drains — the graduation threshold drops and a proposal
+    ///      that was previously below it may now qualify. Anyone can call.
+    function tryGraduate(uint256 proposalId) external {
+        Proposal storage p = proposals[proposalId];
+        if (!p.exists) revert ProposalNotFound();
+        if (p.state != ProposalState.YES) revert InvalidState();
+
+        _tryGraduate(proposalId, p, p.yesBond.amount);
     }
 
     /// @notice Move the next queued proposal into evaluation.

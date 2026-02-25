@@ -217,18 +217,16 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         IERC20 wxdai = arbitration.WXDAI();
 
         // Bonding path:
-        // INACTIVE -> YES
-        // YES -> NO (capped at baseX)
-        // NO -> YES: YES >= baseX is always accepted, triggers graduation
+        // INACTIVE -> YES(25e18) -> NO matches(25e18) -> YES(baseX, always accepted) -> graduates
         uint256 yesActivation = 25e18;
-        uint256 noBond = 50e18;
+        uint256 noBond = yesActivation; // NO matches YES
         uint256 yesFlipBond = arbitration.baseX(); // always accepted
 
         deal(address(wxdai), bidder, yesActivation + noBond + yesFlipBond);
         vm.startPrank(bidder);
         wxdai.approve(address(arbitration), type(uint256).max);
         arbitration.placeYesBond(arbId, yesActivation);
-        arbitration.placeNoBond(arbId, noBond);
+        arbitration.placeNoBond(arbId);
         arbitration.placeYesBond(arbId, yesFlipBond);
         vm.stopPrank();
 
