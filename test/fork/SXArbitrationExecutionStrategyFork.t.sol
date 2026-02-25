@@ -21,13 +21,23 @@ import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionSt
 
 contract MockArbitration {
     mapping(uint256 => bool) public accepted;
+    mapping(uint256 => bool) public settled;
 
     function setAccepted(uint256 arbId, bool ok) external {
         accepted[arbId] = ok;
     }
 
+    function settle(uint256 arbId, bool _accepted) external {
+        settled[arbId] = true;
+        accepted[arbId] = _accepted;
+    }
+
     function isAccepted(uint256 arbId) external view returns (bool) {
         return accepted[arbId];
+    }
+
+    function isSettled(uint256 arbId) external view returns (bool) {
+        return settled[arbId];
     }
 }
 
@@ -106,7 +116,9 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
         userVotingStrategies.push(IndexedStrategy(0, new bytes(0)));
 
         arb = new MockArbitration();
-        gated = new SXArbitrationExecutionStrategy(address(arb), address(vanillaExecutionStrategy));
+        gated = new SXArbitrationExecutionStrategy(
+            address(arb), address(vanillaExecutionStrategy), SXArbitrationExecutionStrategy.Mode.VETO
+        );
     }
 
     function testFork_blocksExecuteUntilArbitrationAccepted_andStatusShowsVotingPeriodAccepted()
@@ -136,7 +148,7 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
         );
         space.execute(proposalId, payload);
 
-        arb.setAccepted(arbId, true);
+        arb.settle(arbId, true);
 
         space.execute(proposalId, payload);
 

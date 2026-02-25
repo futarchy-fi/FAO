@@ -128,7 +128,9 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         arbitration.setEvaluator(address(evaluator));
 
         gated = new SXArbitrationExecutionStrategy(
-            address(arbitration), address(vanillaExecutionStrategy)
+            address(arbitration),
+            address(vanillaExecutionStrategy),
+            SXArbitrationExecutionStrategy.Mode.VETO
         );
     }
 
