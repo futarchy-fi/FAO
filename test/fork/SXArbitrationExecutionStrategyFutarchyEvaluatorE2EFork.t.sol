@@ -156,7 +156,7 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
         // Note: FutarchyArbitration defaults baseX=100e18, and graduation requires YES flip >=
         // baseX.
         uint256 m = arbitration.baseX();
-        arbitration.createProposalWithId(arbId, FutarchyArbitration.ProposalType.A, m);
+        arbitration.createProposalWithId(arbId, m);
 
         // Not accepted yet => execute should fail.
         vm.expectRevert(

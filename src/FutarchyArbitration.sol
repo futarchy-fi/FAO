@@ -36,8 +36,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Types
     // ═══════════════════════════════════════════════════════
 
-    enum ProposalType { A, B, C, D }
-
     enum ProposalState {
         INACTIVE,
         YES,
@@ -53,7 +51,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     }
 
     struct Proposal {
-        ProposalType proposalType;
         uint256 minActivationBond;
         Bond yesBond;
         Bond noBond;
@@ -120,7 +117,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     event ProposalCreated(
         uint256 indexed proposalId,
         address indexed creator,
-        ProposalType proposalType,
         uint256 minActivationBond
     );
 
@@ -185,7 +181,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
 
     /// @notice Create a new arbitration proposal with an auto-assigned id.
     /// @dev Anyone can create proposals. Starts INACTIVE with no bonds.
-    function createProposal(ProposalType proposalType, uint256 minActivationBond)
+    function createProposal(uint256 minActivationBond)
         external
         returns (uint256 proposalId)
     {
@@ -194,8 +190,8 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         proposalId = nextProposalId;
         nextProposalId = proposalId + 1;
 
-        _initProposal(proposalId, proposalType, minActivationBond);
-        emit ProposalCreated(proposalId, msg.sender, proposalType, minActivationBond);
+        _initProposal(proposalId, minActivationBond);
+        emit ProposalCreated(proposalId, msg.sender, minActivationBond);
     }
 
     /// @notice Create a proposal with an explicit id.
@@ -203,15 +199,14 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// that derive arbId from executionPayloadHash). Reverts if the id is already taken.
     function createProposalWithId(
         uint256 proposalId,
-        ProposalType proposalType,
         uint256 minActivationBond
     ) external returns (uint256) {
         if (minActivationBond == 0) revert InvalidMinActivationBond();
         if (proposalId == 0) revert InvalidState();
         if (proposals[proposalId].exists) revert ProposalAlreadyExists();
 
-        _initProposal(proposalId, proposalType, minActivationBond);
-        emit ProposalCreated(proposalId, msg.sender, proposalType, minActivationBond);
+        _initProposal(proposalId, minActivationBond);
+        emit ProposalCreated(proposalId, msg.sender, minActivationBond);
         return proposalId;
     }
 
@@ -479,13 +474,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Internals
     // ═══════════════════════════════════════════════════════
 
-    function _initProposal(uint256 proposalId, ProposalType proposalType, uint256 minActivationBond)
+    function _initProposal(uint256 proposalId, uint256 minActivationBond)
         internal
     {
         Proposal storage p = proposals[proposalId];
         if (p.exists) revert ProposalAlreadyExists();
 
-        p.proposalType = proposalType;
         p.minActivationBond = minActivationBond;
         p.state = ProposalState.INACTIVE;
         p.lastStateChangeAt = uint64(block.timestamp);

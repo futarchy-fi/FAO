@@ -34,7 +34,7 @@ contract FutarchyArbitrationTest is Test {
         uint256 explicitId = uint256(keccak256("arbId"));
 
         uint256 returned =
-            arb.createProposalWithId(explicitId, FutarchyArbitration.ProposalType.A, 1e18);
+            arb.createProposalWithId(explicitId, 1e18);
         assertEq(returned, explicitId);
 
         FutarchyArbitration.Proposal memory p = arb.getProposal(explicitId);
@@ -42,11 +42,11 @@ contract FutarchyArbitrationTest is Test {
 
         // cannot reuse id
         vm.expectRevert(FutarchyArbitration.ProposalAlreadyExists.selector);
-        arb.createProposalWithId(explicitId, FutarchyArbitration.ProposalType.A, 1e18);
+        arb.createProposalWithId(explicitId, 1e18);
     }
 
     function testCannotNoBidInactive() public {
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         vm.expectRevert(FutarchyArbitration.InvalidState.selector);
         arb.placeNoBond(proposalId, 1e18);
@@ -54,7 +54,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testFirstYesRequiresAtLeastM() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         vm.expectRevert(FutarchyArbitration.BondTooSmall.selector);
         arb.placeYesBond(proposalId, m - 1);
@@ -65,7 +65,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testYesToNoRequiresAtLeast2xYes() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         uint256 yes = m;
         arb.placeYesBond(proposalId, yes);
@@ -79,7 +79,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testNoToYesRequiresAtLeastMaxMOr2xNo() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         // Drive state to NO with an initial YES then a flipping NO.
         uint256 yes = m;
@@ -98,7 +98,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testNoNonFlippingBidsAllowed() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         // INACTIVE -> YES
         arb.placeYesBond(proposalId, m);
@@ -117,7 +117,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testReplacingYesAfterInterveningFlipRefundsPreviousYesBond() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         address yesBidder1 = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -144,7 +144,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testReplacingNoAfterInterveningFlipRefundsPreviousNoBond() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         address yesBidder = vm.addr(1);
         address noBidder1 = vm.addr(2);
@@ -179,7 +179,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testTimeoutSettlementAfter72hCreditsWinnerWithBothBonds() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -210,7 +210,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testSettlementIdempotenceAndPostSettlementBiddingReverts() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -247,7 +247,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testWithdrawWorksAndCannotDoubleWithdraw() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         address yesBidder = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -296,7 +296,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testGraduationTriggersOnlyOnNoToYesFlip() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         // Even if first activation is huge, it should NOT graduate (only flips).
         arb.placeYesBond(proposalId, 200e18);
@@ -321,7 +321,7 @@ contract FutarchyArbitrationTest is Test {
     function testYesFlipAboveThresholdGraduates() public {
         // Make the NO->YES flip amount exactly equal to requiredYes(0)=100e18,
         // while still satisfying the flip-only rule (>= 2x current NO).
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         // YES -> NO where NO=50e18 is valid if YES was <= 25e18.
         arb.placeYesBond(proposalId, 25e18);
@@ -348,7 +348,7 @@ contract FutarchyArbitrationTest is Test {
         for (uint256 i = 0; i < maxQ; i++) {
             uint256 req = arb.requiredYes(i);
 
-            uint256 pid = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+            uint256 pid = arb.createProposal(1e18);
 
             // YES -> NO -> YES, where the NO->YES flip amount meets the graduation threshold.
             // Ensure flip constraints are satisfied:
@@ -365,7 +365,7 @@ contract FutarchyArbitrationTest is Test {
 
         // Next graduation attempt should revert with QueueFull.
         uint256 reqFull = arb.requiredYes(maxQ);
-        uint256 pid2 = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 pid2 = arb.createProposal(1e18);
         arb.placeYesBond(pid2, reqFull / 4);
         arb.placeNoBond(pid2, reqFull / 2);
 
@@ -374,7 +374,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testQueuedAndEvaluatingProposalsCannotBeBidOn() public {
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         // Drive into QUEUED via NO -> YES graduation.
         arb.placeYesBond(proposalId, 200e18);
@@ -411,7 +411,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testStartNextEvaluationMovesHeadToEvaluating() public {
         uint256 m = 1e18;
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        uint256 proposalId = arb.createProposal(m);
 
         // Drive into QUEUED via NO -> YES graduation.
         arb.placeYesBond(proposalId, 200e18);
@@ -440,7 +440,7 @@ contract FutarchyArbitrationTest is Test {
         ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
         arb.setEvaluator(address(eval));
 
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         // Drive into QUEUED via NO -> YES graduation.
         arb.placeYesBond(proposalId, 200e18);
@@ -469,7 +469,7 @@ contract FutarchyArbitrationTest is Test {
         ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
         arb.setEvaluator(address(eval));
 
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         address yesBidder1 = vm.addr(1);
         address noBidder = vm.addr(2);
@@ -514,8 +514,8 @@ contract FutarchyArbitrationTest is Test {
         arb.setEvaluator(address(eval));
 
         // Create two proposals and graduate both into the queue.
-        uint256 pid1 = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
-        uint256 pid2 = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 pid1 = arb.createProposal(1e18);
+        uint256 pid2 = arb.createProposal(1e18);
 
         // Graduate pid1 into QUEUED.
         arb.placeYesBond(pid1, 200e18);
@@ -542,7 +542,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testResolveActiveEvaluationRevertsForNonEvaluator() public {
-        uint256 proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 proposalId = arb.createProposal(1e18);
 
         // Drive into EVALUATING.
         arb.placeYesBond(proposalId, 200e18);
@@ -556,7 +556,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testTotalActiveNoBondsTracksActiveNoStateOnly() public {
-        uint256 pid = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 pid = arb.createProposal(1e18);
 
         // INACTIVE -> YES
         arb.placeYesBond(pid, 10e18);
@@ -585,7 +585,7 @@ contract FutarchyArbitrationTest is Test {
         assertFalse(arb.safetyModeActive());
 
         // Drive a proposal into NO with a NO bond >= threshold.
-        uint256 pid = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 pid = arb.createProposal(1e18);
         arb.placeYesBond(pid, 50e18);
         arb.placeNoBond(pid, 100e18);
 
@@ -595,13 +595,13 @@ contract FutarchyArbitrationTest is Test {
 
     function testSafetyModeBlocksYesTimeoutFinalizeButAllowsNoFinalize() public {
         // Proposal 1: create large NO exposure so safety mode is active.
-        uint256 noPid = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 noPid = arb.createProposal(1e18);
         arb.placeYesBond(noPid, 50e18);
         arb.placeNoBond(noPid, 100e18);
         assertTrue(arb.safetyModeActive());
 
         // Proposal 2: left in YES state.
-        uint256 yesPid = arb.createProposal(FutarchyArbitration.ProposalType.A, 1e18);
+        uint256 yesPid = arb.createProposal(1e18);
         arb.placeYesBond(yesPid, 1e18);
 
         // Advance beyond TIMEOUT for both proposals.

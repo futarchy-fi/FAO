@@ -132,7 +132,7 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
 
         // Create arbitration proposal with aligned deterministic id.
         uint256 m = 1e18;
-        arbitration.createProposalWithId(arbId, FutarchyArbitration.ProposalType.A, m);
+        arbitration.createProposalWithId(arbId, m);
 
         // Not accepted yet => execute should fail.
         vm.expectRevert(

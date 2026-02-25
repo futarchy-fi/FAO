@@ -78,11 +78,10 @@ contract WXDAIMock is IERC20 {
             return actors[seed % actors.length];
         }
 
-        function create(uint256 seedType, uint256 mRaw) external returns (uint256 proposalId) {
+        function create(uint256 mRaw) external returns (uint256 proposalId) {
             uint256 m = bound(mRaw, 1e6, 1e24);
-            FutarchyArbitration.ProposalType t = FutarchyArbitration.ProposalType(seedType % 4);
             // creator identity doesn't matter
-            proposalId = arb.createProposal(t, m);
+            proposalId = arb.createProposal(m);
         }
 
         function yes(uint256 proposalId, uint256 actorSeed, uint256 amtRaw) external {

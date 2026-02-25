@@ -42,7 +42,7 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
         // alignment.
         uint256 proposalId = uint256(conditionId);
         uint256 m = 100e18;
-        arb.createProposalWithId(proposalId, FutarchyArbitration.ProposalType.A, m);
+        arb.createProposalWithId(proposalId, m);
 
         // Drive INACTIVE -> YES -> NO -> YES flip with enough YES to trigger graduation
         // (requiredYes(0)=baseX=100e18).

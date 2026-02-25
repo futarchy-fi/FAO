@@ -36,7 +36,7 @@ contract FutarchyEvaluatorIntegrationTest is Test {
 
     function _createQueuedAndEvaluatingProposal() internal returns (uint256 proposalId) {
         uint256 m = 1e18;
-        proposalId = arb.createProposal(FutarchyArbitration.ProposalType.A, m);
+        proposalId = arb.createProposal(m);
 
         // Drive state: INACTIVE -> YES -> NO -> (NO->YES flip) => QUEUED
         arb.placeYesBond(proposalId, 100e18);
