@@ -1,330 +1,294 @@
-const DASHBOARD_CONFIG = {
-  rpcUrl: 'https://rpc.gnosischain.com',
-  chainLabel: 'Gnosis',
-  token: {
-    address: '0xb222e2a6e065c2559a74168eeaba298af91b84b9',
-  },
-  sale: {
-    address: '0x460915528ce37ec66a26b98b791db512bc62dc17',
-  },
-  liquidityManager: {
-    // Fill this in after manager is deployed in production.
-    address: '',
-  },
-};
+/* FAO Dashboard — On-chain data fetcher (ethers.js v6) */
 
-const tokenAbi = [
-  'function name() view returns (string)',
-  'function symbol() view returns (string)',
-  'function decimals() view returns (uint8)',
-  'function totalSupply() view returns (uint256)',
-];
+(() => {
+  'use strict';
 
-const saleAbi = [
-  'function saleStart() view returns (uint256)',
-  'function initialPhaseEndTime() view returns (uint256)',
-  'function initialPhaseFinalized() view returns (bool)',
-  'function minInitialPhaseSold() view returns (uint256)',
-  'function initialTokensSold() view returns (uint256)',
-  'function totalCurveTokensSold() view returns (uint256)',
-  'function totalAmountRaised() view returns (uint256)',
-  'function initialFundsRaised() view returns (uint256)',
-  'function totalCurveFundsRaised() view returns (uint256)',
-  'function totalSaleTokens() view returns (uint256)',
-  'function currentPriceWeiPerToken() view returns (uint256)',
-  'function longTargetReachedAt() view returns (uint256)',
-];
+  const RPC = 'https://rpc.gnosischain.com';
+  const REFRESH_INTERVAL = 60_000;
 
-const liquidityAbi = [
-  'function inConditionalMode() view returns (bool)',
-  'function spotLiquidity() view returns (uint128)',
-  'function conditionalLiquidity() view returns (uint128)',
-  'function totalManagedLiquidity() view returns (uint256)',
-  'function previewLiquidityMigration() view returns (uint128)',
-  'function emergencyExitReady() view returns (bool)',
-  'function activeProposalId() view returns (uint256)',
-  'function emergencyExitArmedAt() view returns (uint256)',
-];
+  const ADDRS = {
+    token:    '0x9494C281a02c9ae5f72b224B514793ad2DD8cA17',
+    sale:     '0x38FF65E8839B581b5ad12383d93206AFcF38D4b2',
+    liqMgr:   '0x9D7692738a4d323338b9007d65d7F79e013B3476',
+    proposal: '0x638A32b9EF2588CEcDf148135899Acc882aA1CC2',
+  };
 
-const dom = {
-  refreshBtn: document.getElementById('dashboard-refresh'),
-  tokenState: document.getElementById('token-state'),
-  tokenName: document.getElementById('token-name'),
-  tokenSymbol: document.getElementById('token-symbol'),
-  tokenDecimals: document.getElementById('token-decimals'),
-  tokenSupply: document.getElementById('token-total-supply'),
-  tokenUpdated: document.querySelector('#token-updated span'),
-  tokenError: document.getElementById('token-error'),
+  /* ── ABI Fragments ── */
 
-  saleState: document.getElementById('sale-state'),
-  salePhase: document.getElementById('sale-phase'),
-  salePrice: document.getElementById('sale-price'),
-  saleInitialTarget: document.getElementById('sale-initial-target'),
-  saleTotalSold: document.getElementById('sale-total-sold'),
-  saleTotalRaised: document.getElementById('sale-total-raised'),
-  saleLongTarget: document.getElementById('sale-long-target'),
-  saleUpdated: document.querySelector('#sale-updated span'),
-  saleError: document.getElementById('sale-error'),
+  const TOKEN_ABI = [
+    'function name() view returns (string)',
+    'function symbol() view returns (string)',
+    'function decimals() view returns (uint8)',
+    'function totalSupply() view returns (uint256)',
+    'function balanceOf(address) view returns (uint256)',
+  ];
 
-  liquidityState: document.getElementById('liquidity-state'),
-  liquidityMode: document.getElementById('liquidity-mode'),
-  liquiditySpot: document.getElementById('liquidity-spot'),
-  liquidityConditional: document.getElementById('liquidity-conditional'),
-  liquidityTotal: document.getElementById('liquidity-total'),
-  liquidityMigration: document.getElementById('liquidity-migration'),
-  liquidityEmergency: document.getElementById('liquidity-emergency'),
-  liquiditySource: document.getElementById('liquidity-source'),
-  liquidityUpdated: document.querySelector('#liquidity-updated span'),
-  liquidityError: document.getElementById('liquidity-error'),
-};
+  const SALE_ABI = [
+    'function saleStart() view returns (uint256)',
+    'function initialPhaseEnd() view returns (uint256)',
+    'function initialPhaseFinalized() view returns (bool)',
+    'function initialTokensSold() view returns (uint256)',
+    'function totalCurveTokensSold() view returns (uint256)',
+    'function initialFundsRaised() view returns (uint256)',
+    'function totalCurveFundsRaised() view returns (uint256)',
+    'function totalAmountRaised() view returns (uint256)',
+    'function totalSaleTokens() view returns (uint256)',
+    'function currentPriceWeiPerToken() view returns (uint256)',
+    'function longTargetReachedAt() view returns (uint256)',
+    'function INITIAL_PRICE_WEI_PER_TOKEN() view returns (uint256)',
+  ];
 
-function setState(element, state, label) {
-  element.classList.remove('state-badge--loading', 'state-badge--ok', 'state-badge--warning', 'state-badge--error');
-  element.classList.add(`state-badge--${state}`);
-  element.textContent = label;
-}
+  const LIQ_ABI = [
+    'function inConditionalMode() view returns (bool)',
+    'function spotLiquidity() view returns (uint128)',
+    'function conditionalLiquidity() view returns (uint128)',
+    'function totalManagedLiquidity() view returns (uint256)',
+    'function totalSupply() view returns (uint256)',
+    'function activeProposalId() view returns (uint256)',
+    'function emergencyExitExecuted() view returns (bool)',
+    'function emergencyExitReady() view returns (bool)',
+    'function initializedFromSale() view returns (bool)',
+  ];
 
-function formatInteger(value) {
-  if (value === null || value === undefined) return '—';
+  /* ── Helpers ── */
 
-  if (typeof value === 'number') {
-    return value.toLocaleString('en-US');
+  function setField(id, value, isError) {
+    const el = document.querySelector(`[data-field="${id}"]`);
+    if (!el) return;
+    el.textContent = value;
+    el.classList.remove('loading', 'error');
+    if (isError) el.classList.add('error');
   }
 
-  try {
-    return new Intl.NumberFormat('en-US').format(value);
-  } catch (error) {
-    return String(value);
-  }
-}
-
-function formatTokenAmount(value, decimals) {
-  const parsed = ethers.formatUnits(value, decimals);
-  const [whole, fraction = ''] = parsed.split('.');
-  const trimmedFraction = fraction.slice(0, 4).replace(/0+$/, '');
-  const wholeFormatted = new Intl.NumberFormat('en-US').format(BigInt(whole));
-
-  return trimmedFraction ? `${wholeFormatted}.${trimmedFraction} FAO` : `${wholeFormatted} FAO`;
-}
-
-function formatWei(value) {
-  const parsed = ethers.formatEther(value);
-  const [whole, fraction = ''] = parsed.split('.');
-  const trimmedFraction = fraction.slice(0, 6).replace(/0+$/, '');
-  const wholeFormatted = new Intl.NumberFormat('en-US').format(BigInt(whole));
-
-  return trimmedFraction
-    ? `${wholeFormatted}.${trimmedFraction} xDAI`
-    : `${wholeFormatted} xDAI`;
-}
-
-function formatTime(unixTs) {
-  if (!unixTs || BigInt(unixTs) === 0n) return '—';
-  const date = new Date(Number(unixTs) * 1000);
-  return date.toLocaleString();
-}
-
-function setSourceUpdated(element, block) {
-  if (!element || !block) {
-    element.textContent = 'source unavailable';
-    return;
+  function setLoading(ids) {
+    ids.forEach(id => {
+      const el = document.querySelector(`[data-field="${id}"]`);
+      if (el) {
+        el.textContent = '...';
+        el.classList.add('loading');
+        el.classList.remove('error');
+      }
+    });
   }
 
-  element.textContent = `block ${block.number} on ${DASHBOARD_CONFIG.chainLabel} at ${new Date(Number(block.timestamp) * 1000).toLocaleString()}`;
-}
-
-function setError(errorElement, panelState, message) {
-  errorElement.textContent = message;
-  setState(panelState, 'error', 'Error');
-}
-
-function clearError(errorElement, panelState, message) {
-  errorElement.textContent = '';
-  if (message) setState(panelState, 'ok', message);
-}
-
-async function loadTokenStatus(provider, block) {
-  clearError(dom.tokenError, dom.tokenState, 'Loading');
-  setState(dom.tokenState, 'loading', 'Loading');
-
-  const token = new ethers.Contract(DASHBOARD_CONFIG.token.address, tokenAbi, provider);
-
-  try {
-    const [name, symbol, decimals, totalSupply] = await Promise.all([
-      token.name({ blockTag: block.number }),
-      token.symbol({ blockTag: block.number }),
-      token.decimals({ blockTag: block.number }),
-      token.totalSupply({ blockTag: block.number }),
-    ]);
-
-    dom.tokenName.textContent = name;
-    dom.tokenSymbol.textContent = symbol;
-    dom.tokenDecimals.textContent = String(decimals);
-    dom.tokenSupply.textContent = formatTokenAmount(totalSupply, decimals);
-
-    setSourceUpdated(dom.tokenUpdated, block);
-    setState(dom.tokenState, 'ok', 'Updated');
-    clearError(dom.tokenError, dom.tokenState, 'Updated');
-  } catch (error) {
-    setError(dom.tokenError, dom.tokenState, `Could not load token metrics: ${error.message}`);
-  }
-}
-
-function resolveSalePhase(saleStart, phaseEnd, finalized, nowTs) {
-  if (saleStart === 0n) {
-    return 'Not started';
+  function formatTokens(raw, decimals) {
+    if (decimals == null) decimals = 18;
+    const str = ethers.formatUnits(raw, decimals);
+    const num = parseFloat(str);
+    if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + 'M';
+    if (num >= 1_000) return (num / 1_000).toFixed(2) + 'K';
+    return num.toFixed(2);
   }
 
-  if (finalized) {
-    return 'Bonding curve';
+  function formatEth(raw) {
+    const str = ethers.formatEther(raw);
+    const num = parseFloat(str);
+    if (num >= 1_000) return num.toFixed(2) + ' xDAI';
+    if (num >= 1) return num.toFixed(4) + ' xDAI';
+    return num.toFixed(6) + ' xDAI';
   }
 
-  if (nowTs < Number(phaseEnd)) {
-    return 'Initial fixed-price phase';
+  function formatPrice(raw) {
+    const str = ethers.formatEther(raw);
+    const num = parseFloat(str);
+    return num.toFixed(6) + ' xDAI';
   }
 
-  return 'Waiting for finalization';
-}
-
-async function loadSaleStatus(provider, block) {
-  clearError(dom.saleError, dom.saleState, 'Loading');
-  setState(dom.saleState, 'loading', 'Loading');
-
-  const sale = new ethers.Contract(DASHBOARD_CONFIG.sale.address, saleAbi, provider);
-
-  try {
-    const [
-      saleStart,
-      phaseEnd,
-      finalized,
-      minTarget,
-      initialSold,
-      curveSold,
-      totalRaised,
-      initialRaised,
-      curveRaised,
-      totalSaleTokens,
-      priceWei,
-      longTargetReachedAt,
-    ] = await Promise.all([
-      sale.saleStart({ blockTag: block.number }),
-      sale.initialPhaseEndTime({ blockTag: block.number }),
-      sale.initialPhaseFinalized({ blockTag: block.number }),
-      sale.minInitialPhaseSold({ blockTag: block.number }),
-      sale.initialTokensSold({ blockTag: block.number }),
-      sale.totalCurveTokensSold({ blockTag: block.number }),
-      sale.totalAmountRaised({ blockTag: block.number }),
-      sale.initialFundsRaised({ blockTag: block.number }),
-      sale.totalCurveFundsRaised({ blockTag: block.number }),
-      sale.totalSaleTokens({ blockTag: block.number }),
-      sale.currentPriceWeiPerToken({ blockTag: block.number }),
-      sale.longTargetReachedAt({ blockTag: block.number }),
-    ]);
-
-    const nowTs = Number(block.timestamp);
-
-    dom.salePhase.textContent = resolveSalePhase(saleStart, phaseEnd, finalized, nowTs);
-    dom.salePrice.textContent = `${formatWei(priceWei)} / FAO`;
-    dom.saleInitialTarget.textContent = `${formatInteger(initialSold)} / ${formatInteger(minTarget)} FAO`;
-    dom.saleTotalSold.textContent = `${formatInteger(curveSold + initialSold)} / ${formatInteger(totalSaleTokens)} FAO`;
-    dom.saleTotalRaised.textContent = `${formatWei(initialRaised)} (initial), ${formatWei(curveRaised)} (curve), ${formatWei(totalRaised)} total`;
-    dom.saleLongTarget.textContent = longTargetReachedAt === 0n ? 'not reached yet' : formatTime(longTargetReachedAt);
-
-    setSourceUpdated(dom.saleUpdated, block);
-    setState(dom.saleState, 'ok', 'Updated');
-    clearError(dom.saleError, dom.saleState, 'Updated');
-  } catch (error) {
-    setError(dom.saleError, dom.saleState, `Could not load sale metrics: ${error.message}`);
-  }
-}
-
-async function loadLiquidityStatus(provider, block) {
-  clearError(dom.liquidityError, dom.liquidityState, 'Loading');
-  setState(dom.liquidityState, 'loading', 'Loading');
-  const addr = (DASHBOARD_CONFIG.liquidityManager.address || '').trim();
-
-  if (!addr) {
-    dom.liquidityMode.textContent = 'Not configured';
-    dom.liquiditySpot.textContent = '—';
-    dom.liquidityConditional.textContent = '—';
-    dom.liquidityTotal.textContent = '—';
-    dom.liquidityMigration.textContent = '—';
-    dom.liquidityEmergency.textContent = 'Not configured';
-    dom.liquiditySource.textContent = 'Pending deployment/configuration';
-    dom.liquidityUpdated.textContent = `as-of ${new Date(Number(block.timestamp) * 1000).toLocaleString()}`;
-    setState(dom.liquidityState, 'warning', 'Pending');
-    return;
+  function setDotStatus(panelId, stale) {
+    const dot = document.querySelector(`#${panelId} .live-dot`);
+    if (dot) dot.classList.toggle('stale', !!stale);
   }
 
-  const manager = new ethers.Contract(addr, liquidityAbi, provider);
+  /* ── Provider & Contracts ── */
 
-  try {
-    const [
-      inConditionalMode,
-      spotLiquidity,
-      conditionalLiquidity,
-      totalLiquidity,
-      migrationPreview,
-      emergencyReady,
-      activeProposalId,
-    ] = await Promise.all([
-      manager.inConditionalMode({ blockTag: block.number }),
-      manager.spotLiquidity({ blockTag: block.number }),
-      manager.conditionalLiquidity({ blockTag: block.number }),
-      manager.totalManagedLiquidity({ blockTag: block.number }),
-      manager.previewLiquidityMigration({ blockTag: block.number }),
-      manager.emergencyExitReady({ blockTag: block.number }),
-      manager.activeProposalId({ blockTag: block.number }),
-    ]);
+  let provider, token, sale, liqMgr;
+  let lastSuccess = {};
 
-    dom.liquidityMode.textContent = inConditionalMode ? 'Conditional mode' : 'Spot mode';
-    dom.liquiditySpot.textContent = formatInteger(spotLiquidity);
-    dom.liquidityConditional.textContent = formatInteger(conditionalLiquidity);
-    dom.liquidityTotal.textContent = formatInteger(totalLiquidity);
-    dom.liquidityMigration.textContent = formatInteger(migrationPreview);
-    dom.liquidityEmergency.textContent = emergencyReady
-      ? `ready (proposalId: ${formatInteger(activeProposalId)})`
-      : 'inactive';
-    dom.liquiditySource.textContent = `${addr.slice(0, 8)}…${addr.slice(-8)} (fLP)`;
-
-    setSourceUpdated(dom.liquidityUpdated, block);
-    setState(dom.liquidityState, 'ok', 'Updated');
-    clearError(dom.liquidityError, dom.liquidityState, 'Updated');
-  } catch (error) {
-    setError(dom.liquidityError, dom.liquidityState, `Could not load liquidity metrics: ${error.message}`);
+  function init() {
+    if (typeof ethers === 'undefined') {
+      console.error('ethers.js not loaded');
+      return;
+    }
+    provider = new ethers.JsonRpcProvider(RPC);
+    token = new ethers.Contract(ADDRS.token, TOKEN_ABI, provider);
+    sale = new ethers.Contract(ADDRS.sale, SALE_ABI, provider);
+    liqMgr = new ethers.Contract(ADDRS.liqMgr, LIQ_ABI, provider);
   }
-}
 
-async function loadDashboard() {
-  const label = 'Loading dashboard';
-  dom.refreshBtn.disabled = true;
-  dom.refreshBtn.textContent = `${label}...`;
+  /* ── Fetchers ── */
 
-  try {
-    const provider = new ethers.JsonRpcProvider(DASHBOARD_CONFIG.rpcUrl);
-    const block = await provider.getBlock('latest');
+  async function fetchToken() {
+    const fields = ['token-name', 'token-symbol', 'token-supply', 'token-decimals', 'token-sale-balance', 'token-lp-balance'];
+    setLoading(fields);
+    try {
+      const [name, symbol, decimals, supply, saleBal, lpBal] = await Promise.all([
+        token.name(),
+        token.symbol(),
+        token.decimals(),
+        token.totalSupply(),
+        token.balanceOf(ADDRS.sale),
+        token.balanceOf(ADDRS.liqMgr),
+      ]);
 
-    await Promise.all([
-      loadTokenStatus(provider, block),
-      loadSaleStatus(provider, block),
-      loadLiquidityStatus(provider, block),
-    ]);
-  } catch (error) {
-    const message = `Global RPC failure: ${error.message}`;
-    setError(dom.tokenError, dom.tokenState, message);
-    setError(dom.saleError, dom.saleState, message);
-    setError(dom.liquidityError, dom.liquidityState, message);
-  } finally {
-    dom.refreshBtn.disabled = false;
-    dom.refreshBtn.textContent = 'Refresh status';
+      const dec = Number(decimals);
+      setField('token-name', name);
+      setField('token-symbol', symbol);
+      setField('token-decimals', String(dec));
+      setField('token-supply', formatTokens(supply, dec) + ' ' + symbol);
+      setField('token-sale-balance', formatTokens(saleBal, dec));
+      setField('token-lp-balance', formatTokens(lpBal, dec));
+      setDotStatus('panel-token', false);
+      lastSuccess.token = Date.now();
+    } catch (e) {
+      console.error('Token fetch error:', e);
+      fields.forEach(f => setField(f, lastSuccess.token ? '(stale)' : 'error', true));
+      setDotStatus('panel-token', true);
+    }
   }
-}
 
-if (dom.refreshBtn) {
-  dom.refreshBtn.addEventListener('click', loadDashboard);
-}
+  async function fetchSale() {
+    const fields = [
+      'sale-phase', 'sale-price', 'sale-initial-sold', 'sale-curve-sold',
+      'sale-total-raised', 'sale-initial-raised', 'sale-curve-raised',
+      'sale-total-alloc', 'sale-start-price',
+    ];
+    setLoading(fields);
+    try {
+      const [
+        saleStart, initialEnd, finalized,
+        initialSold, curveSold,
+        initialRaised, curveRaised, totalRaised,
+        totalAlloc, longTarget, initPrice,
+      ] = await Promise.all([
+        sale.saleStart(),
+        sale.initialPhaseEnd(),
+        sale.initialPhaseFinalized(),
+        sale.initialTokensSold(),
+        sale.totalCurveTokensSold(),
+        sale.initialFundsRaised(),
+        sale.totalCurveFundsRaised(),
+        sale.totalAmountRaised(),
+        sale.totalSaleTokens(),
+        sale.longTargetReachedAt(),
+        sale.INITIAL_PRICE_WEI_PER_TOKEN(),
+      ]);
 
-window.addEventListener('DOMContentLoaded', () => {
-  loadDashboard();
-  setInterval(loadDashboard, 60_000);
-});
+      // Determine phase
+      let phase;
+      const now = Math.floor(Date.now() / 1000);
+      const start = Number(saleStart);
+      if (start === 0) {
+        phase = 'Not Started';
+      } else if (!finalized && now < Number(initialEnd)) {
+        phase = 'Initial Phase';
+      } else if (finalized && Number(longTarget) === 0) {
+        phase = 'Bonding Curve';
+      } else if (Number(longTarget) > 0) {
+        phase = 'Long Target Reached';
+      } else {
+        phase = 'Initial Phase Ended';
+      }
+
+      setField('sale-phase', phase);
+      setField('sale-start-price', formatPrice(initPrice));
+      setField('sale-initial-sold', formatTokens(initialSold));
+      setField('sale-curve-sold', formatTokens(curveSold));
+      setField('sale-initial-raised', formatEth(initialRaised));
+      setField('sale-curve-raised', formatEth(curveRaised));
+      setField('sale-total-raised', formatEth(totalRaised));
+      setField('sale-total-alloc', formatTokens(totalAlloc));
+
+      // Current price may revert if sale not started
+      try {
+        const price = await sale.currentPriceWeiPerToken();
+        setField('sale-price', formatPrice(price));
+      } catch {
+        setField('sale-price', start === 0 ? 'N/A' : 'error', start !== 0);
+      }
+
+      setDotStatus('panel-sale', false);
+      lastSuccess.sale = Date.now();
+    } catch (e) {
+      console.error('Sale fetch error:', e);
+      fields.forEach(f => setField(f, lastSuccess.sale ? '(stale)' : 'error', true));
+      setDotStatus('panel-sale', true);
+    }
+  }
+
+  async function fetchLiquidity() {
+    const fields = [
+      'liq-mode', 'liq-initialized', 'liq-spot', 'liq-conditional',
+      'liq-total', 'liq-flp-supply', 'liq-proposal-id',
+      'liq-emergency', 'liq-emergency-ready',
+    ];
+    setLoading(fields);
+    try {
+      const [
+        inCond, initialized, spotLiq, condLiq, totalLiq,
+        flpSupply, proposalId, emergencyExit, emergencyReady,
+      ] = await Promise.all([
+        liqMgr.inConditionalMode(),
+        liqMgr.initializedFromSale(),
+        liqMgr.spotLiquidity(),
+        liqMgr.conditionalLiquidity(),
+        liqMgr.totalManagedLiquidity(),
+        liqMgr.totalSupply(),
+        liqMgr.activeProposalId(),
+        liqMgr.emergencyExitExecuted(),
+        liqMgr.emergencyExitReady(),
+      ]);
+
+      setField('liq-mode', inCond ? 'Conditional' : 'Spot');
+      setField('liq-initialized', initialized ? 'Yes' : 'No');
+      setField('liq-spot', spotLiq.toString());
+      setField('liq-conditional', condLiq.toString());
+      setField('liq-total', totalLiq.toString());
+      setField('liq-flp-supply', formatTokens(flpSupply));
+      setField('liq-proposal-id', Number(proposalId) === 0 ? 'None' : '#' + proposalId.toString());
+      setField('liq-emergency', emergencyExit ? 'EXECUTED' : 'No');
+      setField('liq-emergency-ready', emergencyReady ? 'Ready' : 'Not Armed');
+
+      setDotStatus('panel-liq', false);
+      lastSuccess.liq = Date.now();
+    } catch (e) {
+      console.error('Liquidity fetch error:', e);
+      fields.forEach(f => setField(f, lastSuccess.liq ? '(stale)' : 'error', true));
+      setDotStatus('panel-liq', true);
+    }
+  }
+
+  /* ── Refresh Loop ── */
+
+  async function refresh() {
+    await Promise.all([fetchToken(), fetchSale(), fetchLiquidity()]);
+  }
+
+  function start() {
+    init();
+    if (!provider) return;
+    refresh();
+    setInterval(refresh, REFRESH_INTERVAL);
+  }
+
+  /* ── Mobile Nav Toggle ── */
+
+  function initNav() {
+    const btn = document.querySelector('.nav-hamburger');
+    const links = document.querySelector('.nav-links');
+    if (btn && links) {
+      btn.addEventListener('click', () => links.classList.toggle('open'));
+      links.querySelectorAll('a').forEach(a => {
+        a.addEventListener('click', () => links.classList.remove('open'));
+      });
+    }
+  }
+
+  /* ── Boot ── */
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { initNav(); start(); });
+  } else {
+    initNav();
+    start();
+  }
+})();

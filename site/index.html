@@ -1,165 +1,292 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FAO | Futarchy Autonomous Optimizer</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FAO — Futarchy Autonomous Optimizer</title>
+  <meta name="description" content="Governance through prediction markets. Let prices decide. Buy FAO, create proposals, trade outcomes." />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
+  <script src="dashboard.js" defer></script>
 </head>
-  <body>
-    <header class="hero">
-      <div class="hero__visual" aria-hidden="true"></div>
-      <div class="hero__content">
-        <h1>Futarchy Autonomous Optimizer</h1>
-        <div class="hero__cta">
-          <a class="button" href="#sale">Buy FAO</a>
-          <a class="button" href="#redeem">Ragequit / Redeem</a>
-        </div>
-      </div>
-    </header>
+<body>
 
-    <div class="lede-banner">
-      <p class="lede">Minimal, static controls for the FAO sale, redemption/ragequit, and on-chain docs.</p>
+<!-- ═══ Nav ═══ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <span class="nav-logo">FAO</span>
+    <ul class="nav-links">
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#sale">Sale</a></li>
+      <li><a href="#governance">Governance</a></li>
+      <li><a href="#contracts">Contracts</a></li>
+      <li><a href="#resources">Resources</a></li>
+    </ul>
+    <button class="nav-hamburger" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<!-- ═══ Hero ═══ -->
+<section id="hero" class="section hero">
+  <h1 class="hero-title"><span class="accent">FAO</span> — Futarchy Autonomous Optimizer</h1>
+  <p class="hero-tagline">Governance through prediction markets. Let prices decide.</p>
+  <div class="hero-ctas">
+    <a href="#sale" class="btn btn-primary">Buy FAO</a>
+    <a href="#dashboard" class="btn btn-secondary">Live Dashboard</a>
+    <a href="https://github.com/futarchy-fi/FAO" target="_blank" rel="noopener" class="btn btn-secondary">GitHub</a>
+  </div>
+</section>
+
+<!-- ═══ How It Works ═══ -->
+<section id="how-it-works" class="section">
+  <h2 class="section-title">How It Works</h2>
+  <p class="section-subtitle">FAO uses prediction markets to make governance decisions. Token holders propose changes, markets price them, and the best outcomes win.</p>
+
+  <div class="steps-grid">
+    <div class="step-card">
+      <div class="step-num">1</div>
+      <h3>Token &amp; Sale</h3>
+      <p>Buy FAO via a fixed-price initial phase or a bonding curve. Proceeds flow to the protocol treasury and liquidity pools on Gnosis Chain.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <h3>Proposals</h3>
+      <p>Anyone can create governance proposals through the FutarchyOfficialProposalSource. Candidates are promoted to official status by the authorized proposer.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">3</div>
+      <h3>Markets</h3>
+      <p>Each proposal spawns YES/NO conditional tokens that trade on Swapr. The market price represents the crowd's probability estimate of each outcome.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">4</div>
+      <h3>Settlement</h3>
+      <p>When markets resolve, the winning outcome executes or rejects the proposal. 80% of liquidity migrates to conditional pools during active proposals.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">5</div>
+      <h3>Ragequit</h3>
+      <p>Burn FAO at any time to exit with your pro-rata share of the treasury. Eligible assets include xDAI and any whitelisted ragequit tokens.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Live Dashboard ═══ -->
+<section id="dashboard" class="section">
+  <h2 class="section-title">Live Dashboard</h2>
+  <p class="section-subtitle">On-chain data from Gnosis Chain, refreshed every 60 seconds.</p>
+
+  <div class="dash-grid">
+    <!-- Token Panel -->
+    <div class="dash-panel" id="panel-token">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">FAO Token</span>
+      </div>
+      <div class="dash-row"><span class="dash-label">Name</span><span class="dash-value loading" data-field="token-name">...</span></div>
+      <div class="dash-row"><span class="dash-label">Symbol</span><span class="dash-value loading" data-field="token-symbol">...</span></div>
+      <div class="dash-row"><span class="dash-label">Decimals</span><span class="dash-value loading" data-field="token-decimals">...</span></div>
+      <div class="dash-row"><span class="dash-label">Total Supply</span><span class="dash-value loading" data-field="token-supply">...</span></div>
+      <div class="dash-row"><span class="dash-label">Sale Balance</span><span class="dash-value loading" data-field="token-sale-balance">...</span></div>
+      <div class="dash-row"><span class="dash-label">LP Balance</span><span class="dash-value loading" data-field="token-lp-balance">...</span></div>
     </div>
 
-    <main class="wrapper">
-    <section id="sale" class="card">
-      <div class="section__header">
-        <h2>Sale</h2>
-        <p>Two-week fixed-price launch followed by a linear bonding curve.</p>
+    <!-- Sale Panel -->
+    <div class="dash-panel" id="panel-sale">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">FAO Sale</span>
       </div>
-      <div class="grid">
-        <div class="panel">
-          <h3>Current phase</h3>
-          <p class="muted">Initial fixed price, then bonding curve based on net sales.</p>
-          <div class="status">Status: <span class="badge badge--pending">Stubbed</span></div>
-          <p class="note">On-chain reads/writes will be wired in a later iteration.</p>
-        </div>
-        <div class="panel panel--action">
-          <h3>Buy FAO</h3>
-          <label class="field">
-            <span class="field__label">Pay (ETH / xDAI)</span>
-            <input type="number" placeholder="0.10" disabled>
-          </label>
-          <button class="button" disabled>Calculate &amp; buy (coming soon)</button>
-          <p class="hint">Purchases mint FAO to the buyer, treasury, incentive, and insider vesting contracts.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="redeem" class="card">
-      <div class="section__header">
-        <h2>Redemption / Ragequit</h2>
-        <p>Burn FAO for a pro-rata share of ETH and configured ragequit tokens.</p>
-      </div>
-      <div class="grid">
-        <div class="panel">
-          <h3>Balances</h3>
-          <p class="muted">Token and ETH balances will display here once wired.</p>
-          <ul class="list">
-            <li><strong>FAO balance:</strong> <span class="muted">TBD</span></li>
-            <li><strong>ETH/xDAI per FAO:</strong> <span class="muted">TBD</span></li>
-            <li><strong>Ragequit tokens:</strong> <span class="muted">List pending</span></li>
-          </ul>
-        </div>
-        <div class="panel panel--action">
-          <h3>Burn &amp; redeem</h3>
-          <label class="field">
-            <span class="field__label">FAO to burn</span>
-            <input type="number" placeholder="100" disabled>
-          </label>
-          <button class="button" disabled>Redeem (coming soon)</button>
-          <p class="hint">Redemptions during the initial phase reduce the initial sale tally.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="contracts" class="card">
-      <div class="section__header">
-        <h2>Contract addresses</h2>
-        <p>Canonical deployments and legacy references.</p>
-      </div>
-      <div class="table">
-        <div class="table__row table__row--head">
-          <div>Contract</div>
-          <div>Network</div>
-          <div>Address</div>
-          <div>Status</div>
-        </div>
-        <div class="table__row">
-          <div>FAO Token</div>
-          <div>Gnosis</div>
-          <div><code>0xb222e2a6E065c2559a74168eeAbA298af91b84B9</code></div>
-          <div><span class="badge">Legacy</span></div>
-        </div>
-        <div class="table__row">
-          <div>FAO Sale</div>
-          <div>Gnosis</div>
-          <div><code>0x460915528ce37EC66A26b98b791Db512BC62DC17</code></div>
-          <div><span class="badge">Legacy</span></div>
-        </div>
-        <div class="table__row">
-          <div>FAO Token</div>
-          <div>Mainnet</div>
-          <div><code>— update when live —</code></div>
-          <div><span class="badge badge--pending">Pending</span></div>
-        </div>
-        <div class="table__row">
-          <div>FAO Sale</div>
-          <div>Mainnet</div>
-          <div><code>— update when live —</code></div>
-          <div><span class="badge badge--pending">Pending</span></div>
-        </div>
-      </div>
-      <p class="note">Add new deployments here as they go live. The Gnosis addresses come from the initial launch tools.</p>
-    </section>
-
-    <section id="docs" class="card">
-      <div class="section__header">
-        <h2>Docs &amp; references</h2>
-        <p>What FAO is, how the sale works, and where to learn more.</p>
-      </div>
-      <div class="grid grid--docs">
-        <div class="panel">
-          <h3>Sale mechanics</h3>
-          <ul class="list">
-            <li>Two-week fixed-price phase at 0.0001 ETH per FAO.</li>
-            <li>Post-finalization: linear bonding curve based on net sales.</li>
-            <li>Mint splits: 1.0× buyer, 0.5× treasury, 0.2× incentive, 0.3× insider vesting.</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>Ragequit rules</h3>
-          <ul class="list">
-            <li>Burn FAO to redeem ETH and ERC20s held by the sale contract.</li>
-            <li>Initial-phase redemptions reduce the recorded initial sale tally.</li>
-            <li>Admin actions go through an OZ TimelockController to protect exit windows.</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>Resources</h3>
-          <ul class="list">
-            <li><a href="https://github.com/fao-labs/fao" target="_blank" rel="noreferrer">Repository</a></li>
-            <li><a href="https://book.getfoundry.sh/" target="_blank" rel="noreferrer">Foundry docs</a></li>
-            <li><a href="/README.md" target="_blank" rel="noreferrer">Project README</a></li>
-          </ul>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="footer">
-    <div class="wrapper footer__content">
-      <div>
-        <p class="muted">Built for fao.eth — static first; wire to RPC + wallet connectors next.</p>
-      </div>
-      <div class="footer__links">
-        <a href="#sale">Sale</a>
-        <a href="#redeem">Redeem</a>
-        <a href="#contracts">Contracts</a>
-        <a href="#docs">Docs</a>
-      </div>
+      <div class="dash-row"><span class="dash-label">Phase</span><span class="dash-value loading" data-field="sale-phase">...</span></div>
+      <div class="dash-row"><span class="dash-label">Current Price</span><span class="dash-value loading" data-field="sale-price">...</span></div>
+      <div class="dash-row"><span class="dash-label">Start Price</span><span class="dash-value loading" data-field="sale-start-price">...</span></div>
+      <div class="dash-row"><span class="dash-label">Initial Sold</span><span class="dash-value loading" data-field="sale-initial-sold">...</span></div>
+      <div class="dash-row"><span class="dash-label">Curve Sold</span><span class="dash-value loading" data-field="sale-curve-sold">...</span></div>
+      <div class="dash-row"><span class="dash-label">Total Raised</span><span class="dash-value loading" data-field="sale-total-raised">...</span></div>
+      <div class="dash-row"><span class="dash-label">Initial Raised</span><span class="dash-value loading" data-field="sale-initial-raised">...</span></div>
+      <div class="dash-row"><span class="dash-label">Curve Raised</span><span class="dash-value loading" data-field="sale-curve-raised">...</span></div>
+      <div class="dash-row"><span class="dash-label">Sale Allocation</span><span class="dash-value loading" data-field="sale-total-alloc">...</span></div>
     </div>
-  </footer>
+
+    <!-- Liquidity Panel -->
+    <div class="dash-panel" id="panel-liq">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">Liquidity Manager</span>
+      </div>
+      <div class="dash-row"><span class="dash-label">Mode</span><span class="dash-value loading" data-field="liq-mode">...</span></div>
+      <div class="dash-row"><span class="dash-label">Initialized</span><span class="dash-value loading" data-field="liq-initialized">...</span></div>
+      <div class="dash-row"><span class="dash-label">Spot Liquidity</span><span class="dash-value loading" data-field="liq-spot">...</span></div>
+      <div class="dash-row"><span class="dash-label">Conditional Liq</span><span class="dash-value loading" data-field="liq-conditional">...</span></div>
+      <div class="dash-row"><span class="dash-label">Total Managed</span><span class="dash-value loading" data-field="liq-total">...</span></div>
+      <div class="dash-row"><span class="dash-label">fLP Supply</span><span class="dash-value loading" data-field="liq-flp-supply">...</span></div>
+      <div class="dash-row"><span class="dash-label">Active Proposal</span><span class="dash-value loading" data-field="liq-proposal-id">...</span></div>
+      <div class="dash-row"><span class="dash-label">Emergency Exit</span><span class="dash-value loading" data-field="liq-emergency">...</span></div>
+      <div class="dash-row"><span class="dash-label">Exit Ready</span><span class="dash-value loading" data-field="liq-emergency-ready">...</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Sale Mechanics ═══ -->
+<section id="sale" class="section">
+  <h2 class="section-title">Sale Mechanics</h2>
+  <p class="section-subtitle">FAO tokens are minted via a two-phase sale on Gnosis Chain.</p>
+
+  <!-- Mint Distribution -->
+  <div class="dist-bar-wrap">
+    <div class="dist-bar">
+      <div class="dist-seg buyer">1.0x Buyer</div>
+      <div class="dist-seg treasury">0.5x Treasury</div>
+      <div class="dist-seg incentive">0.2x Incentive</div>
+      <div class="dist-seg insider">0.3x Insider</div>
+    </div>
+    <div class="dist-legend">
+      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:var(--accent)"></span> Buyer (1.0x)</span>
+      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#5b8def"></span> Treasury (0.5x)</span>
+      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#c084fc"></span> Incentive (0.2x)</span>
+      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#f59e0b"></span> Insider (0.3x)</span>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="info-block">
+      <h3>Bonding Curve</h3>
+      <p>After the fixed-price initial phase, the sale transitions to a bonding curve. The price increases as more tokens are sold, rewarding early participants while ensuring continuous availability.</p>
+      <ul>
+        <li>Initial phase: fixed price per token</li>
+        <li>Curve phase: price rises with supply</li>
+        <li>Sale funds split across buyer allocation, treasury, incentives, and insider vesting</li>
+      </ul>
+    </div>
+    <div class="info-block">
+      <h3>Ragequit</h3>
+      <p>FAO holders can burn their tokens at any time to receive a pro-rata share of the treasury's eligible assets. This exit mechanism ensures the token always has fundamental backing.</p>
+      <ul>
+        <li>Burn FAO to receive xDAI and eligible tokens</li>
+        <li>Pro-rata share based on total supply at time of exit</li>
+        <li>Eligible tokens managed via <code>ragequitTokensLength()</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Governance & Arbitration ═══ -->
+<section id="governance" class="section">
+  <h2 class="section-title">Governance &amp; Arbitration</h2>
+  <p class="section-subtitle">Futarchy-based governance powered by conditional token markets on Swapr.</p>
+
+  <div class="two-col">
+    <div class="info-block">
+      <h3>Proposal Flow</h3>
+      <p>Proposals move through the FutarchyOfficialProposalSource lifecycle:</p>
+      <ul>
+        <li><strong>Candidate</strong> — Anyone submits a proposal</li>
+        <li><strong>Promote</strong> — Authorized proposer promotes to official</li>
+        <li><strong>Markets</strong> — YES/NO conditional tokens created and traded</li>
+        <li><strong>Migrate</strong> — 80% of spot liquidity moves to conditional pools</li>
+        <li><strong>Settle</strong> — CTF oracle resolves the outcome</li>
+      </ul>
+    </div>
+    <div class="info-block">
+      <h3>Liquidity Migration</h3>
+      <p>When a proposal becomes active, the FutarchyLiquidityManager migrates 80% of spot liquidity into conditional YES/NO pools on Swapr.</p>
+      <ul>
+        <li>Spot pool retains 20% as baseline</li>
+        <li>Conditional pools split across YES_FAO/YES_WXDAI and NO_FAO/NO_WXDAI</li>
+        <li>After settlement, liquidity migrates back to spot</li>
+        <li>Emergency exit available with timelock safeguard</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Contracts ═══ -->
+<section id="contracts" class="section">
+  <h2 class="section-title">Contract Addresses</h2>
+  <p class="section-subtitle">Deployed on Gnosis Chain (Chain ID 100). All contracts verified on Gnosisscan.</p>
+
+  <table class="contracts-table">
+    <thead>
+      <tr>
+        <th>Contract</th>
+        <th>Address</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>FAO Token</td>
+        <td class="addr">0x9494C281a02c9ae5f72b224B514793ad2DD8cA17</td>
+        <td><a href="https://gnosisscan.io/address/0x9494C281a02c9ae5f72b224B514793ad2DD8cA17" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>FAO Sale</td>
+        <td class="addr">0x38FF65E8839B581b5ad12383d93206AFcF38D4b2</td>
+        <td><a href="https://gnosisscan.io/address/0x38FF65E8839B581b5ad12383d93206AFcF38D4b2" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>Liquidity Manager</td>
+        <td class="addr">0x9D7692738a4d323338b9007d65d7F79e013B3476</td>
+        <td><a href="https://gnosisscan.io/address/0x9D7692738a4d323338b9007d65d7F79e013B3476" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>Proposal Source</td>
+        <td class="addr">0x638A32b9EF2588CEcDf148135899Acc882aA1CC2</td>
+        <td><a href="https://gnosisscan.io/address/0x638A32b9EF2588CEcDf148135899Acc882aA1CC2" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>Spot LP Adapter</td>
+        <td class="addr">0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759</td>
+        <td><a href="https://gnosisscan.io/address/0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>Conditional LP Adapter</td>
+        <td class="addr">0x0391d105ebA5B899f097364a4a620a751fa8e133</td>
+        <td><a href="https://gnosisscan.io/address/0x0391d105ebA5B899f097364a4a620a751fa8e133" target="_blank" rel="noopener">View</a></td>
+      </tr>
+      <tr>
+        <td>WXDAI (Collateral)</td>
+        <td class="addr">0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d</td>
+        <td><a href="https://gnosisscan.io/address/0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d" target="_blank" rel="noopener">View</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══ Resources ═══ -->
+<section id="resources" class="section">
+  <h2 class="section-title">Resources</h2>
+  <p class="section-subtitle">Links to source code, markets, and documentation.</p>
+
+  <div class="resources-grid">
+    <a href="https://github.com/futarchy-fi/FAO" target="_blank" rel="noopener" class="resource-card">
+      <div class="icon">&lt;/&gt;</div>
+      <div><div class="label">GitHub</div><div class="desc">futarchy-fi/FAO</div></div>
+    </a>
+    <a href="https://api.futarchy.ai" target="_blank" rel="noopener" class="resource-card">
+      <div class="icon">&#9881;</div>
+      <div><div class="label">Futarchy API</div><div class="desc">api.futarchy.ai</div></div>
+    </a>
+    <a href="https://swapr.eth.limo" target="_blank" rel="noopener" class="resource-card">
+      <div class="icon">&#8644;</div>
+      <div><div class="label">Swapr</div><div class="desc">DEX on Gnosis</div></div>
+    </a>
+    <a href="https://gnosisscan.io" target="_blank" rel="noopener" class="resource-card">
+      <div class="icon">&#9634;</div>
+      <div><div class="label">Gnosisscan</div><div class="desc">Block explorer</div></div>
+    </a>
+    <a href="https://book.getfoundry.sh" target="_blank" rel="noopener" class="resource-card">
+      <div class="icon">&#9776;</div>
+      <div><div class="label">Foundry</div><div class="desc">Smart contract toolkit</div></div>
+    </a>
+  </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer">
+  FAO — Futarchy Autonomous Optimizer &middot; Gnosis Chain &middot; <a href="https://github.com/futarchy-fi/FAO">Open Source</a>
+</footer>
+
 </body>
 </html>
