@@ -17,15 +17,20 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 ///
 /// State machine:
 ///
-///   INACTIVE ──[YES bond]──► YES ◄──────► NO ──[timeout]──► SETTLED
-///                             │                    │
-///                             │               [timeout]
-///                             │                    │
-///                             ▼                    ▼
-///                        [graduate]             SETTLED
+///   INACTIVE ──[YES bond]──► YES ◄───────► NO
+///                             │              │
+///                        [graduate]      [timeout]
+///                             │              │
+///                             ▼              ▼
+///                          QUEUED         SETTLED
 ///                             │
 ///                             ▼
-///                          QUEUED ──► EVALUATING ──► SETTLED
+///                         EVALUATING
+///                             │
+///                             ▼
+///                          SETTLED
+///
+/// YES can also settle directly via timeout if unchallenged for 72h.
 contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
