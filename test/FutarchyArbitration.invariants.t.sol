@@ -97,7 +97,7 @@ contract WXDAIMock is IERC20 {
 
         function no(uint256 proposalId, uint256 actorSeed, uint256 amtRaw) external {
             address a = _actor(actorSeed);
-            uint256 amt = bound(amtRaw, 1, 1e27);
+            uint256 amt = bound(amtRaw, 1, arb.baseX());
 
             vm.startPrank(a);
             IERC20(WXDAI).approve(address(arb), type(uint256).max);

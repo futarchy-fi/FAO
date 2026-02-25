@@ -39,11 +39,11 @@ contract FutarchyEvaluatorIntegrationTest is Test {
         proposalId = arb.createProposal(m);
 
         // Drive state: INACTIVE -> YES -> NO -> (NO->YES flip) => QUEUED
-        arb.placeYesBond(proposalId, 100e18);
-        arb.placeNoBond(proposalId, 200e18);
+        arb.placeYesBond(proposalId, 25e18);
+        arb.placeNoBond(proposalId, 50e18);
 
-        // Must be >= max(m, 2x current NO)=400e18 and also >= requiredYes(queueLen=0)=baseX=100e18.
-        arb.placeYesBond(proposalId, 400e18);
+        // YES >= baseX is always accepted. Meets requiredYes(0)=100e18 for graduation.
+        arb.placeYesBond(proposalId, 100e18);
 
         // QUEUED head -> EVALUATING
         arb.startNextEvaluation();

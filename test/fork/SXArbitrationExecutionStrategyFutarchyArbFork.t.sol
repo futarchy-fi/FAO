@@ -147,11 +147,11 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
 
         // Bonding path (flip-only; first activation must be YES):
         // INACTIVE -> YES with >= m
-        // YES -> NO with >= 2x current YES
-        // NO -> YES with >= requiredYes(0) (= baseX)
+        // YES -> NO with >= 2x current YES, capped at baseX
+        // NO -> YES: YES >= baseX is always accepted, triggers graduation
         uint256 yesActivation = m;
         uint256 noBond = yesActivation * 2;
-        uint256 yesBond = arbitration.baseX();
+        uint256 yesBond = arbitration.baseX(); // always accepted
 
         deal(address(wxdai), bidder, yesActivation + noBond + yesBond);
         vm.startPrank(bidder);

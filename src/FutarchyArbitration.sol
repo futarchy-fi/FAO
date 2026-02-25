@@ -159,6 +159,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     error InvalidState();
     error BondTooSmall();
     error TimeoutNotReached();
+    error NoBondExceedsBaseX();
     error SafetyModeActive();
     error QueueFull();
     error NotEvaluator();
@@ -216,7 +217,9 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
 
     /// @notice Place a YES bond (flip-only).
     /// @dev INACTIVE → YES requires amount >= minActivationBond.
-    ///      NO → YES requires amount >= max(minActivationBond, 2x current NO bond).
+    ///      NO → YES requires amount >= max(minActivationBond, 2x current NO bond),
+    ///      BUT a YES bond >= the current graduation threshold is always accepted —
+    ///      guaranteeing graduation is always reachable regardless of NO bond size.
     ///      On NO → YES flip, if the bond meets the graduation threshold, the proposal
     ///      enters the evaluation queue.
     function placeYesBond(uint256 proposalId, uint256 amount) external {
@@ -229,9 +232,14 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         if (s == ProposalState.INACTIVE) {
             if (amount < p.minActivationBond) revert BondTooSmall();
         } else if (isFlipFromNo) {
-            uint256 minFlip = p.noBond.amount * 2;
-            if (p.minActivationBond > minFlip) minFlip = p.minActivationBond;
-            if (amount < minFlip) revert BondTooSmall();
+            // A YES bond >= the graduation threshold is always accepted,
+            // ensuring graduation is reachable regardless of NO bond size.
+            uint256 gradThreshold = requiredYes(_queuedCount());
+            if (amount < gradThreshold) {
+                uint256 minFlip = p.noBond.amount * 2;
+                if (p.minActivationBond > minFlip) minFlip = p.minActivationBond;
+                if (amount < minFlip) revert BondTooSmall();
+            }
         } else {
             revert InvalidState();
         }
@@ -261,11 +269,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Place a NO bond (flip-only).
-    /// @dev YES → NO requires amount >= 2x current YES bond.
+    /// @dev YES → NO requires amount >= 2x current YES bond, capped at baseX.
     ///      First activation must be YES (INACTIVE → NO is not allowed).
     function placeNoBond(uint256 proposalId, uint256 amount) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
+        if (amount > baseX) revert NoBondExceedsBaseX();
 
         ProposalState s = p.state;
         if (s == ProposalState.YES) {

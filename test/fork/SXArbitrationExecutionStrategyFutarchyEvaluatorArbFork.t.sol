@@ -45,17 +45,18 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
         arb.createProposalWithId(proposalId, m);
 
         // Drive INACTIVE -> YES -> NO -> YES flip with enough YES to trigger graduation
-        // (requiredYes(0)=baseX=100e18).
+        // (requiredYes(0)=baseX=100e18). NO bond capped at baseX.
         address yesBidder = makeAddr("yesBidder");
         address noBidder = makeAddr("noBidder");
 
-        // bonds: m, 2m, 4m
-        uint256 noBond = 2 * m;
-        uint256 yesFlipBond = 4 * m; // must be >= max(m, 2x current NO)
+        // bonds: 25e18, 50e18, baseX (always accepted)
+        uint256 yesActivation = 25e18;
+        uint256 noBond = 50e18;
+        uint256 yesFlipBond = m; // = baseX, always accepted
 
         // Fund and approve WXDAI.
         address wxdai = address(arb.WXDAI());
-        deal(wxdai, yesBidder, m + yesFlipBond);
+        deal(wxdai, yesBidder, yesActivation + yesFlipBond);
         deal(wxdai, noBidder, noBond);
 
         vm.prank(yesBidder);
@@ -64,7 +65,7 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
         _approveAll(wxdai, address(arb));
 
         vm.prank(yesBidder);
-        arb.placeYesBond(proposalId, m);
+        arb.placeYesBond(proposalId, yesActivation);
 
         vm.prank(noBidder);
         arb.placeNoBond(proposalId, noBond);
