@@ -12,6 +12,7 @@ import {IFutarchyLiquidityAdapter} from "./interfaces/IFutarchyLiquidityAdapter.
 import {IFutarchyOfficialProposalSource} from "./interfaces/IFutarchyOfficialProposalSource.sol";
 import {IFutarchyConditionalRouter} from "./interfaces/IFutarchyConditionalRouter.sol";
 import {IAlgebraPoolLike} from "./interfaces/IAlgebraPoolLike.sol";
+import {FutarchyLiquidityLib} from "./FutarchyLiquidityLib.sol";
 
 interface IWrappedNative is IERC20 {
     function deposit() external payable;
@@ -194,14 +195,9 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
 
     receive() external payable {}
 
-    /// @dev OpenZeppelin v4 SafeERC20 does not include `forceApprove`.
-    ///      This helper provides the same semantics: set allowance to 0 first when needed.
+    /// @dev Delegates to FutarchyLiquidityLib for OZ v4 forceApprove semantics.
     function _forceApprove(IERC20 token, address spender, uint256 value) internal {
-        uint256 current = token.allowance(address(this), spender);
-        if (current != 0) {
-            token.safeApprove(spender, 0);
-        }
-        token.safeApprove(spender, value);
+        FutarchyLiquidityLib.forceApprove(token, spender, value);
     }
 
     function initializeFromSale(uint256 faoAmount, bytes calldata spotAddData)
@@ -795,9 +791,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
     }
 
     function _splitCollateral(address proposal, address collateralToken, uint256 amount) internal {
-        if (amount == 0) return;
-        _forceApprove(IERC20(collateralToken), address(CONDITIONAL_ROUTER), amount);
-        CONDITIONAL_ROUTER.splitPosition(proposal, collateralToken, amount);
+        FutarchyLiquidityLib.splitCollateral(CONDITIONAL_ROUTER, proposal, collateralToken, amount);
     }
 
     function _recoverCollateralFromOutcomeTokens(bool allowRedeem)
@@ -838,15 +832,9 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         address yesToken,
         address noToken
     ) internal {
-        if (yesToken == address(0) || noToken == address(0)) return;
-        uint256 yesBal = IERC20(yesToken).balanceOf(address(this));
-        uint256 noBal = IERC20(noToken).balanceOf(address(this));
-        uint256 mergeAmount = _min(yesBal, noBal);
-        if (mergeAmount == 0) return;
-
-        _forceApprove(IERC20(yesToken), address(CONDITIONAL_ROUTER), mergeAmount);
-        _forceApprove(IERC20(noToken), address(CONDITIONAL_ROUTER), mergeAmount);
-        CONDITIONAL_ROUTER.mergePositions(proposal, collateralToken, mergeAmount);
+        FutarchyLiquidityLib.mergeOutcomePair(
+            CONDITIONAL_ROUTER, proposal, collateralToken, yesToken, noToken
+        );
     }
 
     function _tryRedeemOutcomeRemainder(
@@ -855,16 +843,9 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         address yesToken,
         address noToken
     ) internal {
-        if (yesToken == address(0) || noToken == address(0)) return;
-        uint256 yesBal = IERC20(yesToken).balanceOf(address(this));
-        uint256 noBal = IERC20(noToken).balanceOf(address(this));
-        uint256 redeemAmount = _max(yesBal, noBal);
-        if (redeemAmount == 0) return;
-
-        _forceApprove(IERC20(yesToken), address(CONDITIONAL_ROUTER), redeemAmount);
-        _forceApprove(IERC20(noToken), address(CONDITIONAL_ROUTER), redeemAmount);
-
-        try CONDITIONAL_ROUTER.redeemPositions(proposal, collateralToken, redeemAmount) {} catch {}
+        FutarchyLiquidityLib.tryRedeemOutcomeRemainder(
+            CONDITIONAL_ROUTER, proposal, collateralToken, yesToken, noToken
+        );
     }
 
     function _transferOutcomeDelta(
@@ -874,54 +855,24 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 yesCurrencyBefore,
         uint256 noCurrencyBefore
     ) internal {
-        if (activeYesCompanyToken != address(0)) {
-            uint256 yesCompanyAfter = IERC20(activeYesCompanyToken).balanceOf(address(this));
-            if (yesCompanyAfter > yesCompanyBefore) {
-                IERC20(activeYesCompanyToken)
-                    .safeTransfer(recipient, yesCompanyAfter - yesCompanyBefore);
-            }
-        }
-        if (activeNoCompanyToken != address(0)) {
-            uint256 noCompanyAfter = IERC20(activeNoCompanyToken).balanceOf(address(this));
-            if (noCompanyAfter > noCompanyBefore) {
-                IERC20(activeNoCompanyToken)
-                    .safeTransfer(recipient, noCompanyAfter - noCompanyBefore);
-            }
-        }
-        if (activeYesCurrencyToken != address(0)) {
-            uint256 yesCurrencyAfter = IERC20(activeYesCurrencyToken).balanceOf(address(this));
-            if (yesCurrencyAfter > yesCurrencyBefore) {
-                IERC20(activeYesCurrencyToken)
-                    .safeTransfer(recipient, yesCurrencyAfter - yesCurrencyBefore);
-            }
-        }
-        if (activeNoCurrencyToken != address(0)) {
-            uint256 noCurrencyAfter = IERC20(activeNoCurrencyToken).balanceOf(address(this));
-            if (noCurrencyAfter > noCurrencyBefore) {
-                IERC20(activeNoCurrencyToken)
-                    .safeTransfer(recipient, noCurrencyAfter - noCurrencyBefore);
-            }
-        }
+        FutarchyLiquidityLib.transferOutcomeDelta(
+            recipient,
+            _activeOutcomeTokens(),
+            [yesCompanyBefore, noCompanyBefore, yesCurrencyBefore, noCurrencyBefore]
+        );
     }
 
     function _sweepActiveOutcomeTokensTo(address recipient) internal {
-        if (recipient == address(0)) return;
-        if (activeYesCompanyToken != address(0)) {
-            uint256 bal = IERC20(activeYesCompanyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeYesCompanyToken).safeTransfer(recipient, bal);
-        }
-        if (activeNoCompanyToken != address(0)) {
-            uint256 bal = IERC20(activeNoCompanyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeNoCompanyToken).safeTransfer(recipient, bal);
-        }
-        if (activeYesCurrencyToken != address(0)) {
-            uint256 bal = IERC20(activeYesCurrencyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeYesCurrencyToken).safeTransfer(recipient, bal);
-        }
-        if (activeNoCurrencyToken != address(0)) {
-            uint256 bal = IERC20(activeNoCurrencyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeNoCurrencyToken).safeTransfer(recipient, bal);
-        }
+        FutarchyLiquidityLib.sweepOutcomeTokensTo(recipient, _activeOutcomeTokens());
+    }
+
+    function _activeOutcomeTokens() internal view returns (address[4] memory) {
+        return [
+            activeYesCompanyToken,
+            activeNoCompanyToken,
+            activeYesCurrencyToken,
+            activeNoCurrencyToken
+        ];
     }
 
     function _recomputeConditionalLiquidity() internal {
@@ -990,12 +941,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 amount0,
         uint256 amount1
     ) internal {
-        if (amount0 > 0) {
-            _forceApprove(IERC20(token0), address(adapter), amount0);
-        }
-        if (amount1 > 0) {
-            _forceApprove(IERC20(token1), address(adapter), amount1);
-        }
+        FutarchyLiquidityLib.approvePairForAdapter(adapter, token0, token1, amount0, amount1);
     }
 
     function _min(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -1037,12 +983,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
     function _approveForAdapter(IFutarchyLiquidityAdapter adapter, uint256 amount0, uint256 amount1)
         internal
     {
-        if (amount0 > 0) {
-            _forceApprove(IERC20(TOKEN0), address(adapter), amount0);
-        }
-        if (amount1 > 0) {
-            _forceApprove(IERC20(TOKEN1), address(adapter), amount1);
-        }
+        FutarchyLiquidityLib.approvePairForAdapter(adapter, TOKEN0, TOKEN1, amount0, amount1);
     }
 
     function _mintShares(address to, uint128 liquidityAdded)
