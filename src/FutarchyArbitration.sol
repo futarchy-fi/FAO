@@ -29,8 +29,6 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 ///                             │
 ///                             ▼
 ///                          SETTLED
-///
-/// YES can also settle directly via timeout if unchallenged for 72h.
 contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
