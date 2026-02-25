@@ -30,7 +30,7 @@ contract FutarchyEvaluatorIntegrationTest is Test {
         vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true));
         vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true));
 
-        // Wire evaluator (arb.DEPLOYER == this test contract).
+        // Wire evaluator as deployer-owner.
         arb.setEvaluator(address(eval));
     }
 

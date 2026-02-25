@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol";
@@ -15,7 +16,7 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 /// - Phase 3+: graduation queue (QUEUED/EVALUATING)
 /// - Phase 4+: evaluator module interface + ManualEvaluator
 /// - Phase 7+: Snapshot X strategy integrations
-contract FutarchyArbitration is ReentrancyGuard {
+contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // NOTE: This file is intentionally introduced as a skeleton first.
@@ -37,21 +38,16 @@ contract FutarchyArbitration is ReentrancyGuard {
     /// @dev Implemented as a config knob so deployments can tune throughput vs safety.
     uint256 public immutable MAX_QUEUE;
 
-    /// @notice Deployer/admin for Phase 4 wiring.
-    /// @dev Minimal authority used only to set the evaluator module.
-    address public immutable DEPLOYER;
-
     /// @notice Evaluator module allowed to resolve the active evaluation.
     IFutarchyArbitrationEvaluator public evaluator;
 
     event EvaluatorSet(address indexed evaluator);
 
-    error NotDeployer();
     error NotEvaluator();
     error InvalidEvaluator();
 
     constructor() {
-        DEPLOYER = msg.sender;
+        _transferOwnership(msg.sender);
         WXDAI = IERC20(0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d);
 
         // Defaults for early phases/tests; can be parameterized later if needed.
@@ -220,9 +216,8 @@ contract FutarchyArbitration is ReentrancyGuard {
     );
 
     /// @notice Set the evaluator module address.
-    /// @dev Only callable by DEPLOYER. This is intentionally minimal auth for Phase 4.
-    function setEvaluator(address evaluator_) external {
-        if (msg.sender != DEPLOYER) revert NotDeployer();
+    /// @dev Only callable by contract owner. This is intentionally minimal auth for Phase 4.
+    function setEvaluator(address evaluator_) external onlyOwner {
         if (evaluator_ == address(0)) revert InvalidEvaluator();
 
         // Safety: ensure evaluator is bound to this arbitration instance.
