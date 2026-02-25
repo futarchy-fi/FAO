@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IAlgebraFactoryLike} from "./IAlgebraFactoryLike.sol";
+
 interface IFutarchyOfficialProposalSource {
+    function ALGEBRA_FACTORY() external view returns (IAlgebraFactoryLike);
+
     struct OfficialProposalData {
         uint256 proposalId;
         address proposal;
