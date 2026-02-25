@@ -159,7 +159,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     error InvalidState();
     error BondTooSmall();
     error TimeoutNotReached();
-    error NoBondExceedsBaseX();
+    error NoBondExceedsGraduationThreshold();
     error SafetyModeActive();
     error QueueFull();
     error NotEvaluator();
@@ -269,12 +269,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Place a NO bond (flip-only).
-    /// @dev YES → NO requires amount >= 2x current YES bond, capped at baseX.
-    ///      First activation must be YES (INACTIVE → NO is not allowed).
+    /// @dev YES → NO requires amount >= 2x current YES bond, capped at the current
+    ///      graduation threshold. First activation must be YES (INACTIVE → NO is not allowed).
     function placeNoBond(uint256 proposalId, uint256 amount) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
-        if (amount > baseX) revert NoBondExceedsBaseX();
+        if (amount > requiredYes(_queuedCount())) revert NoBondExceedsGraduationThreshold();
 
         ProposalState s = p.state;
         if (s == ProposalState.YES) {
