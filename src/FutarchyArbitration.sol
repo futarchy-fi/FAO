@@ -18,17 +18,17 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 /// State machine:
 ///
 ///   INACTIVE ──[YES bond]──► YES ◄───────► NO
-///                             │              │
-///                        [graduate]      [timeout]
-///                             │              │
-///                             ▼              ▼
-///                          QUEUED         SETTLED
-///                             │
-///                             ▼
-///                         EVALUATING
-///                             │
-///                             ▼
-///                          SETTLED
+///                           │   │              │
+///                  [graduate]   [timeout]   [timeout]
+///                           │   │              │
+///                           ▼   ▼              ▼
+///                        QUEUED  SETTLED    SETTLED
+///                           │
+///                           ▼
+///                       EVALUATING
+///                           │
+///                           ▼
+///                        SETTLED
 contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
