@@ -6,34 +6,151 @@
   <title>FAO | Futarchy Autonomous Optimizer</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-  <body>
-    <header class="hero">
-      <div class="hero__visual" aria-hidden="true"></div>
-      <div class="hero__content">
-        <h1>Futarchy Autonomous Optimizer</h1>
-        <div class="hero__cta">
-          <a class="button" href="#sale">Buy FAO</a>
-          <a class="button" href="#redeem">Ragequit / Redeem</a>
-        </div>
+<body>
+  <header class="hero">
+    <div class="hero__visual" aria-hidden="true"></div>
+    <div class="hero__content">
+      <h1>Futarchy Autonomous Optimizer</h1>
+      <div class="hero__cta">
+        <a class="button" href="#dashboard">Dashboard</a>
+        <a class="button" href="#redeem">Ragequit / Redeem</a>
       </div>
-    </header>
-
-    <div class="lede-banner">
-      <p class="lede">Minimal, static controls for the FAO sale, redemption/ragequit, and on-chain docs.</p>
     </div>
+  </header>
 
-    <main class="wrapper">
+  <div class="lede-banner">
+    <p class="lede">Minimal dashboard + static controls for sale, redemption, and contract state.</p>
+  </div>
+
+  <main class="wrapper">
+    <section id="dashboard" class="card">
+      <div class="section__header section__header--inline">
+        <div>
+          <h2>Live dashboard</h2>
+          <p>Token, sale, and liquidity views loaded from on-chain sources.</p>
+        </div>
+        <button id="dashboard-refresh" class="button" type="button">Refresh status</button>
+      </div>
+
+      <div class="dashboard-grid">
+        <article class="panel panel--status" id="token-panel" aria-live="polite">
+          <div class="panel__header">
+            <h3>FAO Token</h3>
+            <span id="token-state" class="state-badge state-badge--loading">Loading</span>
+          </div>
+          <ul class="kv-list">
+            <li>
+              <span class="kv-list__label">Name</span>
+              <span class="kv-list__value" id="token-name">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Symbol</span>
+              <span class="kv-list__value" id="token-symbol">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Decimals</span>
+              <span class="kv-list__value" id="token-decimals">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Total supply</span>
+              <span class="kv-list__value" id="token-total-supply">—</span>
+            </li>
+          </ul>
+          <p class="meta" id="token-updated">Source: <span>not fetched</span></p>
+          <p class="meta muted" id="token-error" role="alert" aria-live="assertive"></p>
+        </article>
+
+        <article class="panel panel--status" id="sale-panel" aria-live="polite">
+          <div class="panel__header">
+            <h3>Sale status</h3>
+            <span id="sale-state" class="state-badge state-badge--loading">Loading</span>
+          </div>
+          <ul class="kv-list">
+            <li>
+              <span class="kv-list__label">Phase</span>
+              <span class="kv-list__value" id="sale-phase">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Current price</span>
+              <span class="kv-list__value" id="sale-price">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Initial sold / target</span>
+              <span class="kv-list__value" id="sale-initial-target">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Total sold</span>
+              <span class="kv-list__value" id="sale-total-sold">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Total raised</span>
+              <span class="kv-list__value" id="sale-total-raised">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Long target reached</span>
+              <span class="kv-list__value" id="sale-long-target">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Contract source</span>
+              <span class="kv-list__value address">0x4609…6BC62DC17</span>
+            </li>
+          </ul>
+          <p class="meta" id="sale-updated">Source: <span>not fetched</span></p>
+          <p class="meta muted" id="sale-error" role="alert" aria-live="assertive"></p>
+        </article>
+
+        <article class="panel panel--status" id="liquidity-panel" aria-live="polite">
+          <div class="panel__header">
+            <h3>Liquidity status</h3>
+            <span id="liquidity-state" class="state-badge state-badge--loading">Loading</span>
+          </div>
+          <ul class="kv-list">
+            <li>
+              <span class="kv-list__label">Mode</span>
+              <span class="kv-list__value" id="liquidity-mode">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Spot liquidity</span>
+              <span class="kv-list__value" id="liquidity-spot">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Conditional liquidity</span>
+              <span class="kv-list__value" id="liquidity-conditional">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Total managed</span>
+              <span class="kv-list__value" id="liquidity-total">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Migration preview</span>
+              <span class="kv-list__value" id="liquidity-migration">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Emergency exit</span>
+              <span class="kv-list__value" id="liquidity-emergency">—</span>
+            </li>
+            <li>
+              <span class="kv-list__label">Manager source</span>
+              <span class="kv-list__value" id="liquidity-source">not configured</span>
+            </li>
+          </ul>
+          <p class="meta" id="liquidity-updated">Source: <span>not fetched</span></p>
+          <p class="meta muted" id="liquidity-error" role="alert" aria-live="assertive"></p>
+        </article>
+      </div>
+    </section>
+
     <section id="sale" class="card">
       <div class="section__header">
-        <h2>Sale</h2>
+        <h2>Buy / Sale</h2>
         <p>Two-week fixed-price launch followed by a linear bonding curve.</p>
       </div>
       <div class="grid">
         <div class="panel">
-          <h3>Current phase</h3>
-          <p class="muted">Initial fixed price, then bonding curve based on net sales.</p>
-          <div class="status">Status: <span class="badge badge--pending">Stubbed</span></div>
-          <p class="note">On-chain reads/writes will be wired in a later iteration.</p>
+          <h3>Contract details</h3>
+          <p class="muted">Initial fixed price, then bonding-curve based on net sales.</p>
+          <p class="status">Status: <span class="badge badge--pending">Read-only dashboard</span></p>
+          <p class="note">Inputs are UI placeholders; write flow will be wired after read-state integration and wallet provider support.</p>
         </div>
         <div class="panel panel--action">
           <h3>Buy FAO</h3>
@@ -42,7 +159,7 @@
             <input type="number" placeholder="0.10" disabled>
           </label>
           <button class="button" disabled>Calculate &amp; buy (coming soon)</button>
-          <p class="hint">Purchases mint FAO to the buyer, treasury, incentive, and insider vesting contracts.</p>
+          <p class="hint">Purchases mint FAO to buyer, treasury, incentive, and insider vesting contracts.</p>
         </div>
       </div>
     </section>
@@ -55,11 +172,11 @@
       <div class="grid">
         <div class="panel">
           <h3>Balances</h3>
-          <p class="muted">Token and ETH balances will display here once wired.</p>
+          <p class="muted">Token and ETH balances from the dashboard panel above.</p>
           <ul class="list">
-            <li><strong>FAO balance:</strong> <span class="muted">TBD</span></li>
-            <li><strong>ETH/xDAI per FAO:</strong> <span class="muted">TBD</span></li>
-            <li><strong>Ragequit tokens:</strong> <span class="muted">List pending</span></li>
+            <li><strong>FAO balance:</strong> <span class="muted">Available in wallet query</span></li>
+            <li><strong>ETH/xDAI per FAO:</strong> <span class="muted">Derived from sale contract</span></li>
+            <li><strong>Ragequit tokens:</strong> <span class="muted">To be listed from on-chain array</span></li>
           </ul>
         </div>
         <div class="panel panel--action">
@@ -69,7 +186,7 @@
             <input type="number" placeholder="100" disabled>
           </label>
           <button class="button" disabled>Redeem (coming soon)</button>
-          <p class="hint">Redemptions during the initial phase reduce the initial sale tally.</p>
+          <p class="hint">Redemptions during the initial phase reduce the net initial tally.</p>
         </div>
       </div>
     </section>
@@ -111,7 +228,7 @@
           <div><span class="badge badge--pending">Pending</span></div>
         </div>
       </div>
-      <p class="note">Add new deployments here as they go live. The Gnosis addresses come from the initial launch tools.</p>
+      <p class="note">Add new deployments here as they go live. Table includes the currently verified Gnosis launch contracts.</p>
     </section>
 
     <section id="docs" class="card">
@@ -133,7 +250,7 @@
           <ul class="list">
             <li>Burn FAO to redeem ETH and ERC20s held by the sale contract.</li>
             <li>Initial-phase redemptions reduce the recorded initial sale tally.</li>
-            <li>Admin actions go through an OZ TimelockController to protect exit windows.</li>
+            <li>Admin actions use governance controls and role-based authorization.</li>
           </ul>
         </div>
         <div class="panel">
@@ -154,6 +271,7 @@
         <p class="muted">Built for fao.eth — static first; wire to RPC + wallet connectors next.</p>
       </div>
       <div class="footer__links">
+        <a href="#dashboard">Dashboard</a>
         <a href="#sale">Sale</a>
         <a href="#redeem">Redeem</a>
         <a href="#contracts">Contracts</a>
@@ -161,5 +279,8 @@
       </div>
     </div>
   </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>

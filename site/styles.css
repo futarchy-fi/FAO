@@ -164,8 +164,122 @@ input[type="number"] {
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  cursor: not-allowed;
+  cursor: pointer;
   box-shadow: 0 0 0 2px #05070c, 0 0 24px rgba(62, 255, 176, 0.25);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.section__header--inline {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.panel__header h3 {
+  margin: 0;
+}
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.state-badge--loading {
+  color: #6bd4ff;
+  border-color: #6bd4ff33;
+  background: #6bd4ff1a;
+}
+
+.state-badge--ok {
+  color: #a1ffc4;
+  border-color: #3effb033;
+  background: #3effb01a;
+}
+
+.state-badge--warning {
+  color: #f8c77d;
+  border-color: #f8c77d33;
+  background: #f8c77d1a;
+}
+
+.state-badge--error {
+  color: #ff9090;
+  border-color: #ff4a4a55;
+  background: #ff4a4a11;
+}
+
+.kv-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.kv-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px dashed #2a30404d;
+}
+
+.kv-list li:first-child {
+  border-top: none;
+}
+
+.kv-list__label {
+  color: var(--muted);
+}
+
+.kv-list__value {
+  text-align: right;
+  color: var(--text);
+  max-width: 55%;
+  word-break: break-word;
+}
+
+.kv-list__value.address {
+  color: #7fd4ff;
+}
+
+.meta {
+  margin: 10px 0 0;
+  color: #7ec7b5;
+  font-size: 12px;
+}
+
+.meta.muted {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.panel--status {
+  border-color: #27405a;
+  min-height: 290px;
 }
 
 .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
