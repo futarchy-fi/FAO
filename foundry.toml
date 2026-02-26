@@ -14,8 +14,9 @@ remappings = [
 
     # Snapshot X EVM (vendored as a Foundry lib)
     "sx/=lib/sx-evm/src/",
-    # Resolve Snapshot X internal imports like "src/types.sol" to vendored sx-evm.
-    "src/=lib/sx-evm/src/",
+    # Local src/ shims resolve "src/types.sol" etc. for sx-evm internal imports.
+    # The "src/=lib/sx-evm/src/" remapping was removed to avoid ambiguous import
+    # errors with newer Forge/Solc; vendored shim files in src/ serve the same role.
     "forge-gas-snapshot/=lib/sx-evm/lib/forge-gas-snapshot/src/",
     "@prb/test/=lib/sx-evm/lib/prb-test/src/",
     "@zodiac/=lib/sx-evm/lib/zodiac/contracts/",
