@@ -8,6 +8,14 @@ import {FutarchyTWAPOracle} from "../src/FutarchyTWAPOracle.sol";
 import {MockAlgebraPoolTWAP, GasGriefingAlgebraPool} from "./mocks/MockAlgebraPoolTWAP.sol";
 
 contract FutarchyTWAPOracleTest is Test {
+    event ProposalBound(
+        address indexed proposal, address yesPool, address noPool, uint48 startTime
+    );
+    event ProposalResolved(
+        address indexed proposal, bool accepted, int56 yesAvgTick, int56 noAvgTick
+    );
+    event ConfigUpdated(uint32 tradingPeriod, uint32 twapWindow, int24 thresholdTicks);
+
     FutarchyTWAPOracle oracle;
 
     address dao = address(0xDA0);
@@ -63,13 +71,25 @@ contract FutarchyTWAPOracleTest is Test {
         new FutarchyTWAPOracle(dao, binderAddr, 100, 200, THRESHOLD);
     }
 
+    function testConstructorRevertsZeroWindow() public {
+        vm.expectRevert(abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 100, 0));
+        new FutarchyTWAPOracle(dao, binderAddr, 100, 0, THRESHOLD);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  bind()
     // ═══════════════════════════════════════════════════════
 
     function testBindSucceeds() public {
         vm.prank(binderAddr);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         (address yp, address np, address yb, address nb, uint48 st, bool resolved, bool accepted) =
             oracle.proposals(proposal);
@@ -85,42 +105,79 @@ contract FutarchyTWAPOracleTest is Test {
     function testBindEmitsEvent() public {
         vm.prank(binderAddr);
         vm.expectEmit(true, false, false, true);
-        emit FutarchyTWAPOracle.ProposalBound(
-            proposal, address(yesPool), address(noPool), uint48(block.timestamp)
+        emit ProposalBound(proposal, address(yesPool), address(noPool), uint48(block.timestamp));
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
         );
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
     }
 
     function testBindRevertsFromNonBinder() public {
         vm.expectRevert(FutarchyTWAPOracle.NotBinder.selector);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
     }
 
     function testBindRevertsIfAlreadyBound() public {
         vm.startPrank(binderAddr);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         vm.expectRevert(abi.encodeWithSelector(FutarchyTWAPOracle.AlreadyBound.selector, proposal));
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
         vm.stopPrank();
     }
 
     function testBindRevertsZeroProposal() public {
         vm.prank(binderAddr);
         vm.expectRevert(FutarchyTWAPOracle.ZeroAddress.selector);
-        oracle.bind(address(0), address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            address(0),
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
     }
 
     function testBindRevertsZeroYesPool() public {
         vm.prank(binderAddr);
         vm.expectRevert(FutarchyTWAPOracle.ZeroAddress.selector);
-        oracle.bind(proposal, address(0), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal, address(0), address(noPool), yesCompany, noCompany, uint48(block.timestamp)
+        );
     }
 
     function testBindRevertsZeroNoPool() public {
         vm.prank(binderAddr);
         vm.expectRevert(FutarchyTWAPOracle.ZeroAddress.selector);
-        oracle.bind(proposal, address(yesPool), address(0), yesCompany, noCompany);
+        oracle.bind(
+            proposal, address(yesPool), address(0), yesCompany, noCompany, uint48(block.timestamp)
+        );
     }
 
     // ═══════════════════════════════════════════════════════
@@ -134,9 +191,34 @@ contract FutarchyTWAPOracleTest is Test {
 
     function testResolveRevertsBeforeTradingEnds() public {
         vm.prank(binderAddr);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         uint256 deadline = block.timestamp + TRADING_PERIOD;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FutarchyTWAPOracle.TradingNotEnded.selector, proposal, deadline, block.timestamp
+            )
+        );
+        oracle.resolve(proposal);
+    }
+
+    function testResolveUsesBoundMarketStartTime() public {
+        uint48 marketStartTime = uint48(block.timestamp + 3 days);
+
+        vm.prank(binderAddr);
+        oracle.bind(
+            proposal, address(yesPool), address(noPool), yesCompany, noCompany, marketStartTime
+        );
+
+        uint256 deadline = uint256(marketStartTime) + TRADING_PERIOD;
+        vm.warp(deadline - 1);
         vm.expectRevert(
             abi.encodeWithSelector(
                 FutarchyTWAPOracle.TradingNotEnded.selector, proposal, deadline, block.timestamp
@@ -205,7 +287,14 @@ contract FutarchyTWAPOracleTest is Test {
             new FutarchyTWAPOracle(dao, binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
 
         vm.prank(binderAddr);
-        oracleT.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracleT.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         vm.warp(block.timestamp + TRADING_PERIOD);
 
@@ -224,7 +313,14 @@ contract FutarchyTWAPOracleTest is Test {
             new FutarchyTWAPOracle(dao, binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
 
         vm.prank(binderAddr);
-        oracleT.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracleT.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         vm.warp(block.timestamp + TRADING_PERIOD);
 
@@ -255,7 +351,7 @@ contract FutarchyTWAPOracleTest is Test {
         noPool.setTickCumulatives(0, 50 * int56(int32(TWAP_WINDOW)));
 
         vm.expectEmit(true, false, false, true);
-        emit FutarchyTWAPOracle.ProposalResolved(proposal, true, 100, 50);
+        emit ProposalResolved(proposal, true, 100, 50);
         oracle.resolve(proposal);
     }
 
@@ -278,7 +374,8 @@ contract FutarchyTWAPOracleTest is Test {
             address(invertedYesPool),
             address(invertedNoPool),
             companyHigh, // yesBase = token1 → sign = -1
-            companyHigh // noBase = token1 → sign = -1
+            companyHigh, // noBase = token1 → sign = -1
+            uint48(block.timestamp)
         );
 
         vm.warp(block.timestamp + TRADING_PERIOD);
@@ -310,7 +407,8 @@ contract FutarchyTWAPOracleTest is Test {
             address(normalYesPool),
             address(invertedNoPool2),
             yesCompany, // token0 → sign = +1
-            noCompanyHigh // token1 → sign = -1
+            noCompanyHigh, // token1 → sign = -1
+            uint48(block.timestamp)
         );
 
         vm.warp(block.timestamp + TRADING_PERIOD);
@@ -365,7 +463,14 @@ contract FutarchyTWAPOracleTest is Test {
         GasGriefingAlgebraPool gasPool = new GasGriefingAlgebraPool(yesCompany, yesCurrency);
 
         vm.prank(binderAddr);
-        oracle.bind(proposal, address(gasPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(gasPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         vm.warp(block.timestamp + TRADING_PERIOD);
         noPool.setTickCumulatives(0, 50 * int56(int32(TWAP_WINDOW)));
@@ -382,7 +487,14 @@ contract FutarchyTWAPOracleTest is Test {
 
     function testGetDecisionBeforeResolution() public {
         vm.prank(binderAddr);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
 
         (bool resolved, bool accepted) = oracle.getDecision(proposal);
         assertFalse(resolved);
@@ -424,7 +536,7 @@ contract FutarchyTWAPOracleTest is Test {
     function testSetConfigEmitsEvent() public {
         vm.prank(dao);
         vm.expectEmit(false, false, false, true);
-        emit FutarchyTWAPOracle.ConfigUpdated(14 days, 2 days, 5);
+        emit ConfigUpdated(14 days, 2 days, 5);
         oracle.setConfig(14 days, 2 days, 5);
     }
 
@@ -441,13 +553,28 @@ contract FutarchyTWAPOracleTest is Test {
         oracle.setConfig(1 days, 2 days, 5);
     }
 
+    function testSetConfigRevertsZeroWindow() public {
+        vm.prank(dao);
+        vm.expectRevert(
+            abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 1 days, 0)
+        );
+        oracle.setConfig(1 days, 0, 5);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Helpers
     // ═══════════════════════════════════════════════════════
 
     function _bindAndAdvance() internal {
         vm.prank(binderAddr);
-        oracle.bind(proposal, address(yesPool), address(noPool), yesCompany, noCompany);
+        oracle.bind(
+            proposal,
+            address(yesPool),
+            address(noPool),
+            yesCompany,
+            noCompany,
+            uint48(block.timestamp)
+        );
         vm.warp(block.timestamp + TRADING_PERIOD);
     }
 }

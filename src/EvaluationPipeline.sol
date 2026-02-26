@@ -29,7 +29,8 @@ interface ITWAPOracleLike {
         address yesPool,
         address noPool,
         address yesBase,
-        address noBase
+        address noBase,
+        uint48 marketStartTime
     ) external;
     function getDecision(address proposal) external view returns (bool resolved, bool accepted);
 }
@@ -189,7 +190,12 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
 
         futarchyProposalOf[proposalId] = futarchyProposal;
 
-        _bindToTWAPOracle(futarchyProposal);
+        // Anchor oracle deadlines to the intended market open, while clamping
+        // stale opening times to "now" so deadlines are never in the past.
+        uint48 marketStartTime =
+            openingTime > block.timestamp ? uint48(openingTime) : uint48(block.timestamp);
+
+        _bindToTWAPOracle(futarchyProposal, marketStartTime);
 
         emit EvaluationMarketCreated(proposalId, futarchyProposalId, futarchyProposal);
     }
@@ -197,7 +203,7 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
     /// @dev Look up YES/NO pools from the Algebra factory using the
     /// proposal's wrapped outcome tokens and bind them to the TWAP
     /// oracle. Extracted to avoid stack-too-deep in startEvaluation.
-    function _bindToTWAPOracle(address futarchyProposal) internal {
+    function _bindToTWAPOracle(address futarchyProposal, uint48 marketStartTime) internal {
         IFutarchyProposalOutcomes fp = IFutarchyProposalOutcomes(futarchyProposal);
         (address yesCompany,) = fp.wrappedOutcome(0);
         (address noCompany,) = fp.wrappedOutcome(1);
@@ -210,6 +216,6 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
             revert PoolNotFound();
         }
 
-        twapOracle.bind(futarchyProposal, yesPool, noPool, yesCompany, noCompany);
+        twapOracle.bind(futarchyProposal, yesPool, noPool, yesCompany, noCompany, marketStartTime);
     }
 }

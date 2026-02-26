@@ -8,6 +8,7 @@ contract MockTWAPOracle {
         address noPool;
         address yesBase;
         address noBase;
+        uint48 marketStartTime;
     }
 
     mapping(address => Binding) public bindings;
@@ -21,10 +22,15 @@ contract MockTWAPOracle {
         address yesPool,
         address noPool,
         address yesBase,
-        address noBase
+        address noBase,
+        uint48 marketStartTime
     ) external {
         bindings[proposal] = Binding({
-            yesPool: yesPool, noPool: noPool, yesBase: yesBase, noBase: noBase
+            yesPool: yesPool,
+            noPool: noPool,
+            yesBase: yesBase,
+            noBase: noBase,
+            marketStartTime: marketStartTime
         });
         bindCallCount++;
     }

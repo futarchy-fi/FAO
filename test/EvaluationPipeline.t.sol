@@ -12,6 +12,15 @@ import {MockAlgebraFactoryLike} from "./mocks/MockAlgebraFactoryLike.sol";
 import {MockTWAPOracle} from "./mocks/MockTWAPOracle.sol";
 
 contract EvaluationPipelineTest is Test {
+    event EvaluationMarketCreated(
+        uint256 indexed proposalId,
+        uint256 indexed futarchyProposalId,
+        address indexed futarchyProposal
+    );
+    event EvaluationResolved(
+        uint256 indexed proposalId, address indexed futarchyProposal, bool accepted
+    );
+
     MockFutarchyArbitrationLike arb;
     MockEvaluationOrchestrator orch;
     MockAlgebraFactoryLike factory;
@@ -97,12 +106,29 @@ contract EvaluationPipelineTest is Test {
         pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
 
         // Verify the TWAP oracle received correct binding.
-        (address boundYesPool, address boundNoPool, address boundYesBase, address boundNoBase) =
-            twapOracle.bindings(address(prop));
+        (
+            address boundYesPool,
+            address boundNoPool,
+            address boundYesBase,
+            address boundNoBase,
+            uint48 boundStartTime
+        ) = twapOracle.bindings(address(prop));
         assertEq(boundYesPool, yesPool);
         assertEq(boundNoPool, noPool);
         assertEq(boundYesBase, yesCompany);
         assertEq(boundNoBase, noCompany);
+        assertEq(boundStartTime, uint48(block.timestamp));
+    }
+
+    function testStartEvaluationBindsFutureOpeningTimeAsStart() public {
+        arb.setActive(5);
+        MockFutarchyProposalLike prop = _setupProposal(42);
+        uint32 openingTime = uint32(block.timestamp + 2 days);
+
+        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, openingTime);
+
+        (,,,, uint48 boundStartTime) = twapOracle.bindings(address(prop));
+        assertEq(boundStartTime, openingTime);
     }
 
     function testStartEvaluationRevertsIfAlreadyStarted() public {
@@ -122,7 +148,7 @@ contract EvaluationPipelineTest is Test {
         MockFutarchyProposalLike prop = _setupProposal(42);
 
         vm.expectEmit(true, true, true, true);
-        emit EvaluationPipeline.EvaluationMarketCreated(5, 42, address(prop));
+        emit EvaluationMarketCreated(5, 42, address(prop));
 
         pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
     }
@@ -219,7 +245,7 @@ contract EvaluationPipelineTest is Test {
         twapOracle.setDecision(address(prop), true, true);
 
         vm.expectEmit(true, true, false, true);
-        emit EvaluationPipeline.EvaluationResolved(7, address(prop), true);
+        emit EvaluationResolved(7, address(prop), true);
 
         pipeline.resolve(7);
     }

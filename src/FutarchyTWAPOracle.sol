@@ -41,7 +41,7 @@ contract FutarchyTWAPOracle {
         address noPool; // NO_TOKEN / NO_COLLATERAL Algebra pool
         address yesBase; // YES company token (for tick sign normalization)
         address noBase; // NO company token
-        uint48 startTime; // when trading started (set during bind)
+        uint48 startTime; // when trading started (provided during bind)
         bool resolved;
         bool accepted;
     }
@@ -107,7 +107,7 @@ contract FutarchyTWAPOracle {
     ) {
         if (_dao == address(0)) revert ZeroAddress();
         if (_binder == address(0)) revert ZeroAddress();
-        if (_twapWindow > _tradingPeriod) {
+        if (_twapWindow == 0 || _twapWindow > _tradingPeriod) {
             revert InvalidConfig(_tradingPeriod, _twapWindow);
         }
         dao = _dao;
@@ -137,13 +137,14 @@ contract FutarchyTWAPOracle {
     // ═══════════════════════════════════════════════════════
 
     /// @notice Register YES/NO pools for a proposal. Called by the
-    /// EvaluationPipeline during market creation. Sets startTime to now.
+    /// EvaluationPipeline during market creation.
     function bind(
         address proposal,
         address yesPool,
         address noPool,
         address yesBase,
-        address noBase
+        address noBase,
+        uint48 marketStartTime
     ) external onlyBinder {
         if (proposal == address(0)) revert ZeroAddress();
         if (yesPool == address(0)) revert ZeroAddress();
@@ -157,12 +158,12 @@ contract FutarchyTWAPOracle {
             noPool: noPool,
             yesBase: yesBase,
             noBase: noBase,
-            startTime: uint48(block.timestamp),
+            startTime: marketStartTime,
             resolved: false,
             accepted: false
         });
 
-        emit ProposalBound(proposal, yesPool, noPool, uint48(block.timestamp));
+        emit ProposalBound(proposal, yesPool, noPool, marketStartTime);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -215,7 +216,7 @@ contract FutarchyTWAPOracle {
         external
         onlyDAO
     {
-        if (_twapWindow > _tradingPeriod) {
+        if (_twapWindow == 0 || _twapWindow > _tradingPeriod) {
             revert InvalidConfig(_tradingPeriod, _twapWindow);
         }
         tradingPeriod = _tradingPeriod;
