@@ -11,9 +11,6 @@ import {MockWrappedNative} from "./mocks/MockWrappedNative.sol";
 import {MockFutarchyLiquidityAdapter} from "./mocks/MockFutarchyLiquidityAdapter.sol";
 import {MockOfficialProposalSource} from "./mocks/MockOfficialProposalSource.sol";
 import {MockConditionalRouter} from "./mocks/MockConditionalRouter.sol";
-import {MockFutarchyProposalLike} from "./mocks/MockFutarchyProposalLike.sol";
-import {MockAlgebraFactoryLike} from "./mocks/MockAlgebraFactoryLike.sol";
-import {MockAlgebraPoolLike} from "./mocks/MockAlgebraPoolLike.sol";
 import {MockMintableERC20} from "./mocks/MockMintableERC20.sol";
 import {RevertingFutarchyLiquidityAdapter} from "./mocks/RevertingFutarchyLiquidityAdapter.sol";
 import {RevertingLiquidityManager} from "./mocks/RevertingLiquidityManager.sol";
@@ -26,8 +23,6 @@ contract FutarchyLiquidityManagerTest is Test {
     MockFutarchyLiquidityAdapter internal conditionalAdapter;
     MockOfficialProposalSource internal proposalSource;
     MockConditionalRouter internal conditionalRouter;
-    MockAlgebraFactoryLike internal algebraFactory;
-    MockAlgebraPoolLike internal spotPool;
     MockMintableERC20 internal yesCompanyToken;
     MockMintableERC20 internal noCompanyToken;
     MockMintableERC20 internal yesCurrencyToken;
@@ -55,10 +50,6 @@ contract FutarchyLiquidityManagerTest is Test {
         conditionalAdapter = new MockFutarchyLiquidityAdapter();
         proposalSource = new MockOfficialProposalSource();
         conditionalRouter = new MockConditionalRouter();
-        algebraFactory = new MockAlgebraFactoryLike();
-        spotPool = new MockAlgebraPoolLike(address(token), address(wrappedNative));
-        algebraFactory.setPool(address(token), address(wrappedNative), address(spotPool));
-        proposalSource.setAlgebraFactory(algebraFactory);
         yesCompanyToken = new MockMintableERC20("YES_COMP", "YCOMP");
         noCompanyToken = new MockMintableERC20("NO_COMP", "NCOMP");
         yesCurrencyToken = new MockMintableERC20("YES_CURR", "YCURR");
@@ -89,18 +80,7 @@ contract FutarchyLiquidityManagerTest is Test {
         returns (address proposal)
     {
         proposalNonce++;
-        bytes32 conditionId = keccak256(abi.encodePacked("cond", proposalNonce));
-        proposal = address(
-            new MockFutarchyProposalLike(
-                address(token),
-                address(wrappedNative),
-                conditionId,
-                address(yesCompanyToken),
-                address(noCompanyToken),
-                address(yesCurrencyToken),
-                address(noCurrencyToken)
-            )
-        );
+        proposal = address(uint160(0xF000 + proposalNonce));
 
         proposalSource.createProposalExtended(
             proposal,
@@ -136,19 +116,7 @@ contract FutarchyLiquidityManagerTest is Test {
         assertEq(manager.conditionalLiquidity(), 0);
         assertFalse(manager.inConditionalMode());
 
-        MockAlgebraPoolLike yesPool =
-            new MockAlgebraPoolLike(address(yesCompanyToken), address(yesCurrencyToken));
-        MockAlgebraPoolLike noPool =
-            new MockAlgebraPoolLike(address(noCompanyToken), address(noCurrencyToken));
-
-        // Ensure the manager can exit conditional mode after settlement by making the spot tick and
-        // the winning conditional tick match (within MAX_EXIT_TICK_DELTA).
-        spotPool.setTick(0);
-        yesPool.setTick(0);
-        noPool.setTick(0);
-
-        address proposal =
-            _createOfficialProposal(officialProposer, address(yesPool), address(noPool));
+        _createOfficialProposal(officialProposer, address(0xAAA1), address(0xAAA2));
 
         FutarchyLiquidityManager.SyncParams memory params;
         FutarchyLiquidityManager.SyncAction action = manager.sync(params);
@@ -162,9 +130,6 @@ contract FutarchyLiquidityManagerTest is Test {
         assertEq(manager.conditionalLiquidity(), 80 ether);
 
         proposalSource.setSettled(true);
-        conditionalRouter.setWinningOutcomes(
-            MockFutarchyProposalLike(proposal).conditionId(), true, false
-        );
         action = manager.sync(params);
         assertEq(uint256(action), uint256(FutarchyLiquidityManager.SyncAction.MigratedBackToSpot));
 
@@ -179,79 +144,61 @@ contract FutarchyLiquidityManagerTest is Test {
         assertEq(manager.spotLiquidity(), 100 ether);
     }
 
-    function test_sync_does_not_double_migrate_spot_to_conditional() public {
+    function test_sync_back_reverts_when_leftovers_exceed_50bps() public {
         sale.seedLiquidityManager(address(manager), SEED_FAO, SEED_NATIVE, "");
 
-        MockAlgebraPoolLike yesPool =
-            new MockAlgebraPoolLike(address(yesCompanyToken), address(yesCurrencyToken));
-        MockAlgebraPoolLike noPool =
-            new MockAlgebraPoolLike(address(noCompanyToken), address(noCurrencyToken));
-
-        spotPool.setTick(0);
-        yesPool.setTick(0);
-        noPool.setTick(0);
-
-        _createOfficialProposal(officialProposer, address(yesPool), address(noPool));
+        _createOfficialProposal(officialProposer, address(0xAAB1), address(0xAAB2));
 
         FutarchyLiquidityManager.SyncParams memory params;
-        FutarchyLiquidityManager.SyncAction action = manager.sync(params);
-        assertEq(
-            uint256(action), uint256(FutarchyLiquidityManager.SyncAction.MigratedToConditional)
-        );
-        assertTrue(manager.inConditionalMode());
+        manager.sync(params);
         assertEq(manager.spotLiquidity(), 20 ether);
         assertEq(manager.conditionalLiquidity(), 80 ether);
 
-        // Calling sync again while unsettled must not migrate an additional 80% from spot.
-        action = manager.sync(params);
-        assertEq(uint256(action), uint256(FutarchyLiquidityManager.SyncAction.None));
+        proposalSource.setSettled(true);
+
+        // 99.49% usage on one side leaves 0.51% leftovers, which must fail the 50 bps cap.
+        spotAdapter.setAddUsageBps(9949, 10_000);
+        vm.expectRevert();
+        manager.sync(params);
+
+        // State is unchanged because sync reverts atomically.
         assertTrue(manager.inConditionalMode());
+        assertEq(manager.activeProposalId(), 1);
         assertEq(manager.spotLiquidity(), 20 ether);
         assertEq(manager.conditionalLiquidity(), 80 ether);
     }
 
-    function test_sync_waits_for_winning_outcome_and_price_alignment_to_exit() public {
+    function test_sync_back_allows_50bps_leftover_and_keeps_residual_on_manager() public {
         sale.seedLiquidityManager(address(manager), SEED_FAO, SEED_NATIVE, "");
 
-        MockAlgebraPoolLike yesPool =
-            new MockAlgebraPoolLike(address(yesCompanyToken), address(yesCurrencyToken));
-        MockAlgebraPoolLike noPool =
-            new MockAlgebraPoolLike(address(noCompanyToken), address(noCurrencyToken));
-
-        // Spot tick is our reference for exit alignment.
-        spotPool.setTick(0);
-        yesPool.setTick(0);
-        noPool.setTick(12_345); // Losing pool can be wildly off; should not block if YES wins.
-
-        address proposal =
-            _createOfficialProposal(officialProposer, address(yesPool), address(noPool));
+        _createOfficialProposal(officialProposer, address(0xAAC1), address(0xAAC2));
 
         FutarchyLiquidityManager.SyncParams memory params;
         manager.sync(params);
-        assertTrue(manager.inConditionalMode());
+        assertEq(manager.spotLiquidity(), 20 ether);
+        assertEq(manager.conditionalLiquidity(), 80 ether);
 
         proposalSource.setSettled(true);
 
-        // No winning outcomes yet => cannot exit.
+        // Exactly 50 bps leftovers are allowed by design.
+        spotAdapter.setAddUsageBps(9950, 10_000);
         FutarchyLiquidityManager.SyncAction action = manager.sync(params);
-        assertEq(uint256(action), uint256(FutarchyLiquidityManager.SyncAction.None));
-        assertTrue(manager.inConditionalMode());
-
-        // Outcome resolved but price misaligned => cannot exit.
-        conditionalRouter.setWinningOutcomes(
-            MockFutarchyProposalLike(proposal).conditionId(), true, false
-        );
-        yesPool.setTick(500); // > MAX_EXIT_TICK_DELTA (200)
-        action = manager.sync(params);
-        assertEq(uint256(action), uint256(FutarchyLiquidityManager.SyncAction.None));
-        assertTrue(manager.inConditionalMode());
-
-        // Align winning pool tick to spot => exit succeeds (even though losing pool tick is off).
-        yesPool.setTick(0);
-        action = manager.sync(params);
         assertEq(uint256(action), uint256(FutarchyLiquidityManager.SyncAction.MigratedBackToSpot));
+
+        uint256 expectedUnused =
+            (80 ether * manager.MAX_SYNC_LEFTOVER_BPS()) / manager.BPS_DENOMINATOR();
+
         assertFalse(manager.inConditionalMode());
         assertEq(manager.activeProposalId(), 0);
+        assertEq(manager.spotLiquidity(), 100 ether - expectedUnused);
+        assertEq(manager.conditionalLiquidity(), 0);
+        if (manager.FAO_IS_TOKEN0()) {
+            assertEq(token.balanceOf(address(manager)), expectedUnused);
+            assertEq(wrappedNative.balanceOf(address(manager)), 0);
+        } else {
+            assertEq(token.balanceOf(address(manager)), 0);
+            assertEq(wrappedNative.balanceOf(address(manager)), expectedUnused);
+        }
     }
 
     function test_deposit_mints_proportional_shares() public {
