@@ -10,5 +10,11 @@
       "name": "v5.5.0",
       "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
     }
+  },
+  "lib/reality-eth-monorepo": {
+    "rev": "65e11c3b5340b04c2d8243f7978a422f477c6354"
+  },
+  "lib/sx-evm": {
+    "rev": "c768f7a7c93ed79c1e63163762ddff40e9180f5f"
   }
 }

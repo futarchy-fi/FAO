@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -12,6 +12,7 @@ import {IFutarchyLiquidityAdapter} from "./interfaces/IFutarchyLiquidityAdapter.
 import {IFutarchyOfficialProposalSource} from "./interfaces/IFutarchyOfficialProposalSource.sol";
 import {IFutarchyConditionalRouter} from "./interfaces/IFutarchyConditionalRouter.sol";
 import {IAlgebraPoolLike} from "./interfaces/IAlgebraPoolLike.sol";
+import {FutarchyLiquidityLib} from "./FutarchyLiquidityLib.sol";
 
 interface IWrappedNative is IERC20 {
     function deposit() external payable;
@@ -164,7 +165,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         IFutarchyLiquidityAdapter conditionalAdapter,
         IFutarchyConditionalRouter conditionalRouter,
         address initialOwner
-    ) ERC20("Futarchy LP", "fLP") Ownable(initialOwner) {
+    ) ERC20("Futarchy LP", "fLP") {
         if (
             sale == address(0) || address(faoToken) == address(0)
                 || address(wrappedNative) == address(0) || officialProposer == address(0)
@@ -188,9 +189,16 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         TOKEN0 = faoFirst ? address(faoToken) : address(wrappedNative);
         TOKEN1 = faoFirst ? address(wrappedNative) : address(faoToken);
         FAO_IS_TOKEN0 = faoFirst;
+
+        _transferOwnership(initialOwner);
     }
 
     receive() external payable {}
+
+    /// @dev Delegates to FutarchyLiquidityLib for OZ v4 forceApprove semantics.
+    function _forceApprove(IERC20 token, address spender, uint256 value) internal {
+        FutarchyLiquidityLib.forceApprove(token, spender, value);
+    }
 
     function initializeFromSale(uint256 faoAmount, bytes calldata spotAddData)
         external
@@ -783,9 +791,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
     }
 
     function _splitCollateral(address proposal, address collateralToken, uint256 amount) internal {
-        if (amount == 0) return;
-        IERC20(collateralToken).forceApprove(address(CONDITIONAL_ROUTER), amount);
-        CONDITIONAL_ROUTER.splitPosition(proposal, collateralToken, amount);
+        FutarchyLiquidityLib.splitCollateral(CONDITIONAL_ROUTER, proposal, collateralToken, amount);
     }
 
     function _recoverCollateralFromOutcomeTokens(bool allowRedeem)
@@ -826,15 +832,9 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         address yesToken,
         address noToken
     ) internal {
-        if (yesToken == address(0) || noToken == address(0)) return;
-        uint256 yesBal = IERC20(yesToken).balanceOf(address(this));
-        uint256 noBal = IERC20(noToken).balanceOf(address(this));
-        uint256 mergeAmount = _min(yesBal, noBal);
-        if (mergeAmount == 0) return;
-
-        IERC20(yesToken).forceApprove(address(CONDITIONAL_ROUTER), mergeAmount);
-        IERC20(noToken).forceApprove(address(CONDITIONAL_ROUTER), mergeAmount);
-        CONDITIONAL_ROUTER.mergePositions(proposal, collateralToken, mergeAmount);
+        FutarchyLiquidityLib.mergeOutcomePair(
+            CONDITIONAL_ROUTER, proposal, collateralToken, yesToken, noToken
+        );
     }
 
     function _tryRedeemOutcomeRemainder(
@@ -843,16 +843,9 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         address yesToken,
         address noToken
     ) internal {
-        if (yesToken == address(0) || noToken == address(0)) return;
-        uint256 yesBal = IERC20(yesToken).balanceOf(address(this));
-        uint256 noBal = IERC20(noToken).balanceOf(address(this));
-        uint256 redeemAmount = _max(yesBal, noBal);
-        if (redeemAmount == 0) return;
-
-        IERC20(yesToken).forceApprove(address(CONDITIONAL_ROUTER), redeemAmount);
-        IERC20(noToken).forceApprove(address(CONDITIONAL_ROUTER), redeemAmount);
-
-        try CONDITIONAL_ROUTER.redeemPositions(proposal, collateralToken, redeemAmount) {} catch {}
+        FutarchyLiquidityLib.tryRedeemOutcomeRemainder(
+            CONDITIONAL_ROUTER, proposal, collateralToken, yesToken, noToken
+        );
     }
 
     function _transferOutcomeDelta(
@@ -862,54 +855,24 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 yesCurrencyBefore,
         uint256 noCurrencyBefore
     ) internal {
-        if (activeYesCompanyToken != address(0)) {
-            uint256 yesCompanyAfter = IERC20(activeYesCompanyToken).balanceOf(address(this));
-            if (yesCompanyAfter > yesCompanyBefore) {
-                IERC20(activeYesCompanyToken)
-                    .safeTransfer(recipient, yesCompanyAfter - yesCompanyBefore);
-            }
-        }
-        if (activeNoCompanyToken != address(0)) {
-            uint256 noCompanyAfter = IERC20(activeNoCompanyToken).balanceOf(address(this));
-            if (noCompanyAfter > noCompanyBefore) {
-                IERC20(activeNoCompanyToken)
-                    .safeTransfer(recipient, noCompanyAfter - noCompanyBefore);
-            }
-        }
-        if (activeYesCurrencyToken != address(0)) {
-            uint256 yesCurrencyAfter = IERC20(activeYesCurrencyToken).balanceOf(address(this));
-            if (yesCurrencyAfter > yesCurrencyBefore) {
-                IERC20(activeYesCurrencyToken)
-                    .safeTransfer(recipient, yesCurrencyAfter - yesCurrencyBefore);
-            }
-        }
-        if (activeNoCurrencyToken != address(0)) {
-            uint256 noCurrencyAfter = IERC20(activeNoCurrencyToken).balanceOf(address(this));
-            if (noCurrencyAfter > noCurrencyBefore) {
-                IERC20(activeNoCurrencyToken)
-                    .safeTransfer(recipient, noCurrencyAfter - noCurrencyBefore);
-            }
-        }
+        FutarchyLiquidityLib.transferOutcomeDelta(
+            recipient,
+            _activeOutcomeTokens(),
+            [yesCompanyBefore, noCompanyBefore, yesCurrencyBefore, noCurrencyBefore]
+        );
     }
 
     function _sweepActiveOutcomeTokensTo(address recipient) internal {
-        if (recipient == address(0)) return;
-        if (activeYesCompanyToken != address(0)) {
-            uint256 bal = IERC20(activeYesCompanyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeYesCompanyToken).safeTransfer(recipient, bal);
-        }
-        if (activeNoCompanyToken != address(0)) {
-            uint256 bal = IERC20(activeNoCompanyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeNoCompanyToken).safeTransfer(recipient, bal);
-        }
-        if (activeYesCurrencyToken != address(0)) {
-            uint256 bal = IERC20(activeYesCurrencyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeYesCurrencyToken).safeTransfer(recipient, bal);
-        }
-        if (activeNoCurrencyToken != address(0)) {
-            uint256 bal = IERC20(activeNoCurrencyToken).balanceOf(address(this));
-            if (bal > 0) IERC20(activeNoCurrencyToken).safeTransfer(recipient, bal);
-        }
+        FutarchyLiquidityLib.sweepOutcomeTokensTo(recipient, _activeOutcomeTokens());
+    }
+
+    function _activeOutcomeTokens() internal view returns (address[4] memory) {
+        return [
+            activeYesCompanyToken,
+            activeNoCompanyToken,
+            activeYesCurrencyToken,
+            activeNoCurrencyToken
+        ];
     }
 
     function _recomputeConditionalLiquidity() internal {
@@ -978,12 +941,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
         uint256 amount0,
         uint256 amount1
     ) internal {
-        if (amount0 > 0) {
-            IERC20(token0).forceApprove(address(adapter), amount0);
-        }
-        if (amount1 > 0) {
-            IERC20(token1).forceApprove(address(adapter), amount1);
-        }
+        FutarchyLiquidityLib.approvePairForAdapter(adapter, token0, token1, amount0, amount1);
     }
 
     function _min(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -1025,12 +983,7 @@ contract FutarchyLiquidityManager is ERC20, Ownable2Step, ReentrancyGuard {
     function _approveForAdapter(IFutarchyLiquidityAdapter adapter, uint256 amount0, uint256 amount1)
         internal
     {
-        if (amount0 > 0) {
-            IERC20(TOKEN0).forceApprove(address(adapter), amount0);
-        }
-        if (amount1 > 0) {
-            IERC20(TOKEN1).forceApprove(address(adapter), amount1);
-        }
+        FutarchyLiquidityLib.approvePairForAdapter(adapter, TOKEN0, TOKEN1, amount0, amount1);
     }
 
     function _mintShares(address to, uint128 liquidityAdded)

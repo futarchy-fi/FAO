@@ -210,7 +210,9 @@ contract SwaprAlgebraLiquidityAdapter is IFutarchyLiquidityAdapter {
     function _pullAndApprove(address token, uint256 amount, address from) internal {
         if (amount == 0) return;
         IERC20(token).safeTransferFrom(from, address(this), amount);
-        IERC20(token).forceApprove(address(POSITION_MANAGER), amount);
+        // OpenZeppelin v4 compatibility: no IERC20.forceApprove
+        IERC20(token).safeApprove(address(POSITION_MANAGER), 0);
+        IERC20(token).safeApprove(address(POSITION_MANAGER), amount);
     }
 
     function _mintPosition(
@@ -260,7 +262,9 @@ contract SwaprAlgebraLiquidityAdapter is IFutarchyLiquidityAdapter {
 
     function _approveIfAny(address token, uint256 amount) internal {
         if (amount == 0) return;
-        IERC20(token).forceApprove(address(POSITION_MANAGER), amount);
+        // OpenZeppelin v4 compatibility: no IERC20.forceApprove
+        IERC20(token).safeApprove(address(POSITION_MANAGER), 0);
+        IERC20(token).safeApprove(address(POSITION_MANAGER), amount);
     }
 
     function _increaseLiquidity(
