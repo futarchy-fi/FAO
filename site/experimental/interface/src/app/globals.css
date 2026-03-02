@@ -1,0 +1,343 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-pixel: 'Press Start 2P', cursive;
+
+  --animate-flicker: flicker 0.1s infinite;
+  --animate-scanline: scanline 12s linear infinite;
+  --animate-shine: shine 2.4s linear infinite;
+
+  @keyframes flicker {
+    0% {
+      opacity: 0.99;
+    }
+
+    50% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0.99;
+    }
+  }
+
+  @keyframes scanline {
+    0% {
+      transform: translateY(-100%);
+    }
+
+    100% {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes shine {
+    0% {
+      transform: translateX(-120%);
+    }
+
+    100% {
+      transform: translateX(120%);
+    }
+  }
+}
+
+:root,
+.dark {
+  --fao-bg: #040404;
+  --fao-fg: #f7f7f7;
+  --fao-strong: rgba(247, 247, 247, 0.92);
+  --fao-muted: rgba(247, 247, 247, 0.78);
+  --fao-soft: rgba(247, 247, 247, 0.68);
+  --fao-softest: rgba(247, 247, 247, 0.54);
+  --fao-border: rgba(247, 247, 247, 0.26);
+  --fao-glow: rgba(247, 247, 247, 0.12);
+  --fao-button-hover: #f7f7f7;
+  --fao-button-text: #040404;
+}
+
+body {
+  color: var(--fao-fg);
+  background: var(--fao-bg);
+  font-family: var(--font-mono);
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  transition: background 0.3s, color 0.3s;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Hide number input spinners (native stepper buttons) */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+html,
+body {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Reserve space for the HUD across all routes */
+:root {
+  --hud-height: 88px;
+}
+
+.app-shell {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-scroll {
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--hud-height) + env(safe-area-inset-bottom, 0px));
+}
+
+@utility terminal-text {
+  color: var(--fao-fg);
+  text-shadow: 0 0 4px var(--fao-glow);
+  font-family: var(--font-mono);
+}
+
+@utility terminal-border {
+  border: 1px solid var(--fao-border);
+  box-shadow: 0 0 15px var(--fao-glow);
+}
+
+@utility crt-screen {
+  position: relative;
+  background: var(--fao-bg);
+  overflow: hidden;
+  border: 2px solid var(--fao-fg);
+  box-shadow: inset 0 0 100px var(--fao-glow);
+}
+
+/* Scanline Effect - Adapted for theme */
+.crt-overlay::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(var(--fao-dim) 50%, transparent 50%), linear-gradient(90deg, var(--fao-glow), transparent, var(--fao-glow));
+  z-index: 200;
+  background-size: 100% 2px, 2px 100%;
+  pointer-events: none;
+  opacity: 0.15;
+}
+
+.crt-flicker {
+  animation: flicker 0.1s infinite;
+}
+
+.scanline-move {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(0deg, transparent, var(--fao-glow), transparent);
+  animation: scanline 12s linear infinite;
+  z-index: 201;
+  pointer-events: none;
+}
+
+.terminal-button {
+  background: transparent;
+  border: 1px solid var(--fao-fg);
+  color: var(--fao-fg);
+  padding: 10px 24px;
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.terminal-button:hover {
+  background: var(--fao-button-hover);
+  color: var(--fao-button-text);
+  box-shadow: 0 0 20px var(--fao-glow);
+}
+
+.terminal-button:active {
+  transform: scale(0.98);
+}
+
+.shine-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.shine-button::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -30%;
+  width: 60%;
+  height: 200%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  animation: shine 2.4s linear infinite;
+  pointer-events: none;
+}
+
+/* ICO Mixture Helper */
+.ico-header {
+  font-family: var(--font-pixel);
+  font-size: 2.5rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+  color: var(--fao-fg);
+  line-height: 1;
+}
+
+/* Component Overrides for Variable Support */
+.bg-black {
+  background-color: var(--fao-bg) !important;
+}
+
+.text-white {
+  color: var(--fao-fg) !important;
+}
+
+.border-white\/5,
+.border-white\/10,
+.border-white\/20 {
+  border-color: var(--fao-border) !important;
+}
+
+.bg-white\/5,
+.bg-white\/2 {
+  background-color: var(--fao-glow) !important;
+}
+
+.text-white\/90,
+.text-white\/80,
+.text-white\/70 {
+  color: var(--fao-strong) !important;
+}
+
+.text-white\/60,
+.text-white\/50 {
+  color: var(--fao-muted) !important;
+}
+
+.text-white\/40,
+.text-white\/30 {
+  color: var(--fao-soft) !important;
+}
+
+.text-white\/20,
+.text-white\/10 {
+  color: var(--fao-softest) !important;
+}
+
+.placeholder\:text-white\/10::placeholder {
+  color: var(--fao-softest) !important;
+}
+
+/* Phase cards hover styling */
+.phase-card {
+  border: 1px solid var(--fao-border);
+  background: var(--fao-glow);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, transform 0.25s ease;
+}
+
+.phase-card:hover {
+  border-color: var(--fao-fg);
+  background: rgba(247, 247, 247, 0.12);
+  box-shadow: 0 0 30px rgba(247, 247, 247, 0.12);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 1024px) {
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    font-size: 0.875rem;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  label,
+  .font-pixel,
+  .ico-header {
+    font-size: 1rem !important;
+  }
+
+  .app-scroll .text-6xl,
+  .app-scroll .text-5xl,
+  .app-scroll .text-4xl {
+    font-size: 1.75rem !important;
+  }
+
+  .app-scroll .text-3xl,
+  .app-scroll .text-2xl,
+  .app-scroll .text-xl {
+    font-size: 1.25rem !important;
+  }
+
+  .app-scroll .text-lg,
+  .app-scroll .text-base {
+    font-size: 1rem !important;
+  }
+
+  .app-scroll .text-sm,
+  .app-scroll .text-xs {
+    font-size: 0.875rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-scroll .font-pixel {
+    font-size: 0.7rem !important;
+    line-height: 1.2;
+    letter-spacing: 0.08em !important;
+  }
+
+  .app-scroll .text-6xl,
+  .app-scroll .text-5xl,
+  .app-scroll .text-4xl {
+    font-size: 1.4rem !important;
+  }
+
+  .app-scroll .text-3xl,
+  .app-scroll .text-2xl,
+  .app-scroll .text-xl {
+    font-size: 1.05rem !important;
+  }
+
+  .app-scroll .text-lg,
+  .app-scroll .text-base {
+    font-size: 0.95rem !important;
+  }
+
+  .app-scroll .text-sm,
+  .app-scroll .text-xs {
+    font-size: 0.75rem !important;
+  }
+}
+
+

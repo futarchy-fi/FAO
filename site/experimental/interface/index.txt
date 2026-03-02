@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAO Subgraph Explorer</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+    header { padding: 1.5rem 1.75rem; background: linear-gradient(135deg, #1e293b, #0f172a); }
+    h1 { margin: 0 0 0.5rem 0; font-size: 1.6rem; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 1.25rem; margin: 1rem auto; max-width: 960px; box-shadow: 0 15px 40px rgba(0,0,0,0.35); }
+    label { font-weight: bold; display: block; margin-bottom: 0.35rem; }
+    input, textarea { width: 100%; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; padding: 0.75rem; box-sizing: border-box; }
+    textarea { min-height: 200px; resize: vertical; font-family: Consolas, monospace; }
+    input { font-family: Consolas, monospace; }
+    button { background: #10b981; color: #0b1220; border: none; border-radius: 8px; padding: 0.85rem 1.25rem; font-weight: 700; cursor: pointer; transition: transform 0.1s ease, box-shadow 0.1s ease; }
+    button:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(16,185,129,0.3); }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row .half { flex: 1 1 300px; }
+    pre { background: #0b1220; border: 1px solid #1f2937; border-radius: 8px; padding: 1rem; overflow-x: auto; max-height: 520px; }
+    small { color: #94a3b8; }
+    .status { margin-top: 0.5rem; font-size: 0.9rem; color: #cbd5e1; }
+    .pill { display: inline-block; padding: 0.35rem 0.65rem; border-radius: 999px; background: #1e293b; color: #cbd5e1; font-size: 0.8rem; margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FAO Sale — Subgraph Live Checker <span class="pill">gnosis</span></h1>
+    <div>Query endpoint: <code id="endpoint-label"></code></div>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <div class="half">
+        <label for="endpoint">Endpoint</label>
+        <div class="row" style="gap: 0.5rem;">
+          <input id="endpoint" value="https://api.studio.thegraph.com/query/1721787/futarchy-subgraph/v0.0.1" style="flex: 1 1 auto;">
+          <button id="copyEndpoint" style="padding: 0.65rem 0.9rem; white-space: nowrap;">Copy</button>
+        </div>
+      </div>
+      <div class="half">
+        <label for="txHash">Filter by tx hash (optional, exact)</label>
+        <input id="txHash" placeholder="0x26c73602f38ec39f681b52998e7da17ace31e3e3b91ef2e6a6ef4891b2e747">
+      </div>
+    </div>
+
+    <label for="query">GraphQL query</label>
+    <textarea id="query"></textarea>
+
+    <div style="margin-top: 0.75rem;">
+      <button id="run">Run Query</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Result</label>
+    <pre id="result">Click "Run Query" to fetch.</pre>
+  </div>
+
+  <script>
+    const endpointInput = document.getElementById('endpoint');
+    const endpointLabel = document.getElementById('endpoint-label');
+    const queryBox = document.getElementById('query');
+    const resultBox = document.getElementById('result');
+    const status = document.getElementById('status');
+    const txHashInput = document.getElementById('txHash');
+
+    const defaultQuery = `# Latest lifecycle + purchases + ragequits
+{
+  lifecycleEvents(first: 5, orderBy: timestamp, orderDirection: desc) {
+    startTime
+    initialPhaseEnd
+    timestamp
+    txHash
+  }
+  purchaseEvents(first: 5, orderBy: timestamp, orderDirection: desc) {
+    buyer
+    numTokens
+    costWei
+    timestamp
+    txHash
+  }
+  ragequitEvents(first: 5, orderBy: timestamp, orderDirection: desc) {
+    user
+    faoBurned
+    ethReturned
+    timestamp
+    txHash
+  }
+}`;
+
+    queryBox.value = defaultQuery;
+    endpointLabel.textContent = endpointInput.value;
+
+    endpointInput.addEventListener('input', () => {
+      endpointLabel.textContent = endpointInput.value;
+    });
+
+    document.getElementById('copyEndpoint').addEventListener('click', async () => {
+      const endpoint = endpointInput.value.trim()
+      try {
+        await navigator.clipboard.writeText(endpoint)
+        status.textContent = 'Endpoint copied'
+        setTimeout(() => { status.textContent = '' }, 1500)
+      } catch (e) {
+        status.textContent = 'Copy failed'
+      }
+    })
+
+    document.getElementById('run').addEventListener('click', async () => {
+      const endpoint = endpointInput.value.trim();
+      const txHash = txHashInput.value.trim().toLowerCase();
+      let gql = queryBox.value;
+
+      // If tx hash provided, wrap the query to filter events by tx hash
+      if (txHash) {
+        gql = `{
+  purchaseEvents(where: { txHash: "${txHash}" }) {
+    buyer
+    numTokens
+    costWei
+    timestamp
+    txHash
+  }
+  ragequitEvents(where: { txHash: "${txHash}" }) {
+    user
+    faoBurned
+    ethReturned
+    timestamp
+    txHash
+  }
+  lifecycleEvents(where: { txHash: "${txHash}" }) {
+    id
+    startTime
+    initialPhaseEnd
+    timestamp
+    txHash
+  }
+}`;
+      }
+
+      status.textContent = 'Running...';
+      resultBox.textContent = '';
+      try {
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: gql })
+        });
+        const json = await resp.json();
+        resultBox.textContent = JSON.stringify(json, null, 2);
+        status.textContent = 'Done';
+      } catch (err) {
+        resultBox.textContent = 'Error: ' + err;
+        status.textContent = 'Failed';
+      }
+    });
+  </script>
+</body>
+</html>

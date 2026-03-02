@@ -1,0 +1,86 @@
+# Schema for FAO Sale contract
+
+type Sale @entity {
+  id: ID!
+  token: Bytes
+  minInitialPhaseSold: BigInt
+  initialPriceWeiPerToken: BigInt
+  longTargetTokens: BigInt
+  saleStart: BigInt
+  initialPhaseEnd: BigInt
+  currentPriceWeiPerToken: BigInt
+  totalAmountRaised: BigInt
+  totalCurveFundsRaised: BigInt
+  totalCurveTokensSold: BigInt
+  totalSaleTokens: BigInt
+  initialTokensSold: BigInt
+  initialFundsRaised: BigInt
+  initialNetSale: BigInt
+  initialPhaseFinalized: Boolean
+  longTargetReachedAt: BigInt
+}
+
+type PurchaseEvent @entity(immutable: true) {
+  id: ID!
+  buyer: Bytes!
+  numTokens: BigInt!
+  costWei: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RagequitEvent @entity(immutable: true) {
+  id: ID!
+  user: Bytes!
+  faoBurned: BigInt!
+  ethReturned: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type LifecycleEvent @entity(immutable: true) {
+  id: ID!
+  startTime: BigInt!
+  initialPhaseEnd: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type ConfigChange @entity(immutable: true) {
+  id: ID!
+  kind: String!
+  newAddress: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RagequitToken @entity {
+  id: ID!
+  active: Boolean!
+  lastUpdatedBlock: BigInt!
+  lastUpdatedTx: Bytes!
+}
+
+type RoleGrant @entity(immutable: true) {
+  id: ID!
+  role: Bytes!
+  account: Bytes!
+  sender: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RoleRevoke @entity(immutable: true) {
+  id: ID!
+  role: Bytes!
+  account: Bytes!
+  sender: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
