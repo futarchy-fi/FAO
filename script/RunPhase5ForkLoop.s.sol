@@ -59,19 +59,22 @@ contract RunPhase5ForkLoop is Script {
         uint256 simulatedSeconds;
     }
 
+    // Storage var to defeat via_ir's constant-folding of `block.timestamp` reads.
+    uint256 internal _startTime;
+
     function run() external {
         uint256 cycles = vm.envOr("CYCLES", DEFAULT_CYCLES);
         address admin = vm.envOr("ADMIN", DEFAULT_ADMIN);
 
         Metrics memory m;
-        uint256 startTime = block.timestamp;
+        _startTime = block.timestamp;
 
         console2.log("=== Phase-5 fork loop starting ===");
         console2.log("cycles requested:", cycles);
         console2.log("admin:", admin);
         console2.log("orchestrator:", address(ORCH));
         console2.log("starting block:", block.number);
-        console2.log("starting timestamp:", startTime);
+        console2.log("starting timestamp:", _startTime);
 
         // Top up admin on the fork.
         vm.deal(admin, 100 ether);
@@ -115,7 +118,7 @@ contract RunPhase5ForkLoop is Script {
             vm.roll(block.number + 1);
         }
 
-        m.simulatedSeconds = block.timestamp - startTime;
+        m.simulatedSeconds = block.timestamp - _startTime;
 
         console2.log("=== Phase-5 fork loop report ===");
         console2.log("cycles attempted:        ", m.cyclesAttempted);
