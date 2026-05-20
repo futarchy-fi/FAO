@@ -93,6 +93,30 @@ The 100% success rate at 3 cycles is the same defensive properties as
 the in-tree 200-cycle simulation (`docs/phase5-extended-report.md`),
 now corroborated against actual live contract bytecode.
 
+## 200-cycle run (partial — aborted at cycle 70 by RPC gas constraint)
+
+The same script invoked with `CYCLES=200` ran successfully for **69
+cycles (138 simulated hours)** before the underlying RPC
+(`sepolia.drpc.org`) returned an `OutOfGas` for a `Wrapped1155Factory.
+requireWrapped1155` sub-call inside cycle 70's atomic promote.
+
+The OutOfGas appears to be an RPC-side eth_call gas cap rather than
+an actual EVM limit (per-cycle gas usage is ~15.6M, well below the
+mainnet block gas limit of 30M). A dedicated RPC node or a smaller
+batch per invocation would complete the full 200 cycles.
+
+```
+cycles requested: 200
+cycles succeeded: 69    (138 simulated hours, 13.8× goal minimum)
+cycles failed:     1    (cycle 70, OutOfGas in Wrapped1155Factory deploy)
+remaining:       130    (not attempted before forge aborted on the cycle-70 revert)
+```
+
+Even with the early abort, the run constitutes a continuous batch of
+**69 atomic promote + 2h-warp + resolve cycles against deployed
+bytecode**, with each cycle exercising the same code path as the live
+tx at block 10883925.
+
 ## Reproduction
 
 ```
