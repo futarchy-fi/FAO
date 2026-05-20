@@ -80,33 +80,44 @@ Compared to Seer's hash:
 - `test_A2_blockNumberDerivationWouldBePredictable` — regression guard
   documenting why `block.number` is the wrong knob.
 
-## Known environment limitation
+## Build / test infrastructure fixes (commit 003)
 
-`forge test` currently fails with an ambiguous import error between
-`src/types.sol` and `lib/sx-evm/src/types.sol`. This is a pre-existing
-issue in this repo unrelated to this commit:
+Forge 1.5+ raises ambiguous-import errors between the local `src/`
+shim files and `lib/sx-evm/src/` originals. To unblock the test suite,
+commit 003 patches the 8 sx-evm internal files to use the `sx/`
+remapping prefix instead of the bare `src/` prefix:
 
 ```
-Error (6275): Source "src/types.sol" not found: Ambiguous import.
-Multiple matching files found inside base path and/or include paths:
-"/work/src/types.sol", "/work/lib/sx-evm/src/types.sol".
+lib/sx-evm/src/Space.sol
+lib/sx-evm/src/types.sol
+lib/sx-evm/src/interfaces/space/ISpaceActions.sol
+lib/sx-evm/src/interfaces/space/ISpaceEvents.sol
+lib/sx-evm/src/interfaces/space/ISpaceState.sol
+lib/sx-evm/src/utils/SXHash.sol
+lib/sx-evm/src/utils/SXUtils.sol
+lib/sx-evm/src/utils/SignatureVerifier.sol
 ```
 
-It originates from `lib/sx-evm/src/interfaces/space/*` using
-`import "src/types.sol"` (relative to project root), and the local
-shim files in `src/` having the same path. With Forge 1.5+ the
-ambiguity resolution is stricter than what these shims assumed.
+This is a local patch of vendored upstream code; if/when sx-evm is
+re-vendored from upstream, the patch needs re-applying.
 
-**This blocks running the FAOFutarchyFactory test suite** even though
-the contracts themselves compile clean via `forge build --skip test`.
+Same commit also renames `arb.WXDAI()` call sites in 4 test files to
+`arb.WETH()` to match the FutarchyArbitration constructor change in
+commit 001.
 
-Fix path (out of scope for this commit):
+After commit 003 the FAOFutarchyFactory adversarial suite executes:
 
-- Either remove the duplicate shim files in `src/` and update sx-evm
-  imports to use the `sx/` remapping prefix, or
-- Add an explicit single-source remapping for the conflicting paths.
-
-The adversarial tests are valid Solidity and will execute against the
-factory once the import ambiguity is resolved. Until then, the
-properties they check are also asserted by inspection in this doc and
-by the `computeQuestionId` view function which is callable on-chain.
+```
+Ran 10 tests for test/FAOFutarchyFactory.t.sol:FAOFutarchyFactoryTest
+[PASS] test_A1_attackerCannotPreComputeQuestionIdWithoutPrevrandao
+[PASS] test_A2_blockNumberDerivationWouldBePredictable
+[PASS] test_computeQuestionId_changesWithFactory
+[PASS] test_computeQuestionId_changesWithIndex
+[PASS] test_computeQuestionId_changesWithPrevrandao
+[PASS] test_computeQuestionId_deterministicForSameInputs
+[PASS] test_createProposal_advancesIndexAcrossCalls
+[PASS] test_createProposal_emitsAndAdvancesIndex
+[PASS] test_createProposal_revertsOnEmptyName
+[PASS] test_createProposal_revertsOnZeroCollateral
+Suite result: ok. 10 passed; 0 failed; 0 skipped
+```

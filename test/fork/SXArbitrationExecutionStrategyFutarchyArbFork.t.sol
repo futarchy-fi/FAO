@@ -143,7 +143,7 @@ contract SXArbitrationExecutionStrategyFutarchyArbForkTest is Test {
         space.execute(sxProposalId, payload);
 
         // Drive arbitration to SETTLED+accepted via evaluator path.
-        IERC20 wxdai = arbitration.WXDAI();
+        IERC20 wxdai = arbitration.WETH();
 
         // Bonding path (flip-only; first activation must be YES):
         // INACTIVE -> YES(m) -> NO matches(m) -> YES(baseX, always accepted) -> graduates

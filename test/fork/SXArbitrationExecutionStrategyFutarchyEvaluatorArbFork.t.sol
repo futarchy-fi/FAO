@@ -54,7 +54,7 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorArbForkTest is Test {
         uint256 yesFlipBond = m; // = baseX, always accepted
 
         // Fund and approve WXDAI.
-        address wxdai = address(arb.WXDAI());
+        address wxdai = address(arb.WETH());
         deal(wxdai, yesBidder, yesActivation + yesFlipBond);
         deal(wxdai, noBidder, noBond);
 

@@ -214,7 +214,7 @@ contract SXArbitrationExecutionStrategyFutarchyEvaluatorE2EForkTest is Test {
     }
 
     function _driveToEvaluation(uint256 arbId) internal {
-        IERC20 wxdai = arbitration.WXDAI();
+        IERC20 wxdai = arbitration.WETH();
 
         // Bonding path:
         // INACTIVE -> YES(25e18) -> NO matches(25e18) -> YES(baseX, always accepted) -> graduates

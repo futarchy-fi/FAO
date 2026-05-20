@@ -99,7 +99,7 @@ contract FAOFutarchyFactoryTest is Test {
     MockWrapped1155Factory w1155;
     MockERC20 fao;
     MockERC20 weth;
-    address constant ORACLE = address(0xDeadBeef00000000000000000000000000000001);
+    address constant ORACLE = address(0xdEADbeEF00000000000000000000000000000001);
 
     function setUp() public {
         proposalImpl = new FAOFutarchyProposal();

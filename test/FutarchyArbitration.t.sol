@@ -27,7 +27,7 @@ contract FutarchyArbitrationTest is Test {
         assertTrue(address(arb) != address(0));
 
         // sanity: immutable WXDAI address is set to canonical Gnosis WXDAI
-        assertEq(address(arb.WXDAI()), WXDAI);
+        assertEq(address(arb.WETH()), WXDAI);
     }
 
     function testCreateProposalWithExplicitId() public {
