@@ -32,6 +32,9 @@ REPORT="docs/phase5-report-live.md"
 mkdir -p out
 
 forge_run() {
+  # $1 = extra env "KEY=value", $2 = shell command
+  local extra_env="$1"; shift
+  local cmd="$1"; shift
   DOCKER_HOST="${DOCKER_HOST:-unix:///run/user/$(id -u)/docker.sock}" \
     docker run --rm -v "$PWD:/work" -w /work --user root \
     -e PRIVATE_KEY="$PRIVATE_KEY" \
@@ -43,8 +46,8 @@ forge_run() {
     -e FAO_TOKEN="$FAO_TOKEN" \
     -e WETH="$WETH" \
     -e FEE_TIER="$FEE_TIER" \
-    -e "$@" \
-    ghcr.io/foundry-rs/foundry:stable -c "$2"
+    -e "$extra_env" \
+    ghcr.io/foundry-rs/foundry:stable -c "$cmd"
 }
 
 log_event() {

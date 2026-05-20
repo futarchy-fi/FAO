@@ -3,331 +3,159 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FAO — Futarchy Autonomous Optimizer</title>
-  <meta name="description" content="Governance through prediction markets. Let prices decide. Buy FAO, create proposals, trade outcomes." />
+  <title>FAO v0 — Sepolia testnet</title>
+  <meta name="description" content="FAO Futarchy Arbitration Organization v0 — live testnet deployment on Sepolia. 100% on-chain governance via conditional markets and UniV3 TWAP." />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
-  <script src="dashboard.js" defer></script>
   <script src="sepolia.js" defer></script>
 </head>
 <body>
 
-<!-- ═══ Nav ═══ -->
 <nav class="nav">
   <div class="nav-inner">
-    <span class="nav-logo">FAO</span>
+    <span class="nav-logo">FAO <span class="env-badge">testnet</span></span>
     <ul class="nav-links">
-      <li><a href="#how-it-works">How It Works</a></li>
-      <li><a href="#dashboard">Dashboard</a></li>
-      <li><a href="#sepolia">Sepolia v0</a></li>
-      <li><a href="#sale">Sale</a></li>
-      <li><a href="#governance">Governance</a></li>
+      <li><a href="#stack">Stack</a></li>
+      <li><a href="#proposals">Proposals</a></li>
       <li><a href="#contracts">Contracts</a></li>
-      <li><a href="#resources">Resources</a></li>
+      <li><a href="#docs">Docs</a></li>
+      <li><a href="https://fao.futarchy.ai">Prod →</a></li>
     </ul>
     <button class="nav-hamburger" aria-label="Menu">&#9776;</button>
   </div>
 </nav>
 
-<!-- ═══ Hero ═══ -->
 <section id="hero" class="section hero">
-  <h1 class="hero-title"><span class="accent">FAO</span> — Futarchy Autonomous Optimizer</h1>
-  <p class="hero-tagline">Governance through prediction markets. Let prices decide.</p>
+  <h1 class="hero-title">
+    <span class="accent">FAO v0</span> — Sepolia testnet
+  </h1>
+  <p class="hero-tagline">
+    100% on-chain futarchy. Live conditional markets reporting to CTF via UniV3 TWAP.
+    No Reality.eth. No human oracle.
+  </p>
   <div class="hero-ctas">
-    <a href="#sale" class="btn btn-primary">Buy FAO</a>
-    <a href="#dashboard" class="btn btn-secondary">Live Dashboard</a>
-    <a href="https://github.com/futarchy-fi/FAO" target="_blank" rel="noopener" class="btn btn-secondary">GitHub</a>
+    <a href="#proposals" class="btn btn-primary">Live proposals</a>
+    <a href="https://github.com/futarchy-fi/FAO/tree/arbitration/onchain-futarchy-v0" target="_blank" rel="noopener" class="btn btn-secondary">GitHub branch</a>
+    <a href="https://sepolia.etherscan.io/address/0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0" target="_blank" rel="noopener" class="btn btn-secondary">Factory on Etherscan</a>
   </div>
 </section>
 
-<!-- ═══ How It Works ═══ -->
-<section id="how-it-works" class="section">
-  <h2 class="section-title">How It Works</h2>
-  <p class="section-subtitle">FAO uses prediction markets to make governance decisions. Token holders propose changes, markets price them, and the best outcomes win.</p>
-
-  <div class="steps-grid">
-    <div class="step-card">
-      <div class="step-num">1</div>
-      <h3>Token &amp; Sale</h3>
-      <p>Buy FAO via a fixed-price initial phase or a bonding curve. Proceeds flow to the protocol treasury and liquidity pools on Gnosis Chain.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-num">2</div>
-      <h3>Proposals</h3>
-      <p>Anyone can create governance proposals through the FutarchyOfficialProposalSource. Candidates are promoted to official status by the authorized proposer.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-num">3</div>
-      <h3>Markets</h3>
-      <p>Each proposal spawns YES/NO conditional tokens that trade on Swapr. The market price represents the crowd's probability estimate of each outcome.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-num">4</div>
-      <h3>Settlement</h3>
-      <p>When markets resolve, the winning outcome executes or rejects the proposal. 80% of liquidity migrates to conditional pools during active proposals.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-num">5</div>
-      <h3>Ragequit</h3>
-      <p>Burn FAO at any time to exit with your pro-rata share of the treasury. Eligible assets include xDAI and any whitelisted ragequit tokens.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ Live Dashboard ═══ -->
-<section id="dashboard" class="section">
-  <h2 class="section-title">Live Dashboard</h2>
-  <p class="section-subtitle">On-chain data from Gnosis Chain, refreshed every 60 seconds.</p>
-
-  <div class="dash-grid">
-    <!-- Token Panel -->
-    <div class="dash-panel" id="panel-token">
-      <div class="dash-panel-header">
-        <span class="live-dot"></span>
-        <span class="dash-panel-title">FAO Token</span>
-      </div>
-      <div class="dash-row"><span class="dash-label">Name</span><span class="dash-value loading" data-field="token-name">...</span></div>
-      <div class="dash-row"><span class="dash-label">Symbol</span><span class="dash-value loading" data-field="token-symbol">...</span></div>
-      <div class="dash-row"><span class="dash-label">Decimals</span><span class="dash-value loading" data-field="token-decimals">...</span></div>
-      <div class="dash-row"><span class="dash-label">Total Supply</span><span class="dash-value loading" data-field="token-supply">...</span></div>
-      <div class="dash-row"><span class="dash-label">Sale Balance</span><span class="dash-value loading" data-field="token-sale-balance">...</span></div>
-      <div class="dash-row"><span class="dash-label">LP Balance</span><span class="dash-value loading" data-field="token-lp-balance">...</span></div>
-    </div>
-
-    <!-- Sale Panel -->
-    <div class="dash-panel" id="panel-sale">
-      <div class="dash-panel-header">
-        <span class="live-dot"></span>
-        <span class="dash-panel-title">FAO Sale</span>
-      </div>
-      <div class="dash-row"><span class="dash-label">Phase</span><span class="dash-value loading" data-field="sale-phase">...</span></div>
-      <div class="dash-row"><span class="dash-label">Current Price</span><span class="dash-value loading" data-field="sale-price">...</span></div>
-      <div class="dash-row"><span class="dash-label">Start Price</span><span class="dash-value loading" data-field="sale-start-price">...</span></div>
-      <div class="dash-row"><span class="dash-label">Initial Sold</span><span class="dash-value loading" data-field="sale-initial-sold">...</span></div>
-      <div class="dash-row"><span class="dash-label">Curve Sold</span><span class="dash-value loading" data-field="sale-curve-sold">...</span></div>
-      <div class="dash-row"><span class="dash-label">Total Raised</span><span class="dash-value loading" data-field="sale-total-raised">...</span></div>
-      <div class="dash-row"><span class="dash-label">Initial Raised</span><span class="dash-value loading" data-field="sale-initial-raised">...</span></div>
-      <div class="dash-row"><span class="dash-label">Curve Raised</span><span class="dash-value loading" data-field="sale-curve-raised">...</span></div>
-      <div class="dash-row"><span class="dash-label">Sale Allocation</span><span class="dash-value loading" data-field="sale-total-alloc">...</span></div>
-    </div>
-
-    <!-- Liquidity Panel -->
-    <div class="dash-panel" id="panel-liq">
-      <div class="dash-panel-header">
-        <span class="live-dot"></span>
-        <span class="dash-panel-title">Liquidity Manager</span>
-      </div>
-      <div class="dash-row"><span class="dash-label">Mode</span><span class="dash-value loading" data-field="liq-mode">...</span></div>
-      <div class="dash-row"><span class="dash-label">Initialized</span><span class="dash-value loading" data-field="liq-initialized">...</span></div>
-      <div class="dash-row"><span class="dash-label">Spot Liquidity</span><span class="dash-value loading" data-field="liq-spot">...</span></div>
-      <div class="dash-row"><span class="dash-label">Conditional Liq</span><span class="dash-value loading" data-field="liq-conditional">...</span></div>
-      <div class="dash-row"><span class="dash-label">Total Managed</span><span class="dash-value loading" data-field="liq-total">...</span></div>
-      <div class="dash-row"><span class="dash-label">fLP Supply</span><span class="dash-value loading" data-field="liq-flp-supply">...</span></div>
-      <div class="dash-row"><span class="dash-label">Active Proposal</span><span class="dash-value loading" data-field="liq-proposal-id">...</span></div>
-      <div class="dash-row"><span class="dash-label">Emergency Exit</span><span class="dash-value loading" data-field="liq-emergency">...</span></div>
-      <div class="dash-row"><span class="dash-label">Exit Ready</span><span class="dash-value loading" data-field="liq-emergency-ready">...</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ Sepolia v0 (testnet) ═══ -->
-<section id="sepolia" class="section">
-  <h2 class="section-title">FAO v0 — Sepolia testnet</h2>
+<section id="stack" class="section">
+  <h2 class="section-title">v0 stack — live on Sepolia</h2>
   <p class="section-subtitle">
-    Live on-chain data from the futarchy v0 stack deployed on Sepolia
-    (chain 11155111). Refreshed every 30 seconds. See
-    <a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/sepolia-deployment-v0.md" target="_blank" rel="noopener">deployment doc</a>.
+    Deployed atop Seer's ConditionalTokens + Wrapped1155Factory and canonical UniswapV3 on chain 11155111.
+    Refreshed every 30 seconds.
   </p>
 
   <div class="dash-grid">
     <div class="dash-panel">
       <div class="dash-panel-header">
         <span class="live-dot"></span>
-        <span class="dash-panel-title">v0 stack stats</span>
+        <span class="dash-panel-title">Live stats</span>
       </div>
       <div class="dash-row"><span class="dash-label">Latest block</span><span class="dash-value" id="sep-block">…</span></div>
-      <div class="dash-row"><span class="dash-label">Proposals (factory.marketsCount)</span><span class="dash-value" id="sep-markets-count">…</span></div>
+      <div class="dash-row"><span class="dash-label">Proposals created</span><span class="dash-value" id="sep-markets-count">…</span></div>
       <div class="dash-row"><span class="dash-label">Operator wallet</span><span class="dash-value" id="sep-op-balance">…</span></div>
       <div class="dash-row"><span class="dash-label">Resolver wiring</span><span class="dash-value" id="sep-oracle-ok">…</span></div>
       <div class="dash-row"><span class="dash-label">Last update</span><span class="dash-value" id="sep-updated">…</span></div>
     </div>
+
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">Design constants</span>
+      </div>
+      <div class="dash-row"><span class="dash-label">TIMEOUT</span><span class="dash-value">2 hours</span></div>
+      <div class="dash-row"><span class="dash-label">TWAP window</span><span class="dash-value">1 hour</span></div>
+      <div class="dash-row"><span class="dash-label">Fee tier</span><span class="dash-value">500 (0.05%)</span></div>
+      <div class="dash-row"><span class="dash-label">baseX (arbitration bond)</span><span class="dash-value">0.001 WETH</span></div>
+      <div class="dash-row"><span class="dash-label">MAX_QUEUE</span><span class="dash-value">3</span></div>
+      <div class="dash-row"><span class="dash-label">Anti-MEV</span><span class="dash-value">block.prevrandao</span></div>
+    </div>
+
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">Tier 4 evidence</span>
+      </div>
+      <div class="dash-row"><span class="dash-label">Unit / integration tests</span><span class="dash-value">162 / 162</span></div>
+      <div class="dash-row"><span class="dash-label">In-tree compressed sim</span><span class="dash-value">200 h</span></div>
+      <div class="dash-row"><span class="dash-label">Fork loop @ deployed bytecode</span><span class="dash-value">248 h sim</span></div>
+      <div class="dash-row"><span class="dash-label">Live promote cycles</span><span class="dash-value">2 ✓</span></div>
+      <div class="dash-row"><span class="dash-label">Live resolve cycles</span><span class="dash-value">2 ✓</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="proposals" class="section">
+  <h2 class="section-title">Proposals</h2>
+  <p class="section-subtitle">
+    Each card shows one proposal's lifecycle state: candidate, in TWAP window,
+    ready to resolve, or resolved. Reads
+    <code>FAOFutarchyFactory</code>, <code>FAOTwapResolver</code>, and
+    <code>ConditionalTokens</code> live from Sepolia.
+  </p>
+
+  <div class="create-box">
+    <h3 class="create-title">Create proposal (permissionless)</h3>
+    <p class="create-note">
+      Calls <code>FAOFutarchyFactory.createProposal(...)</code>. Costs ~0.002 ETH on Sepolia.
+      Promotion (creates pools + starts TWAP window) is admin-only — coming next.
+    </p>
+    <div class="create-form">
+      <input id="create-name" type="text" placeholder="Proposal name (e.g., Should we ship feature X?)" maxlength="80" />
+      <textarea id="create-desc" placeholder="Description (optional)" maxlength="400" rows="3"></textarea>
+      <div class="create-actions">
+        <button id="connect-wallet" class="btn btn-secondary">Connect MetaMask</button>
+        <button id="create-submit" class="btn btn-primary" disabled>Submit (connect wallet first)</button>
+      </div>
+      <p id="create-status" class="create-status"></p>
+    </div>
   </div>
 
-  <h3 class="sep-h3">Proposals</h3>
   <div id="sep-proposals" class="sep-cards">
     <p class="sep-empty">Loading…</p>
   </div>
-
-  <p class="sep-note">
-    Operator wallet on Sepolia:
-    <a href="https://sepolia.etherscan.io/address/0x693E3FB46Bb36eE43C702FE94f9463df0691b43d" target="_blank" rel="noopener">0x693E3F…1b43d</a>.
-    Factory:
-    <a href="https://sepolia.etherscan.io/address/0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0" target="_blank" rel="noopener">0xc3154e…0cCa0</a>.
-    Orchestrator:
-    <a href="https://sepolia.etherscan.io/address/0x7DF66Fd816c09bb534136C5688B55BBA9398d262" target="_blank" rel="noopener">0x7DF66F…d262</a>.
-    Resolver:
-    <a href="https://sepolia.etherscan.io/address/0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a" target="_blank" rel="noopener">0x421d2F…Ea91a</a>.
-  </p>
 </section>
 
-<!-- ═══ Sale Mechanics ═══ -->
-<section id="sale" class="section">
-  <h2 class="section-title">Sale Mechanics</h2>
-  <p class="section-subtitle">FAO tokens are minted via a two-phase sale on Gnosis Chain.</p>
-
-  <!-- Mint Distribution -->
-  <div class="dist-bar-wrap">
-    <div class="dist-bar">
-      <div class="dist-seg buyer">1.0x Buyer</div>
-      <div class="dist-seg treasury">0.5x Treasury</div>
-      <div class="dist-seg incentive">0.2x Incentive</div>
-      <div class="dist-seg insider">0.3x Insider</div>
-    </div>
-    <div class="dist-legend">
-      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:var(--accent)"></span> Buyer (1.0x)</span>
-      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#5b8def"></span> Treasury (0.5x)</span>
-      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#c084fc"></span> Incentive (0.2x)</span>
-      <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#f59e0b"></span> Insider (0.3x)</span>
-    </div>
-  </div>
-
-  <div class="two-col">
-    <div class="info-block">
-      <h3>Bonding Curve</h3>
-      <p>After the fixed-price initial phase, the sale transitions to a bonding curve. The price increases as more tokens are sold, rewarding early participants while ensuring continuous availability.</p>
-      <ul>
-        <li>Initial phase: fixed price per token</li>
-        <li>Curve phase: price rises with supply</li>
-        <li>Sale funds split across buyer allocation, treasury, incentives, and insider vesting</li>
-      </ul>
-    </div>
-    <div class="info-block">
-      <h3>Ragequit</h3>
-      <p>FAO holders can burn their tokens at any time to receive a pro-rata share of the treasury's eligible assets. This exit mechanism ensures the token always has fundamental backing.</p>
-      <ul>
-        <li>Burn FAO to receive xDAI and eligible tokens</li>
-        <li>Pro-rata share based on total supply at time of exit</li>
-        <li>Eligible tokens managed via <code>ragequitTokensLength()</code></li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ Governance & Arbitration ═══ -->
-<section id="governance" class="section">
-  <h2 class="section-title">Governance &amp; Arbitration</h2>
-  <p class="section-subtitle">Futarchy-based governance powered by conditional token markets on Swapr.</p>
-
-  <div class="two-col">
-    <div class="info-block">
-      <h3>Proposal Flow</h3>
-      <p>Proposals move through the FutarchyOfficialProposalSource lifecycle:</p>
-      <ul>
-        <li><strong>Candidate</strong> — Anyone submits a proposal</li>
-        <li><strong>Promote</strong> — Authorized proposer promotes to official</li>
-        <li><strong>Markets</strong> — YES/NO conditional tokens created and traded</li>
-        <li><strong>Migrate</strong> — 80% of spot liquidity moves to conditional pools</li>
-        <li><strong>Settle</strong> — CTF oracle resolves the outcome</li>
-      </ul>
-    </div>
-    <div class="info-block">
-      <h3>Liquidity Migration</h3>
-      <p>When a proposal becomes active, the FutarchyLiquidityManager migrates 80% of spot liquidity into conditional YES/NO pools on Swapr.</p>
-      <ul>
-        <li>Spot pool retains 20% as baseline</li>
-        <li>Conditional pools split across YES_FAO/YES_WXDAI and NO_FAO/NO_WXDAI</li>
-        <li>After settlement, liquidity migrates back to spot</li>
-        <li>Emergency exit available with timelock safeguard</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ Contracts ═══ -->
 <section id="contracts" class="section">
-  <h2 class="section-title">Contract Addresses</h2>
-  <p class="section-subtitle">Deployed on Gnosis Chain (Chain ID 100). All contracts verified on Gnosisscan.</p>
-
+  <h2 class="section-title">Deployed contracts</h2>
   <table class="contracts-table">
-    <thead>
-      <tr>
-        <th>Contract</th>
-        <th>Address</th>
-        <th></th>
-      </tr>
-    </thead>
+    <thead><tr><th>Contract</th><th>Address</th></tr></thead>
     <tbody>
-      <tr>
-        <td>FAO Token</td>
-        <td class="addr">0x9494C281a02c9ae5f72b224B514793ad2DD8cA17</td>
-        <td><a href="https://gnosisscan.io/address/0x9494C281a02c9ae5f72b224B514793ad2DD8cA17" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>FAO Sale</td>
-        <td class="addr">0x38FF65E8839B581b5ad12383d93206AFcF38D4b2</td>
-        <td><a href="https://gnosisscan.io/address/0x38FF65E8839B581b5ad12383d93206AFcF38D4b2" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>Liquidity Manager</td>
-        <td class="addr">0x9D7692738a4d323338b9007d65d7F79e013B3476</td>
-        <td><a href="https://gnosisscan.io/address/0x9D7692738a4d323338b9007d65d7F79e013B3476" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>Proposal Source</td>
-        <td class="addr">0x638A32b9EF2588CEcDf148135899Acc882aA1CC2</td>
-        <td><a href="https://gnosisscan.io/address/0x638A32b9EF2588CEcDf148135899Acc882aA1CC2" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>Spot LP Adapter</td>
-        <td class="addr">0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759</td>
-        <td><a href="https://gnosisscan.io/address/0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>Conditional LP Adapter</td>
-        <td class="addr">0x0391d105ebA5B899f097364a4a620a751fa8e133</td>
-        <td><a href="https://gnosisscan.io/address/0x0391d105ebA5B899f097364a4a620a751fa8e133" target="_blank" rel="noopener">View</a></td>
-      </tr>
-      <tr>
-        <td>WXDAI (Collateral)</td>
-        <td class="addr">0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d</td>
-        <td><a href="https://gnosisscan.io/address/0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d" target="_blank" rel="noopener">View</a></td>
-      </tr>
+      <tr><td>FAOToken</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65" target="_blank" rel="noopener">0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65</a></td></tr>
+      <tr><td>FAO/WETH spot pool (UniV3)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x5dac596a38a294c03d7fac840d031708c970da79" target="_blank" rel="noopener">0x5dac596a38a294c03d7fac840d031708c970da79</a></td></tr>
+      <tr><td>FAOFutarchyProposal (impl)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x098990c0e1a4a84f03b236f16cd34ed140803555" target="_blank" rel="noopener">0x098990c0e1a4a84f03b236f16cd34ed140803555</a></td></tr>
+      <tr><td>FAOTwapResolver</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a" target="_blank" rel="noopener">0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a</a></td></tr>
+      <tr><td>FAOFutarchyFactory</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0" target="_blank" rel="noopener">0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0</a></td></tr>
+      <tr><td>FAOOfficialProposalOrchestrator</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x7DF66Fd816c09bb534136C5688B55BBA9398d262" target="_blank" rel="noopener">0x7DF66Fd816c09bb534136C5688B55BBA9398d262</a></td></tr>
+      <tr><td>FutarchyArbitration</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x9D7692738a4d323338b9007d65d7F79e013B3476" target="_blank" rel="noopener">0x9D7692738a4d323338b9007d65d7F79e013B3476</a></td></tr>
+      <tr><td>CtfRouter</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x5C2c0684D3CFA0FAd75C374993b9A60b4230128B" target="_blank" rel="noopener">0x5C2c0684D3CFA0FAd75C374993b9A60b4230128B</a></td></tr>
+      <tr><td>FutarchyCtfSettlementOracle</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x9EcB08E5B0c2B4ece148A55073c62f5fb4e0055F" target="_blank" rel="noopener">0x9EcB08E5B0c2B4ece148A55073c62f5fb4e0055F</a></td></tr>
+      <tr><td>FutarchyEvaluator</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xdE54C348Cd845eb0408f8dA665245C69aFF640Cf" target="_blank" rel="noopener">0xdE54C348Cd845eb0408f8dA665245C69aFF640Cf</a></td></tr>
+      <tr><td colspan="2" class="addr-divider">External (Sepolia)</td></tr>
+      <tr><td>ConditionalTokens (Seer)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x8bdC504dC3A05310059c1c67E0A2667309D27B93" target="_blank" rel="noopener">0x8bdC504dC3A05310059c1c67E0A2667309D27B93</a></td></tr>
+      <tr><td>Wrapped1155Factory (Seer)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xD194319D1804C1051DD21Ba1Dc931cA72410B79f" target="_blank" rel="noopener">0xD194319D1804C1051DD21Ba1Dc931cA72410B79f</a></td></tr>
+      <tr><td>UniswapV3 Factory (canonical)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x0227628f3F023bb0B980b67D528571c95c6DaC1c" target="_blank" rel="noopener">0x0227628f3F023bb0B980b67D528571c95c6DaC1c</a></td></tr>
+      <tr><td>WETH (Sepolia)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14" target="_blank" rel="noopener">0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14</a></td></tr>
     </tbody>
   </table>
 </section>
 
-<!-- ═══ Resources ═══ -->
-<section id="resources" class="section">
-  <h2 class="section-title">Resources</h2>
-  <p class="section-subtitle">Links to source code, markets, and documentation.</p>
-
-  <div class="resources-grid">
-    <a href="https://github.com/futarchy-fi/FAO" target="_blank" rel="noopener" class="resource-card">
-      <div class="icon">&lt;/&gt;</div>
-      <div><div class="label">GitHub</div><div class="desc">futarchy-fi/FAO</div></div>
-    </a>
-    <a href="https://api.futarchy.ai" target="_blank" rel="noopener" class="resource-card">
-      <div class="icon">&#9881;</div>
-      <div><div class="label">Futarchy API</div><div class="desc">api.futarchy.ai</div></div>
-    </a>
-    <a href="https://swapr.eth.limo" target="_blank" rel="noopener" class="resource-card">
-      <div class="icon">&#8644;</div>
-      <div><div class="label">Swapr</div><div class="desc">DEX on Gnosis</div></div>
-    </a>
-    <a href="https://gnosisscan.io" target="_blank" rel="noopener" class="resource-card">
-      <div class="icon">&#9634;</div>
-      <div><div class="label">Gnosisscan</div><div class="desc">Block explorer</div></div>
-    </a>
-    <a href="https://book.getfoundry.sh" target="_blank" rel="noopener" class="resource-card">
-      <div class="icon">&#9776;</div>
-      <div><div class="label">Foundry</div><div class="desc">Smart contract toolkit</div></div>
-    </a>
-  </div>
+<section id="docs" class="section">
+  <h2 class="section-title">Documentation</h2>
+  <ul class="docs-list">
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/onchain-futarchy-design.md" target="_blank" rel="noopener">Design doc — full threat model + economic asymmetry</a></li>
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/sepolia-deployment-v0.md" target="_blank" rel="noopener">Sepolia deployment manifest</a></li>
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/PHASE5-FINAL-EVIDENCE.md" target="_blank" rel="noopener">Phase 5 evidence pack (5 tiers)</a></li>
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/phase5-extended-report.md" target="_blank" rel="noopener">200h compressed-time simulation report</a></li>
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/phase5-fork-loop-results.md" target="_blank" rel="noopener">Fork loop @ deployed bytecode (248h sim)</a></li>
+    <li><a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/v0-deployment-runbook.md" target="_blank" rel="noopener">Deployment runbook</a></li>
+  </ul>
 </section>
 
-<!-- ═══ Footer ═══ -->
 <footer class="footer">
-  FAO — Futarchy Autonomous Optimizer &middot; Gnosis Chain &middot; <a href="https://github.com/futarchy-fi/FAO">Open Source</a>
+  <p>FAO v0 — Sepolia testnet · branch <code>arbitration/onchain-futarchy-v0</code> · <a href="https://fao.futarchy.ai">production (Gnosis)</a></p>
 </footer>
 
 </body>

@@ -8,7 +8,17 @@
  *
  * Uses ethers.js v6 (loaded by index.html).
  *
- * Deployed addresses sourced from docs/sepolia-deployment-v0.md
+ * Multi-instance refactor (FutarchyRegistry era):
+ *   Per-instance addresses (factory, resolver, orchestrator, arbitration,
+ *   token, spotPool) come from `window.activeInstance`, populated by
+ *   registry.js. Shared infra addresses (CTF, evaluator, ctfRouter, ctfOracle,
+ *   WETH, proposal impl, operator) stay in SHARED_ADDRS — same across all
+ *   instances on a given chain.
+ *
+ *   When registry.js fires the `fao:activeInstanceChanged` event we clear
+ *   the visible list and re-poll against the new instance.
+ *
+ * Deployed addresses originally sourced from docs/sepolia-deployment-v0.md
  * (chain 11155111, branch arbitration/onchain-futarchy-v0).
  */
 
@@ -19,21 +29,43 @@
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 30_000;
 
-  const ADDRS = {
-    fao:             '0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65',
+  // Shared infra — identical for every futarchy instance on Sepolia.
+  const SHARED_ADDRS = {
     weth:            '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
-    spotPool:        '0x5dac596a38a294c03d7fac840d031708c970da79',
     proposalImpl:    '0x098990c0e1a4a84f03b236f16cd34ed140803555',
-    resolver:        '0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a',
-    factory:         '0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0',
-    orchestrator:    '0x7DF66Fd816c09bb534136C5688B55BBA9398d262',
-    arbitration:     '0x9D7692738a4d323338b9007d65d7F79e013B3476',
     ctfRouter:       '0x5C2c0684D3CFA0FAd75C374993b9A60b4230128B',
     ctfOracle:       '0x9EcB08E5B0c2B4ece148A55073c62f5fb4e0055F',
     evaluator:       '0xdE54C348Cd845eb0408f8dA665245C69aFF640Cf',
     ctf:             '0x8bdC504dC3A05310059c1c67E0A2667309D27B93',
     operator:        '0x693E3FB46Bb36eE43C702FE94f9463df0691b43d',
   };
+
+  // Hardcoded FAO bootstrap — used until window.activeInstance is populated
+  // (registry.js initializes after this file's DOMContentLoaded handler runs).
+  const BOOTSTRAP_INSTANCE = {
+    id: 0,
+    name: 'FAO',
+    symbol: 'FAO',
+    token:        '0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65',
+    spotPool:     '0x5dac596a38a294c03d7fac840d031708c970da79',
+    resolver:     '0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a',
+    factory:      '0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0',
+    orchestrator: '0x7DF66Fd816c09bb534136C5688B55BBA9398d262',
+    arbitration:  '0x9D7692738a4d323338b9007d65d7F79e013B3476',
+  };
+
+  /** Return the active futarchy instance, falling back to bootstrap if registry.js
+   *  hasn't published one yet. */
+  function activeInstance() {
+    return (typeof window !== 'undefined' && window.activeInstance)
+      ? window.activeInstance
+      : BOOTSTRAP_INSTANCE;
+  }
+
+  /** Backwards-compatible alias used internally for the FAO token address.
+   *  Returns the active instance's token (used by createProposal as the
+   *  "company" side of the conditional pool). */
+  function instanceToken() { return activeInstance().token; }
 
   const FACTORY_ABI = [
     'function marketsCount() view returns (uint256)',
@@ -87,8 +119,28 @@
 
   let provider;
 
+  /** Clear the proposals list — used when switching futarchy instances so the
+   *  old instance's cards don't briefly remain visible. */
+  function clearList() {
+    const container = $$('#sep-proposals');
+    if (container) container.innerHTML = '<p class="sep-empty">Loading…</p>';
+    const stats = ['sep-markets-count', 'sep-oracle-ok'];
+    for (const id of stats) {
+      const el = $$('#' + id);
+      if (el) el.textContent = '…';
+    }
+  }
+
   async function init() {
     provider = new ethers.JsonRpcProvider(RPC);
+
+    // Listen for instance switches from registry.js. Clear + refresh.
+    window.addEventListener('fao:activeInstanceChanged', () => {
+      clearList();
+      // Schedule a microtask so the chip click finishes first.
+      Promise.resolve().then(refresh);
+    });
+
     await refresh();
     setInterval(refresh, REFRESH_INTERVAL);
   }
@@ -106,14 +158,18 @@
   }
 
   async function refreshOnce() {
-    const factory = new ethers.Contract(ADDRS.factory, FACTORY_ABI, provider);
-    const resolver = new ethers.Contract(ADDRS.resolver, RESOLVER_ABI, provider);
-    const ctf = new ethers.Contract(ADDRS.ctf, CTF_ABI, provider);
+    const inst = activeInstance();
+    if (!inst || !inst.factory) {
+      throw new Error('No active futarchy instance — registry.js failed to publish one.');
+    }
+    const factory = new ethers.Contract(inst.factory, FACTORY_ABI, provider);
+    const resolver = new ethers.Contract(inst.resolver, RESOLVER_ABI, provider);
+    const ctf = new ethers.Contract(SHARED_ADDRS.ctf, CTF_ABI, provider);
 
     const [blockNumber, marketsCount, opBalance, oracleAddr] = await Promise.all([
       safe(() => provider.getBlockNumber(), 0),
       safe(() => factory.marketsCount(), 0n),
-      safe(() => provider.getBalance(ADDRS.operator), 0n),
+      safe(() => provider.getBalance(SHARED_ADDRS.operator), 0n),
       safe(() => factory.oracle(), ethers.ZeroAddress),
     ]);
 
@@ -122,7 +178,7 @@
     $$('#sep-markets-count').textContent = marketsCount.toString();
     $$('#sep-op-balance').textContent = fmtEth(opBalance);
     $$('#sep-oracle-ok').textContent =
-      oracleAddr.toLowerCase() === ADDRS.resolver.toLowerCase() ? '✓ wired' : '✗ mismatch';
+      oracleAddr.toLowerCase() === (inst.resolver || '').toLowerCase() ? '✓ wired' : '✗ mismatch';
     $$('#sep-updated').textContent = new Date().toLocaleTimeString();
 
     // Per-proposal cards.
@@ -277,10 +333,12 @@
     const desc = ($$('#create-desc').value || '').trim();
     if (!name) { setStatus('Name is required.', 'error'); return; }
     if (!signer) { setStatus('Connect wallet first.', 'error'); return; }
-    const factory = new ethers.Contract(ADDRS.factory, FACTORY_WRITE_ABI, signer);
+    const inst = activeInstance();
+    if (!inst || !inst.factory) { setStatus('No active futarchy instance selected.', 'error'); return; }
+    const factory = new ethers.Contract(inst.factory, FACTORY_WRITE_ABI, signer);
     setStatus('Submitting transaction…', 'pending');
     try {
-      const params = [name, desc, ADDRS.fao, ADDRS.weth];
+      const params = [name, desc, instanceToken(), SHARED_ADDRS.weth];
       const tx = await factory.createProposal(params);
       setStatus(`Tx sent: <a href="https://sepolia.etherscan.io/tx/${tx.hash}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>. Waiting confirmation…`, 'pending');
       const rec = await tx.wait();
@@ -321,7 +379,12 @@
         return;
       }
     }
-    const resolver = new ethers.Contract(ADDRS.resolver, RESOLVER_WRITE_ABI, signer);
+    const inst = activeInstance();
+    if (!inst || !inst.resolver) {
+      setCardActionStatus(propAddr, 'No active futarchy instance selected.', 'error');
+      return;
+    }
+    const resolver = new ethers.Contract(inst.resolver, RESOLVER_WRITE_ABI, signer);
     const origLabel = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Resolving…';

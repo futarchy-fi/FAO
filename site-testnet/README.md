@@ -4,10 +4,35 @@ Standalone static site for the Sepolia v0 deployment.
 
 ## Files
 
-- `index.html` — single-page dashboard (hero + stack stats + proposals + contracts + docs)
-- `sepolia.js` — ethers.js v6 polling client (mirrors `site/sepolia.js`)
+- `index.html` — single-page dashboard (hero + stack stats + instances + proposals + contracts + docs)
+- `registry.js` — FutarchyRegistry instance picker + Create-Futarchy modal
+- `sepolia.js` — ethers.js v6 polling client (per-active-instance proposals + create + resolve)
+- `bonds.js` — bond escalation panel injected into each proposal card
 - `styles.css` — main stylesheet + standalone-testnet additions
 - `CNAME` — `testnet.fao.futarchy.ai`
+
+## After deploying FutarchyRegistry — REQUIRED edit
+
+The registry-driven multi-instance UI keys off a single constant in
+`registry.js`. Until the registry is deployed, the constant is the zero
+address and the UI falls back to showing only the bootstrap FAO instance.
+
+When the `FutarchyRegistry` contract is deployed to Sepolia:
+
+1. Open `site-testnet/registry.js`.
+2. Find the line marked with the trailing `// REGISTRY_ADDR` comment near
+   the top of the file:
+
+   ```js
+   const REGISTRY_ADDR = '0x0000000000000000000000000000000000000000'; // REGISTRY_ADDR
+   ```
+
+3. Replace the zero address with the deployed `FutarchyRegistry` address.
+4. Commit + redeploy this static site (Cloudflare Pages / Vercel / etc).
+
+No other code changes are required — `sepolia.js` and `bonds.js` already
+read per-instance addresses from `window.activeInstance`, which is
+populated by `registry.js` after a successful `instances()` read.
 
 ## Run locally
 

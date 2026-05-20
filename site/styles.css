@@ -565,3 +565,76 @@ a:hover { text-decoration: underline; }
   color: var(--muted);
 }
 .sep-note a { color: var(--accent); }
+
+/* ─── Standalone testnet additions ─── */
+.env-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: rgba(255, 200, 50, 0.18);
+  color: #ffd76a;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.addr-divider {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  padding-top: 12px;
+  font-style: italic;
+}
+.docs-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0 0;
+}
+.docs-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.docs-list a { color: var(--accent); text-decoration: none; }
+.docs-list a:hover { text-decoration: underline; }
+.footer {
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+.footer a { color: var(--accent); }
+
+/* ─── Create proposal box ─── */
+.create-box {
+  margin-top: 24px;
+  padding: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.create-title { margin: 0 0 8px 0; font-size: 16px; }
+.create-note { margin: 0 0 16px 0; font-size: 12px; color: var(--muted); }
+.create-form { display: flex; flex-direction: column; gap: 10px; }
+.create-form input,
+.create-form textarea {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.create-form textarea { resize: vertical; min-height: 60px; }
+.create-form input:focus,
+.create-form textarea:focus { outline: 1px solid var(--accent); }
+.create-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.create-actions .btn { min-width: 160px; }
+.create-status { margin: 8px 0 0 0; font-size: 12px; }
+.create-status-info    { color: var(--muted); }
+.create-status-ok      { color: #6fe9a8; }
+.create-status-error   { color: #ff6b6b; }
+.create-status-pending { color: #ffd76a; }
+.create-status a       { color: var(--accent); }

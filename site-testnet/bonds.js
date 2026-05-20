@@ -31,10 +31,19 @@
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 30_000;
 
-  const ADDRS = {
-    arbitration: '0x9D7692738a4d323338b9007d65d7F79e013B3476',
-    weth:        '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
-  };
+  // WETH is shared infra across every futarchy instance on Sepolia.
+  const WETH_ADDR = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14';
+
+  // Bootstrap arbitration address — used until registry.js publishes
+  // window.activeInstance.
+  const BOOTSTRAP_ARBITRATION = '0x9D7692738a4d323338b9007d65d7F79e013B3476';
+
+  /** Return the arbitration contract address for the currently active futarchy.
+   *  Falls back to the bootstrap FAO arbitration until registry.js boots. */
+  function arbitrationAddr() {
+    const inst = (typeof window !== 'undefined') ? window.activeInstance : null;
+    return (inst && inst.arbitration) ? inst.arbitration : BOOTSTRAP_ARBITRATION;
+  }
 
   const STATE_LABELS = ['INACTIVE', 'YES', 'NO', 'QUEUED', 'EVALUATING', 'SETTLED'];
 
@@ -120,7 +129,7 @@
   // ─── Read path ───────────────────────────────────────────────────────
 
   async function loadGlobals() {
-    const arb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, provider);
+    const arb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, provider);
     baseX = await safe(() => arb.baseX(), 0n);
     safetyActive = await safe(() => arb.safetyModeActive(), false);
   }
@@ -134,7 +143,7 @@
    * cleanest way without a public queueLen accessor on the contract.
    */
   async function loadProposalState(propAddr) {
-    const arb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, provider);
+    const arb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, provider);
     const arbId = arbIdFor(propAddr);
 
     let p;
@@ -357,7 +366,7 @@
 
   async function refreshWithdrawBanner() {
     if (!connectedWallet) { renderWithdrawBanner(0n); return; }
-    const arb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, provider);
+    const arb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, provider);
     const owed = await safe(() => arb.withdrawable(connectedWallet), 0n);
     renderWithdrawBanner(owed);
   }
@@ -378,7 +387,7 @@
    * the first escalator pays to call createProposalWithId(arbId, baseX).
    */
   async function ensureProposalCreated(propAddr, signerLocal) {
-    const arb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, provider);
+    const arb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, provider);
     const arbId = arbIdFor(propAddr);
     let exists = true;
     try { await arb.getProposal(arbId); }
@@ -386,7 +395,7 @@
     if (exists) return;
 
     setStatus(propAddr, 'Bootstrapping arbitration proposal (first escalator only)…', 'pending');
-    const writeArb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, signerLocal);
+    const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, signerLocal);
     const tx = await writeArb.createProposalWithId(arbId, baseX || 1000000000000000n /* 0.001 WETH */);
     setStatus(propAddr, `Bootstrap tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
     await tx.wait();
@@ -397,12 +406,12 @@
    * tx if needed.
    */
   async function ensureWethAllowance(amount, signerLocal, propAddr) {
-    const weth = new ethers.Contract(ADDRS.weth, WETH_ABI, signerLocal);
-    const allow = await weth.allowance(connectedWallet, ADDRS.arbitration);
+    const weth = new ethers.Contract(WETH_ADDR, WETH_ABI, signerLocal);
+    const allow = await weth.allowance(connectedWallet, arbitrationAddr());
     if (allow >= amount) return;
     setStatus(propAddr, 'Approving WETH spend…', 'pending');
     // Approve a generous amount so subsequent bonds don't re-prompt unnecessarily.
-    const tx = await weth.approve(ADDRS.arbitration, amount * 4n);
+    const tx = await weth.approve(arbitrationAddr(), amount * 4n);
     setStatus(propAddr, `Approve tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
     await tx.wait();
   }
@@ -412,7 +421,7 @@
    * Resolves with true if balance is now sufficient, false if the user cancelled.
    */
   async function ensureWethBalance(needed, signerLocal, propAddr) {
-    const weth = new ethers.Contract(ADDRS.weth, WETH_ABI, signerLocal);
+    const weth = new ethers.Contract(WETH_ADDR, WETH_ABI, signerLocal);
     const bal = await weth.balanceOf(connectedWallet);
     if (bal >= needed) return true;
 
@@ -473,7 +482,7 @@
       await ensureWethAllowance(amount, sig, propAddr);
 
       setStatus(propAddr, 'Submitting YES bond…', 'pending');
-      const writeArb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, sig);
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.placeYesBond(s.arbId, amount);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();
@@ -500,7 +509,7 @@
       await ensureWethAllowance(amount, sig, propAddr);
 
       setStatus(propAddr, `Matching YES bond (${fmtWeth(amount)})…`, 'pending');
-      const writeArb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, sig);
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.placeNoBond(s.arbId);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();
@@ -519,7 +528,7 @@
       if (!s) throw new Error('Proposal state not loaded.');
 
       setStatus(propAddr, 'Attempting graduation…', 'pending');
-      const writeArb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, sig);
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.tryGraduate(s.arbId);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();
@@ -534,7 +543,7 @@
   async function onWithdraw() {
     try {
       const sig = await ensureSigner();
-      const writeArb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, sig);
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.withdraw();
       const mount = $$('#sep-bonds-mount');
       if (mount) mount.innerHTML = `<p class="bond-status bond-status-pending">Withdraw tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a></p>`;
@@ -551,7 +560,7 @@
     const s = await loadProposalState(propAddr);
     proposalState.set(propAddr.toLowerCase(), s);
     safetyActive = await safe(() => {
-      const arb = new ethers.Contract(ADDRS.arbitration, ARBITRATION_ABI, provider);
+      const arb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, provider);
       return arb.safetyModeActive();
     }, safetyActive);
 
@@ -584,6 +593,25 @@
     observeProposalsContainer();
     // Initial pass once sepolia.js has populated cards.
     setTimeout(() => injectAllPanels(), 500);
+
+    // When registry.js switches the active instance, drop cached bond state
+    // (the arbitration contract changes), reload globals against the new
+    // arbitration address, and re-inject panels for whatever sepolia.js
+    // re-renders.
+    window.addEventListener('fao:activeInstanceChanged', async () => {
+      proposalState.clear();
+      const mount = $$('#sep-bonds-mount');
+      if (mount) mount.innerHTML = '';
+      try {
+        await loadGlobals();
+        // sepolia.js will replace the cards shortly; the MutationObserver above
+        // will re-trigger injectAllPanels. Be defensive and schedule one too.
+        setTimeout(() => injectAllPanels(), 600);
+      } catch (err) {
+        console.error('[bonds] instance change refresh failed', err);
+      }
+    });
+
     // Refresh bond-only state on our own cadence (independent of sepolia.js).
     setInterval(async () => {
       await loadGlobals();

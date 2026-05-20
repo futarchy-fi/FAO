@@ -15,7 +15,8 @@
 (() => {
   'use strict';
 
-  const RPC = 'https://sepolia.drpc.org';
+  // Public RPC with permissive CORS; drpc.org returns 503 sometimes.
+  const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 30_000;
 
   const ADDRS = {
@@ -89,12 +90,24 @@
   }
 
   async function refresh() {
+    try {
+      await refreshOnce();
+    } catch (err) {
+      console.error('[sepolia] refresh failed', err);
+      const container = $$('#sep-proposals');
+      if (container) {
+        container.innerHTML = `<p class="sep-empty">Error loading proposals: ${escapeHtml(String(err && err.message || err))}. Check console.</p>`;
+      }
+    }
+  }
+
+  async function refreshOnce() {
     const factory = new ethers.Contract(ADDRS.factory, FACTORY_ABI, provider);
     const resolver = new ethers.Contract(ADDRS.resolver, RESOLVER_ABI, provider);
     const ctf = new ethers.Contract(ADDRS.ctf, CTF_ABI, provider);
 
     const [blockNumber, marketsCount, opBalance, oracleAddr] = await Promise.all([
-      provider.getBlockNumber(),
+      safe(() => provider.getBlockNumber(), 0),
       safe(() => factory.marketsCount(), 0n),
       safe(() => provider.getBalance(ADDRS.operator), 0n),
       safe(() => factory.oracle(), ethers.ZeroAddress),
@@ -206,9 +219,90 @@
     }[ch]));
   }
 
+  // ─── Create Proposal (browser wallet) ─────────────────────────────────
+
+  const FACTORY_WRITE_ABI = [
+    'function createProposal((string,string,address,address)) returns (address)',
+  ];
+
+  let wallet = null;
+  let signer = null;
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      setStatus('No injected wallet found. Install MetaMask or use a wallet browser.', 'error');
+      return;
+    }
+    try {
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const accounts = await browserProvider.send('eth_requestAccounts', []);
+      const network = await browserProvider.getNetwork();
+      if (Number(network.chainId) !== 11155111) {
+        // Try to switch to Sepolia.
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0xaa36a7' }],
+          });
+        } catch (switchErr) {
+          setStatus('Switch your wallet to Sepolia (chainId 11155111) and reconnect.', 'error');
+          return;
+        }
+      }
+      signer = await browserProvider.getSigner();
+      wallet = accounts[0];
+      const btn = $$('#connect-wallet');
+      const submit = $$('#create-submit');
+      btn.textContent = `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+      btn.disabled = true;
+      submit.disabled = false;
+      submit.textContent = 'Submit proposal';
+      setStatus('Wallet connected. Fill in the form and submit.', 'ok');
+    } catch (err) {
+      console.error('[sepolia] connectWallet failed', err);
+      setStatus(`Connection failed: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function submitProposal() {
+    const name = ($$('#create-name').value || '').trim();
+    const desc = ($$('#create-desc').value || '').trim();
+    if (!name) { setStatus('Name is required.', 'error'); return; }
+    if (!signer) { setStatus('Connect wallet first.', 'error'); return; }
+    const factory = new ethers.Contract(ADDRS.factory, FACTORY_WRITE_ABI, signer);
+    setStatus('Submitting transaction…', 'pending');
+    try {
+      const params = [name, desc, ADDRS.fao, ADDRS.weth];
+      const tx = await factory.createProposal(params);
+      setStatus(`Tx sent: <a href="https://sepolia.etherscan.io/tx/${tx.hash}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>. Waiting confirmation…`, 'pending');
+      const rec = await tx.wait();
+      setStatus(`✓ Confirmed in block ${rec.blockNumber}. Refreshing list…`, 'ok');
+      // Force a refresh.
+      await refresh();
+    } catch (err) {
+      console.error('[sepolia] submitProposal failed', err);
+      setStatus(`Failed: ${err.shortMessage || err.message || err}`, 'error');
+    }
+  }
+
+  function setStatus(html, kind) {
+    const el = $$('#create-status');
+    if (!el) return;
+    el.innerHTML = html;
+    el.className = `create-status create-status-${kind || 'info'}`;
+  }
+
+  function wireCreateUI() {
+    const btn = $$('#connect-wallet');
+    const submit = $$('#create-submit');
+    if (btn) btn.addEventListener('click', connectWallet);
+    if (submit) submit.addEventListener('click', submitProposal);
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => { init(); wireCreateUI(); });
   } else {
     init();
+    wireCreateUI();
   }
 })();

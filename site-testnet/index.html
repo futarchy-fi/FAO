@@ -7,8 +7,10 @@
   <meta name="description" content="FAO Futarchy Arbitration Organization v0 — live testnet deployment on Sepolia. 100% on-chain governance via conditional markets and UniV3 TWAP." />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
+  <script src="registry.js" defer></script>
   <script src="sepolia.js" defer></script>
   <script src="bonds.js" defer></script>
+  <script src="sale.js" defer></script>
 </head>
 <body>
 
@@ -17,7 +19,9 @@
     <span class="nav-logo">FAO <span class="env-badge">testnet</span></span>
     <ul class="nav-links">
       <li><a href="#stack">Stack</a></li>
+      <li><a href="#instances">Instances</a></li>
       <li><a href="#proposals">Proposals</a></li>
+      <li><a href="#sale">Buy FAO</a></li>
       <li><a href="#contracts">Contracts</a></li>
       <li><a href="#docs">Docs</a></li>
       <li><a href="https://fao.futarchy.ai">Prod →</a></li>
@@ -88,6 +92,83 @@
   </div>
 </section>
 
+<section id="instances" class="section">
+  <h2 class="section-title">Futarchy instances</h2>
+  <p class="section-subtitle">
+    Any visitor can spin up a new futarchy on the shared <code>FutarchyRegistry</code>.
+    Pick one below to view its proposals; the selection is remembered across reloads.
+  </p>
+
+  <div class="instances-toolbar">
+    <div id="instance-active-header" class="instance-active-header">
+      <span class="instance-active-label">Active instance:</span>
+      <span class="instance-active-loading">loading…</span>
+    </div>
+    <button id="create-instance-open" class="btn btn-primary">+ Create new futarchy</button>
+  </div>
+
+  <div id="instances-picker" class="instances-picker">
+    <p class="sep-empty">Loading instances…</p>
+  </div>
+</section>
+
+<!-- Create Futarchy modal — opens via #create-instance-open click handler in registry.js -->
+<div id="create-instance-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-instance-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="create-instance-title" class="modal-title">Create a new futarchy</h3>
+      <button id="create-instance-close" class="modal-close" aria-label="Close">×</button>
+    </div>
+    <p class="modal-subtitle">
+      Calls <code>FutarchyRegistry.createFutarchy(...)</code> on Sepolia. Deploys a
+      brand-new <code>GenericFutarchyToken</code>, <code>FutarchyFactory</code>,
+      <code>FutarchyTwapResolver</code>, <code>FutarchyArbitration</code> and
+      spot pool wired together as a self-contained instance.
+    </p>
+    <p id="create-instance-registry-note" class="modal-registry-note" style="display:none;"></p>
+    <form id="create-instance-form" class="create-instance-form">
+      <label class="form-label">Name
+        <input id="ci-name" type="text" placeholder="e.g. Acme Governance" maxlength="60" required />
+      </label>
+      <label class="form-label">Symbol
+        <input id="ci-symbol" type="text" placeholder="e.g. ACME" maxlength="10" required />
+      </label>
+      <label class="form-label">Description
+        <textarea id="ci-description" placeholder="What is this futarchy for?" maxlength="400" rows="2"></textarea>
+      </label>
+      <div class="form-row">
+        <label class="form-label">Initial supply
+          <input id="ci-supply" type="text" placeholder="1000000" value="1000000" required />
+          <span class="form-hint">tokens, 18 decimals</span>
+        </label>
+        <label class="form-label">Initial price
+          <input id="ci-price" type="text" placeholder="0.0001" value="0.0001" required />
+          <span class="form-hint">1 token = X WETH</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Timeout
+          <input id="ci-timeout" type="number" min="1" step="1" value="120" required />
+          <span class="form-hint">minutes</span>
+        </label>
+        <label class="form-label">TWAP window
+          <input id="ci-twap" type="number" min="1" step="1" value="60" required />
+          <span class="form-hint">minutes</span>
+        </label>
+        <label class="form-label">Base bond (baseX)
+          <input id="ci-bond" type="text" value="0.001" required />
+          <span class="form-hint">WETH</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="create-instance-cancel" class="btn btn-secondary">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create futarchy</button>
+      </div>
+      <p id="create-instance-status" class="create-instance-status"></p>
+    </form>
+  </div>
+</div>
+
 <section id="proposals" class="section">
   <h2 class="section-title">Proposals</h2>
   <p class="section-subtitle">
@@ -118,6 +199,43 @@
 
   <div id="sep-proposals" class="sep-cards">
     <p class="sep-empty">Loading…</p>
+  </div>
+</section>
+
+<section id="sale" class="section">
+  <h2 class="section-title">Buy FAO</h2>
+  <p class="section-subtitle">
+    Mint FAO directly from <code>FAOSale</code> on Sepolia.
+    Initial fixed-price phase: 0.0001 ETH per FAO. After the initial cap is sold
+    and the phase window ends, the price follows a linear bonding curve.
+    Connect a wallet on Sepolia to buy.
+  </p>
+
+  <div id="sale-box" class="sale-box">
+    <div class="sale-grid">
+      <div class="sale-row"><span class="sale-label">Sale contract</span><span class="sale-value" id="sale-addr">…</span></div>
+      <div class="sale-row"><span class="sale-label">Phase</span><span class="sale-value" id="sale-phase">…</span></div>
+      <div class="sale-row"><span class="sale-label">Current price</span><span class="sale-value" id="sale-price">…</span></div>
+      <div class="sale-row"><span class="sale-label">Total raised</span><span class="sale-value" id="sale-raised">…</span></div>
+      <div class="sale-row"><span class="sale-label">Initial-phase sold</span><span class="sale-value" id="sale-initial-sold">…</span></div>
+      <div class="sale-row"><span class="sale-label">Bonding-curve sold</span><span class="sale-value" id="sale-curve-sold">…</span></div>
+      <div class="sale-row"><span class="sale-label">Initial phase ends</span><span class="sale-value" id="sale-phase-end">…</span></div>
+      <div class="sale-row"><span class="sale-label">Your FAO balance</span><span class="sale-value" id="sale-balance">— (connect wallet)</span></div>
+      <div class="sale-row"><span class="sale-label">Your ETH balance</span><span class="sale-value" id="sale-eth">—</span></div>
+      <div class="sale-row"><span class="sale-label">Remaining initial-phase capacity</span><span class="sale-value" id="sale-remaining">—</span></div>
+    </div>
+
+    <div class="sale-form">
+      <button id="sale-connect" class="btn btn-secondary" type="button">Connect wallet</button>
+      <label class="sale-input-wrap">
+        <span class="sale-input-label">How many FAO to buy</span>
+        <input id="sale-input" type="number" min="1" step="1" value="1" />
+      </label>
+      <div class="sale-cost-line">
+        Cost: <span id="sale-cost">—</span>
+      </div>
+      <button id="sale-buy" class="btn btn-primary" type="button">Buy FAO</button>
+    </div>
   </div>
 </section>
 
