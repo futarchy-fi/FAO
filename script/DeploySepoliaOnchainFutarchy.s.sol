@@ -44,7 +44,7 @@ contract DeploySepoliaOnchainFutarchy is Script {
     address internal constant DEFAULT_WRAPPED_1155_FACTORY = 0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
     address internal constant DEFAULT_UNIV3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c;
     uint24 internal constant DEFAULT_FEE_TIER = 500;
-    uint16 internal constant DEFAULT_OBSERVATION_CARDINALITY = 1_000;
+    uint16 internal constant DEFAULT_OBSERVATION_CARDINALITY = 100;
     uint32 internal constant DEFAULT_TIMEOUT = 2 hours;
     uint32 internal constant DEFAULT_TWAP_WINDOW = 1 hours;
 
