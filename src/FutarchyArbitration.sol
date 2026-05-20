@@ -10,8 +10,8 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 /// @title FutarchyArbitration
 /// @notice Bond-based arbitration with escalation, graduation queue, and evaluator settlement.
 ///
-/// Proposals go through a bond escalation game where participants stake WXDAI on YES or NO.
-/// Each flip requires doubling the opposing bond. If unchallenged for 72 hours, the current
+/// Proposals go through a bond escalation game where participants stake WETH on YES or NO.
+/// Each flip requires doubling the opposing bond. If unchallenged for TIMEOUT (testnet: 2h, mainnet target: 72h), the current
 /// side wins by timeout. Sufficiently large YES bonds graduate the proposal into an evaluation
 /// queue, where an external evaluator (e.g., CTF oracle) determines the final outcome.
 ///
@@ -67,12 +67,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     // ═══════════════════════════════════════════════════════
 
     /// @notice Duration after the last bond flip before timeout settlement is allowed.
-    uint256 internal constant TIMEOUT = 72 hours;
+    /// @dev Sepolia testnet fast-mode: 2 hours (mainnet target: 72 hours).
+    uint256 internal constant TIMEOUT = 2 hours;
 
-    /// @notice Bond token (WXDAI on Gnosis Chain).
-    IERC20 public immutable WXDAI;
+    /// @notice Bond token (WETH on Sepolia / Ethereum mainnet).
+    IERC20 public immutable WETH;
 
-    /// @notice Base graduation threshold (WXDAI, 18 decimals).
+    /// @notice Base graduation threshold (WETH, 18 decimals).
     /// @dev requiredYes(queueLen) = baseX * 2^queueLen.
     uint256 public immutable baseX;
 
@@ -89,7 +90,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice All proposals by id.
     mapping(uint256 => Proposal) internal proposals;
 
-    /// @notice Pull-payment ledger for WXDAI payouts.
+    /// @notice Pull-payment ledger for WETH payouts.
     mapping(address => uint256) public withdrawable;
 
     /// @notice Aggregate NO bond amount across all proposals currently in NO state.
@@ -170,9 +171,10 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
 
     constructor() {
         _transferOwnership(msg.sender);
-        WXDAI = IERC20(0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d);
-        baseX = 100e18;
-        MAX_QUEUE = 16;
+        // Sepolia WETH (mainnet WETH: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
+        WETH = IERC20(0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14);
+        baseX = 0.001 ether; // 0.001 WETH minimum for testnet (mainnet target: 1 ether)
+        MAX_QUEUE = 3;       // small queue for testnet (mainnet target: 16)
     }
 
     // ═══════════════════════════════════════════════════════
@@ -244,7 +246,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
             revert InvalidState();
         }
 
-        WXDAI.safeTransferFrom(msg.sender, address(this), amount);
+        WETH.safeTransferFrom(msg.sender, address(this), amount);
 
         // Refund replaced YES bond.
         address replacedBidder = p.yesBond.bidder;
@@ -282,7 +284,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
 
         uint256 amount = p.yesBond.amount;
 
-        WXDAI.safeTransferFrom(msg.sender, address(this), amount);
+        WETH.safeTransferFrom(msg.sender, address(this), amount);
 
         // Refund replaced NO bond.
         address replacedBidder = p.noBond.bidder;
@@ -437,13 +439,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Withdrawals
     // ═══════════════════════════════════════════════════════
 
-    /// @notice Withdraw any WXDAI owed to the caller.
+    /// @notice Withdraw any WETH owed to the caller.
     function withdraw() external nonReentrant {
         uint256 amount = withdrawable[msg.sender];
         if (amount == 0) return;
 
         withdrawable[msg.sender] = 0;
-        WXDAI.safeTransfer(msg.sender, amount);
+        WETH.safeTransfer(msg.sender, amount);
         emit Withdraw(msg.sender, amount);
     }
 
