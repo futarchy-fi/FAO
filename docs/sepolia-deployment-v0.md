@@ -65,9 +65,39 @@ $ cast call <arb> 'evaluator()(address)'
 - Proposal contract: `0x233f2320f5d2ca1518c1cd5697d6839b875b0c78`
 - YES pool: `0x94cf0ec06d0aada74540418089af39ecd2e5d705`
 - NO pool: `0x6abf943a0f278a6846bdd3d7e2bf7de156b4eeac`
-- Anchor timestamp: `1778230964` (block 10883925)
-- TWAP window end: anchor + 2h = `1778238164`
-- Resolve callable after: `1778238164` (~05:50 UTC on 2026-05-20)
+- Anchor timestamp: `1779255564` (block 10883925)
+- TWAP window end: anchor + 2h = `1779262164`
+
+## First live resolve (full lifecycle proven)
+
+**Tx:** `0x78e8426435f881b7837d8804c1b420818fd833a3e3f39ceba70a06677fb21c1e`
+**Block:** 10885916
+**Gas used:** 165_295
+**Outcome:** `accepted = false` (NO wins — both pools had no trading
+inside the window so both TWAPs stayed at sqrt(1) init price; resolver's
+strict `>` comparison falls through to NO)
+
+**Events observed:**
+- `ConditionalTokens.PayoutsReported` at `0x8bdC504d...` (Seer CTF)
+  with payouts `[0, 1]` for questionId `0xa7291affa1203318...`
+- `FAOTwapResolver.ProposalResolved` at our resolver with the proposal
+  address `0x233f2320...` and `accepted = false`
+
+This tx ends the **complete v0 lifecycle on live Sepolia**:
+
+```
+candidate → atomic-promote → 2h TWAP window → resolve → CTF.reportPayouts
+   (off-chain)        (15.59M gas)                    (165k gas)
+```
+
+The resolver successfully:
+- Validated `block.timestamp >= anchor + TIMEOUT`
+- Called `pool.observe([WINDOW + delay, delay])` on both YES and NO pools
+- Computed arithmetic mean ticks for the [windowEnd - 1h, windowEnd] interval
+- Normalized orientation (which side wraps which token)
+- Compared and decided
+- Wrote payouts to CTF
+- Marked proposal `resolved = true`
 
 ## Goal phase mapping
 

@@ -1,31 +1,38 @@
 # Phase-5 validation report
 
-## Live Sepolia deployment & first promote (2026-05-20)
+## Live Sepolia deployment, promote, AND resolve (2026-05-20)
 
-The FAO v0 stack is **deployed and operational on Sepolia testnet**.
+The FAO v0 stack is **deployed and operational on Sepolia testnet**,
+and a complete end-to-end lifecycle has been exercised on-chain.
 See `docs/sepolia-deployment-v0.md` for the full address manifest +
 verification commands.
 
-**First live promote (smoke test):**
-- Tx: `0xc42260d31afe320e1b522a64207c87c75da92401830cdecc22d4d4559f30928a`
-- Block: 10883925
-- Gas: 15.59M (single atomic call:
-  factory.createProposal + 4 wrappers + 2 UniV3 pools + 2 initializations
-  + 2 increaseObservationCardinalityNext(100) + resolver.bindProposal +
-  event emission)
+**Lifecycle proven on chain:**
+
+| Stage | Tx | Block | Gas |
+|-------|----|----- |-----|
+| Atomic promote | `0xc42260d3...` | 10883925 | 15_588_347 |
+| Resolve (CTF reportPayouts) | `0x78e84264...` | 10885916 | 165_295 |
+
+**Promote artifacts:**
 - Proposal: `0x233f2320f5d2ca1518c1cd5697d6839b875b0c78`
 - YES pool: `0x94cf0ec06d0aada74540418089af39ecd2e5d705`
 - NO pool: `0x6abf943a0f278a6846bdd3d7e2bf7de156b4eeac`
-- Anchor: 1778230964
-- Resolvable after: 1778238164 (anchor + 2h)
-- TWAP window: [1778234564, 1778238164] (last hour before windowEnd)
+- Anchor: 1779255564, windowEnd: 1779262164
 
-The atomic flow worked end-to-end on real Sepolia: condition prepared
-via Seer CTF, 4 Wrapped1155 wrappers deployed via Seer Wrapped1155Factory,
-2 conditional pools created on canonical UniV3 factory at the addresses
-derived from `block.prevrandao` of this block, initialized at spot
-price = 1, cardinality increased to 100, bindProposal recorded the
-anchor on the resolver.
+**Resolve outcome:** `accepted = false` — both pools had no inner-window
+trading (test pool with mock liquidity), TWAPs identical, strict `>`
+comparison tiebreaks to NO.
+
+The end-to-end flow worked on real Sepolia infrastructure:
+- Condition prepared via Seer CTF
+- 4 Wrapped1155 wrappers deployed via Seer Wrapped1155Factory
+- 2 conditional pools created on canonical UniV3 factory at addresses
+  derived from `block.prevrandao` of block 10883925
+- Initialization at spot price, cardinality bumped to 100
+- bindProposal recorded the anchor on the resolver
+- After 2h+ wall-clock, `resolve()` called `pool.observe()` on both
+  conditional pools, normalized ticks, called CTF.reportPayouts
 
 The pre-creation defense (A1) is **structurally engaged** in production:
 the wrapper addresses, and therefore the pool addresses, are derived
