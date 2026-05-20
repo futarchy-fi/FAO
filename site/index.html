@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
   <script src="dashboard.js" defer></script>
+  <script src="sepolia.js" defer></script>
 </head>
 <body>
 
@@ -18,6 +19,7 @@
     <ul class="nav-links">
       <li><a href="#how-it-works">How It Works</a></li>
       <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#sepolia">Sepolia v0</a></li>
       <li><a href="#sale">Sale</a></li>
       <li><a href="#governance">Governance</a></li>
       <li><a href="#contracts">Contracts</a></li>
@@ -126,6 +128,46 @@
       <div class="dash-row"><span class="dash-label">Exit Ready</span><span class="dash-value loading" data-field="liq-emergency-ready">...</span></div>
     </div>
   </div>
+</section>
+
+<!-- ═══ Sepolia v0 (testnet) ═══ -->
+<section id="sepolia" class="section">
+  <h2 class="section-title">FAO v0 — Sepolia testnet</h2>
+  <p class="section-subtitle">
+    Live on-chain data from the futarchy v0 stack deployed on Sepolia
+    (chain 11155111). Refreshed every 30 seconds. See
+    <a href="https://github.com/futarchy-fi/FAO/blob/arbitration/onchain-futarchy-v0/docs/sepolia-deployment-v0.md" target="_blank" rel="noopener">deployment doc</a>.
+  </p>
+
+  <div class="dash-grid">
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="live-dot"></span>
+        <span class="dash-panel-title">v0 stack stats</span>
+      </div>
+      <div class="dash-row"><span class="dash-label">Latest block</span><span class="dash-value" id="sep-block">…</span></div>
+      <div class="dash-row"><span class="dash-label">Proposals (factory.marketsCount)</span><span class="dash-value" id="sep-markets-count">…</span></div>
+      <div class="dash-row"><span class="dash-label">Operator wallet</span><span class="dash-value" id="sep-op-balance">…</span></div>
+      <div class="dash-row"><span class="dash-label">Resolver wiring</span><span class="dash-value" id="sep-oracle-ok">…</span></div>
+      <div class="dash-row"><span class="dash-label">Last update</span><span class="dash-value" id="sep-updated">…</span></div>
+    </div>
+  </div>
+
+  <h3 class="sep-h3">Proposals</h3>
+  <div id="sep-proposals" class="sep-cards">
+    <p class="sep-empty">Loading…</p>
+  </div>
+
+  <p class="sep-note">
+    Operator wallet on Sepolia:
+    <a href="https://sepolia.etherscan.io/address/0x693E3FB46Bb36eE43C702FE94f9463df0691b43d" target="_blank" rel="noopener">0x693E3F…1b43d</a>.
+    Factory:
+    <a href="https://sepolia.etherscan.io/address/0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0" target="_blank" rel="noopener">0xc3154e…0cCa0</a>.
+    Orchestrator:
+    <a href="https://sepolia.etherscan.io/address/0x7DF66Fd816c09bb534136C5688B55BBA9398d262" target="_blank" rel="noopener">0x7DF66F…d262</a>.
+    Resolver:
+    <a href="https://sepolia.etherscan.io/address/0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a" target="_blank" rel="noopener">0x421d2F…Ea91a</a>.
+  </p>
 </section>
 
 <!-- ═══ Sale Mechanics ═══ -->

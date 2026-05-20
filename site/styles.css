@@ -508,3 +508,60 @@ a:hover { text-decoration: underline; }
   .contracts-table { font-size: 11px; }
   .contracts-table .addr { font-size: 10px; }
 }
+
+/* ─── Sepolia v0 dashboard ─── */
+.sep-h3 { margin-top: 40px; font-size: 18px; color: var(--text); }
+.sep-cards { display: grid; gap: 16px; margin-top: 16px; }
+@media (min-width: 720px) { .sep-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { .sep-cards { grid-template-columns: repeat(3, 1fr); } }
+.sep-empty { color: var(--muted); font-style: italic; }
+.sep-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sep-card-head { display: flex; justify-content: space-between; align-items: center; }
+.sep-card-idx { color: var(--muted); font-family: monospace; font-size: 11px; }
+.sep-card-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sep-status-live  { background: rgba(50, 200, 100, 0.15); color: #6fe9a8; }
+.sep-status-ready { background: rgba(255, 200, 50, 0.18); color: #ffd76a; }
+.sep-status-done  { background: rgba(120, 140, 255, 0.18); color: #9bb0ff; }
+.sep-card-title { margin: 0; font-size: 15px; }
+.sep-card-title a { color: var(--text); text-decoration: none; }
+.sep-card-title a:hover { color: var(--accent); }
+.sep-card-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.sep-card-grid {
+  display: grid;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.sep-card-grid > div { display: flex; justify-content: space-between; gap: 12px; }
+.sep-card-grid > div > span:first-child,
+.sep-card-grid > div > a:first-child { color: var(--muted); }
+.sep-card-grid > div > :nth-child(2) { color: var(--text); text-align: right; }
+.sep-card-grid a { color: var(--accent); text-decoration: none; }
+.sep-card-grid a:hover { text-decoration: underline; }
+.sep-mono { font-family: monospace; font-size: 10px; }
+.sep-note {
+  margin-top: 20px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.sep-note a { color: var(--accent); }
