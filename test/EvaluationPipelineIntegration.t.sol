@@ -27,8 +27,8 @@ contract EvaluationPipelineIntegrationTest is Test {
     MockTWAPOracle twapOracle;
     EvaluationPipeline pipeline;
 
-    address internal constant WXDAI =
-        0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    address internal constant WETH =
+        0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
     // Outcome tokens.
     address yesCompany = address(0x10);
@@ -55,12 +55,12 @@ contract EvaluationPipelineIntegrationTest is Test {
 
         // Mock ERC20 behaviors used by SafeERC20 in FutarchyArbitration.
         vm.mockCall(
-            WXDAI,
+            WETH,
             abi.encodeWithSelector(IERC20.transferFrom.selector),
             abi.encode(true)
         );
         vm.mockCall(
-            WXDAI,
+            WETH,
             abi.encodeWithSelector(IERC20.transfer.selector),
             abi.encode(true)
         );
@@ -96,15 +96,15 @@ contract EvaluationPipelineIntegrationTest is Test {
         internal
         returns (uint256 proposalId)
     {
-        uint256 m = 1e18;
+        uint256 m = 1e13;
         proposalId = arb.createProposal(m);
 
         // INACTIVE -> YES
-        arb.placeYesBond(proposalId, 25e18);
+        arb.placeYesBond(proposalId, 25e13);
         // YES -> NO (match)
         arb.placeNoBond(proposalId);
-        // NO -> YES with graduation threshold (requiredYes(0) = 100e18)
-        arb.placeYesBond(proposalId, 100e18);
+        // NO -> YES with graduation threshold (requiredYes(0) = 1e15)
+        arb.placeYesBond(proposalId, 1e15);
 
         // QUEUED -> EVALUATING
         arb.startNextEvaluation();
@@ -130,7 +130,7 @@ contract EvaluationPipelineIntegrationTest is Test {
             "FAO Eval",
             "governance",
             "en",
-            1e18,
+            1e13,
             uint32(block.timestamp)
         );
 
@@ -171,7 +171,7 @@ contract EvaluationPipelineIntegrationTest is Test {
             "FAO Eval",
             "governance",
             "en",
-            1e18,
+            1e13,
             uint32(block.timestamp)
         );
 
@@ -202,7 +202,7 @@ contract EvaluationPipelineIntegrationTest is Test {
             "FAO Eval",
             "governance",
             "en",
-            1e18,
+            1e13,
             uint32(block.timestamp)
         );
 
@@ -224,7 +224,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         orch.setNextReturn(10, address(prop1));
 
         pipeline.startEvaluation(
-            pid1, "First", "gov", "en", 1e18, uint32(block.timestamp)
+            pid1, "First", "gov", "en", 1e13, uint32(block.timestamp)
         );
         twapOracle.setDecision(address(prop1), true, true);
         pipeline.resolve(pid1);
@@ -233,11 +233,11 @@ contract EvaluationPipelineIntegrationTest is Test {
         assertEq(arb.activeEvaluationProposalId(), 0);
 
         // Second proposal lifecycle.
-        uint256 m = 1e18;
+        uint256 m = 1e13;
         uint256 pid2 = arb.createProposal(m);
-        arb.placeYesBond(pid2, 25e18);
+        arb.placeYesBond(pid2, 25e13);
         arb.placeNoBond(pid2);
-        arb.placeYesBond(pid2, 100e18);
+        arb.placeYesBond(pid2, 1e15);
         arb.startNextEvaluation();
 
         assertEq(arb.activeEvaluationProposalId(), pid2);
@@ -246,7 +246,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         orch.setNextReturn(11, address(prop2));
 
         pipeline.startEvaluation(
-            pid2, "Second", "gov", "en", 1e18, uint32(block.timestamp)
+            pid2, "Second", "gov", "en", 1e13, uint32(block.timestamp)
         );
         twapOracle.setDecision(address(prop2), true, false);
 

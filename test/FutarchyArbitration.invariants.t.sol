@@ -9,10 +9,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 
 /// @dev Minimal ERC20 used for invariant testing.
-/// We etch this runtime code into the canonical WXDAI address used by FutarchyArbitration.
-contract WXDAIMock is IERC20 {
-    string public constant name = "WXDAI";
-    string public constant symbol = "WXDAI";
+/// We etch this runtime code into the canonical WETH address used by FutarchyArbitration.
+contract WETHMock is IERC20 {
+    string public constant name = "WETH";
+    string public constant symbol = "WETH";
     uint8 public constant decimals = 18;
 
     uint256 public override totalSupply;
@@ -62,7 +62,7 @@ contract WXDAIMock is IERC20 {
     contract FutarchyArbitrationHandler is Test {
         FutarchyArbitration public arb;
 
-        address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+        address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
         // bounded actor set for invariants
         address[] public actors;
@@ -89,7 +89,7 @@ contract WXDAIMock is IERC20 {
             uint256 amt = bound(amtRaw, 1, 1e27);
 
             vm.startPrank(a);
-            IERC20(WXDAI).approve(address(arb), type(uint256).max);
+            IERC20(WETH).approve(address(arb), type(uint256).max);
             // calls can revert depending on state; that's fine for fuzz/invariant harness
             try arb.placeYesBond(proposalId, amt) {} catch {}
             vm.stopPrank();
@@ -99,7 +99,7 @@ contract WXDAIMock is IERC20 {
             address a = _actor(actorSeed);
 
             vm.startPrank(a);
-            IERC20(WXDAI).approve(address(arb), type(uint256).max);
+            IERC20(WETH).approve(address(arb), type(uint256).max);
             try arb.placeNoBond(proposalId) {} catch {}
             vm.stopPrank();
         }
@@ -123,7 +123,7 @@ contract WXDAIMock is IERC20 {
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         FutarchyArbitration arb;
 
-        address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+        address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
         FutarchyArbitrationHandler handler;
         address[] actors;
@@ -131,9 +131,9 @@ contract WXDAIMock is IERC20 {
         uint256 initialSupply;
 
         function setUp() public {
-            // Install a real ERC20 into the canonical immutable WXDAI address.
-            WXDAIMock impl = new WXDAIMock();
-            vm.etch(WXDAI, address(impl).code);
+            // Install a real ERC20 into the canonical immutable WETH address.
+            WETHMock impl = new WETHMock();
+            vm.etch(WETH, address(impl).code);
 
             arb = new FutarchyArbitration();
 
@@ -142,7 +142,7 @@ contract WXDAIMock is IERC20 {
                 actors.push(vm.addr(i + 1));
             }
 
-            WXDAIMock token = WXDAIMock(WXDAI);
+            WETHMock token = WETHMock(WETH);
             for (uint256 i = 0; i < actors.length; i++) {
                 token.mint(actors[i], 1_000_000e18);
             }
@@ -154,8 +154,8 @@ contract WXDAIMock is IERC20 {
 
         /// @dev Conservation invariant: totalSupply is constant and all tokens remain within
         /// our closed system: the actors + the arbitration contract.
-        function invariant_WXDAI_conserved_across_actors_and_contract() public view {
-            WXDAIMock token = WXDAIMock(WXDAI);
+        function invariant_WETH_conserved_across_actors_and_contract() public view {
+            WETHMock token = WETHMock(WETH);
             assertEq(token.totalSupply(), initialSupply);
 
             uint256 sum = token.balanceOf(address(arb));
@@ -165,14 +165,14 @@ contract WXDAIMock is IERC20 {
             assertEq(sum, initialSupply);
         }
 
-        /// @dev Accounting invariant: contract WXDAI balance equals active-escrowed bonds
+        /// @dev Accounting invariant: contract WETH balance equals active-escrowed bonds
         /// + total withdrawable owed (since funds never leave except via withdraw).
         function invariant_contract_balance_equals_escrow_plus_withdrawable() public view {
             // Note: Phase 1 only, so proposals are small; but there is no public iterator.
             // We can still assert the weaker property that contract balance is >= total
             // withdrawable.
             // (Escrowed bonds add extra balance.)
-            WXDAIMock token = WXDAIMock(WXDAI);
+            WETHMock token = WETHMock(WETH);
 
             uint256 totalWithdrawable;
             for (uint256 i = 0; i < actors.length; i++) {

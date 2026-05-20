@@ -16,8 +16,8 @@ contract FutarchyEvaluatorIntegrationTest is Test {
     MockConditionalTokens ctf;
     FutarchyEvaluator eval;
 
-    // Canonical Gnosis WXDAI address hardcoded into contract.
-    address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    // Canonical Sepolia WETH address hardcoded into contract.
+    address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
     address owner = address(0xBEEF);
 
@@ -27,23 +27,23 @@ contract FutarchyEvaluatorIntegrationTest is Test {
         eval = new FutarchyEvaluator(address(arb), address(ctf), owner);
 
         // Mock ERC20 behaviors used by SafeERC20.
-        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true));
-        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true));
+        vm.mockCall(WETH, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true));
+        vm.mockCall(WETH, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true));
 
         // Wire evaluator as deployer-owner.
         arb.setEvaluator(address(eval));
     }
 
     function _createQueuedAndEvaluatingProposal() internal returns (uint256 proposalId) {
-        uint256 m = 1e18;
+        uint256 m = 1e13;
         proposalId = arb.createProposal(m);
 
         // Drive state: INACTIVE -> YES -> NO (match) -> YES (graduation) => QUEUED
-        arb.placeYesBond(proposalId, 25e18);
+        arb.placeYesBond(proposalId, 25e13);
         arb.placeNoBond(proposalId);
 
-        // YES >= graduation threshold always accepted. Meets requiredYes(0)=100e18.
-        arb.placeYesBond(proposalId, 100e18);
+        // YES >= graduation threshold always accepted. Meets requiredYes(0)=1e15.
+        arb.placeYesBond(proposalId, 1e15);
 
         // QUEUED head -> EVALUATING
         arb.startNextEvaluation();
