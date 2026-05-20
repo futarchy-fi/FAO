@@ -1,4 +1,44 @@
-# Phase-5 simulation report (in-tree)
+# Phase-5 validation report
+
+## Live Sepolia deployment & first promote (2026-05-20)
+
+The FAO v0 stack is **deployed and operational on Sepolia testnet**.
+See `docs/sepolia-deployment-v0.md` for the full address manifest +
+verification commands.
+
+**First live promote (smoke test):**
+- Tx: `0xc42260d31afe320e1b522a64207c87c75da92401830cdecc22d4d4559f30928a`
+- Block: 10883925
+- Gas: 15.59M (single atomic call:
+  factory.createProposal + 4 wrappers + 2 UniV3 pools + 2 initializations
+  + 2 increaseObservationCardinalityNext(100) + resolver.bindProposal +
+  event emission)
+- Proposal: `0x233f2320f5d2ca1518c1cd5697d6839b875b0c78`
+- YES pool: `0x94cf0ec06d0aada74540418089af39ecd2e5d705`
+- NO pool: `0x6abf943a0f278a6846bdd3d7e2bf7de156b4eeac`
+- Anchor: 1778230964
+- Resolvable after: 1778238164 (anchor + 2h)
+- TWAP window: [1778234564, 1778238164] (last hour before windowEnd)
+
+The atomic flow worked end-to-end on real Sepolia: condition prepared
+via Seer CTF, 4 Wrapped1155 wrappers deployed via Seer Wrapped1155Factory,
+2 conditional pools created on canonical UniV3 factory at the addresses
+derived from `block.prevrandao` of this block, initialized at spot
+price = 1, cardinality increased to 100, bindProposal recorded the
+anchor on the resolver.
+
+The pre-creation defense (A1) is **structurally engaged** in production:
+the wrapper addresses, and therefore the pool addresses, are derived
+from `block.prevrandao` of this exact block — no attacker could have
+pre-computed them before slot start.
+
+**Operator wallet:** dropped from ~0.05 ETH to ~0.0006 ETH after deploys
++ smoke promote. Top-up required for the `resolve` tx and subsequent
+agent activity.
+
+---
+
+## In-tree simulation (executed)
 
 Initial phase-5 validation run, executed in-tree via the forge integration
 test `test/integration/Phase5Simulation.t.sol`.
