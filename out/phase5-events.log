@@ -1,0 +1,14 @@
+2026-05-20T17:04:01Z [START] Phase-5 run beginning, target 10h
+2026-05-20T17:04:01Z [CYCLE_START] cycle=1
+docker: invalid reference format: repository name must be lowercase.
+See 'docker run --help'.
+2026-05-20T17:04:02Z [LEGIT_FAIL] cycle=1
+2026-05-20T17:04:02Z [LEGIT] cycle=1 seed=13306
+2026-05-20T17:06:08Z [START] Phase-5 run beginning, target 10h
+2026-05-20T17:06:08Z [CYCLE_START] cycle=1
+Transactions saved to: /work/broadcast/LegitProposer.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /work/cache/LegitProposer.s.sol/11155111/run-latest.json
+
+Error: Failed to send transaction after 4 attempts Err(server returned an error response: error code -32000: INTERNAL_ERROR: insufficient funds)
+2026-05-20T17:06:37Z [LEGIT] cycle=1 seed=16962
