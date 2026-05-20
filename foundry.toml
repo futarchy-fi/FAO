@@ -4,6 +4,7 @@ out = "out"
 libs = ["lib"]
 optimizer = true
 optimizer_runs = 200
+via_ir = true
 
 remappings = [
     # Use SnapshotX-pinned OpenZeppelin versions (v4.x) to avoid OZ v5 init signature mismatches
