@@ -31,9 +31,43 @@ promote success rate %:  100
 **Per-cycle gas matches the actual live promote** (15.59M on block
 10883925), confirming the fork code path is identical to live execution.
 
-## 50-cycle run
+## 50-cycle run (executed 2026-05-20, after the via_ir startTime fix)
 
-(Pending — see updates below as the run completes.)
+```
+=== Phase-5 fork loop starting ===
+cycles requested: 50
+admin: 0x693E3FB46Bb36eE43C702FE94f9463df0691b43d
+orchestrator: 0x7DF66Fd816c09bb534136C5688B55BBA9398d262
+starting block: 10886052
+starting timestamp: 1779285900
+
+=== Phase-5 fork loop report ===
+cycles attempted:         50
+cycles succeeded:         50
+cycles reverted:          0
+YES wins:                 0
+NO wins:                  50
+undecided (resolve fail): 0
+total gas used:           778_828_998
+avg gas per cycle:        15_576_579
+defender total cost wei:  500_000_000_000_000_000   (0.50 ETH)
+simulated wall-clock s:   360_050  (100 h, 10× goal minimum)
+promote success rate %:   100
+```
+
+**Interpretation:**
+- 100% promote success rate across 50 independent cycles against the
+  actual deployed bytecode of every contract in the stack (factory,
+  resolver, orchestrator, FAOFutarchyProposal clone, Seer CTF,
+  Wrapped1155Factory, canonical UniV3 factory).
+- 100 simulated wall-clock hours, exceeding the goal's ≥10h minimum
+  by a factor of 10.
+- Defender's total cost matches the formula `cycles × TIP` exactly,
+  confirming the conditional-TIP economic property under load.
+- 100% NO wins is the expected behavior of the resolver tiebreak when
+  no inner-window swaps occur (both YES and NO pools stay at init
+  price; tick comparison is strict `>` which falls through to NO).
+  A live run with actual swap activity (Tier 5) would mix YES/NO wins.
 
 ## Interpretation
 
