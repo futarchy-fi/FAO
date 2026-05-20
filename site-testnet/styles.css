@@ -605,3 +605,229 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--border);
 }
 .footer a { color: var(--accent); }
+
+/* ─── Create proposal box ─── */
+.create-box {
+  margin-top: 24px;
+  padding: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.create-title { margin: 0 0 8px 0; font-size: 16px; }
+.create-note { margin: 0 0 16px 0; font-size: 12px; color: var(--muted); }
+.create-form { display: flex; flex-direction: column; gap: 10px; }
+.create-form input,
+.create-form textarea {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.create-form textarea { resize: vertical; min-height: 60px; }
+.create-form input:focus,
+.create-form textarea:focus { outline: 1px solid var(--accent); }
+.create-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.create-actions .btn { min-width: 160px; }
+.create-status { margin: 8px 0 0 0; font-size: 12px; }
+.create-status-info    { color: var(--muted); }
+.create-status-ok      { color: #6fe9a8; }
+.create-status-error   { color: #ff6b6b; }
+.create-status-pending { color: #ffd76a; }
+.create-status a       { color: var(--accent); }
+
+/* ─── Proposal card actions (Resolve button) ─── */
+.sep-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* Base style for in-card action buttons. Inherits look from .btn-primary so
+ * resolve-btn matches the rest of the dashboard. If bonds.js later defines
+ * .bond-action-btn with its own look, the more specific selector there wins. */
+.bond-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.bond-action-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  border-color: var(--accent-dim);
+}
+.bond-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.bond-action-btn.resolve-btn {
+  background: var(--accent);
+  color: #0d0f14;
+  border-color: var(--accent);
+}
+.bond-action-btn.resolve-btn:hover:not(:disabled) {
+  background: #2de8a0;
+  border-color: #2de8a0;
+}
+.sep-card-action-status { font-size: 11px; flex: 1; min-width: 0; }
+.sep-card-action-status-info    { color: var(--text-muted); }
+.sep-card-action-status-ok      { color: #6fe9a8; }
+.sep-card-action-status-error   { color: #ff6b6b; word-break: break-word; }
+.sep-card-action-status-pending { color: #ffd76a; }
+.sep-card-action-status a       { color: var(--accent); }
+
+/* ─── Bond escalation panel (bonds.js) ─── */
+
+.bond-withdraw-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: rgba(62, 255, 176, 0.08);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.bond-withdraw-banner strong { color: var(--accent); }
+
+.bond-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bond-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.bond-panel-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.bond-state {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.bond-state-inactive   { background: rgba(140, 150, 170, 0.18); color: #a8b2c5; }
+.bond-state-yes        { background: rgba(50, 200, 100, 0.20); color: #6fe9a8; }
+.bond-state-no         { background: rgba(255, 92, 92, 0.18);  color: #ff8a8a; }
+.bond-state-queued     { background: rgba(255, 200, 50, 0.20); color: #ffd76a; }
+.bond-state-evaluating { background: rgba(120, 140, 255, 0.20); color: #9bb0ff; }
+.bond-state-settled    { background: rgba(192, 132, 252, 0.20); color: #d6b9ff; }
+
+.bond-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+}
+.bond-label { color: var(--text-muted); }
+.bond-value { color: var(--text); text-align: right; }
+.bond-value strong { color: var(--accent); font-weight: 700; }
+.bond-value a { color: var(--text); text-decoration: none; }
+.bond-value a:hover { color: var(--accent); text-decoration: underline; }
+
+.bond-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+/* Tints layered on top of the existing .bond-action-btn base (defined above). */
+.bond-action-btn.bond-action-yes {
+  border-color: rgba(50, 200, 100, 0.4);
+  color: #6fe9a8;
+}
+.bond-action-btn.bond-action-no {
+  border-color: rgba(255, 92, 92, 0.4);
+  color: #ff8a8a;
+}
+.bond-action-btn.bond-action-grad {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.bond-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.bond-safety {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #ffd76a;
+  background: rgba(255, 200, 50, 0.08);
+  border-radius: 4px;
+}
+.bond-status {
+  margin: 6px 0 0;
+  font-size: 11px;
+  min-height: 14px;
+}
+.bond-status-info    { color: var(--text-muted); }
+.bond-status-ok      { color: #6fe9a8; }
+.bond-status-error   { color: #ff6b6b; word-break: break-word; }
+.bond-status-pending { color: #ffd76a; }
+.bond-status a       { color: var(--accent); }
+
+/* Modal scaffolding (reserved — bonds.js currently uses window.prompt; classes are
+   in place so a styled modal can be wired without CSS churn). */
+.bond-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.bond-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 480px;
+}
+.bond-modal h3 { margin-bottom: 8px; font-size: 16px; }
+.bond-modal .bond-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}

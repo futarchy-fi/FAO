@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
   <script src="sepolia.js" defer></script>
+  <script src="bonds.js" defer></script>
 </head>
 <body>
 
@@ -95,6 +96,26 @@
     <code>FAOFutarchyFactory</code>, <code>FAOTwapResolver</code>, and
     <code>ConditionalTokens</code> live from Sepolia.
   </p>
+
+  <div class="create-box">
+    <h3 class="create-title">Create proposal (permissionless)</h3>
+    <p class="create-note">
+      Calls <code>FAOFutarchyFactory.createProposal(...)</code>. Costs ~0.002 ETH on Sepolia.
+      Promotion (creates pools + starts TWAP window) is admin-only — coming next.
+    </p>
+    <div class="create-form">
+      <input id="create-name" type="text" placeholder="Proposal name (e.g., Should we ship feature X?)" maxlength="80" />
+      <textarea id="create-desc" placeholder="Description (optional)" maxlength="400" rows="3"></textarea>
+      <div class="create-actions">
+        <button id="connect-wallet" class="btn btn-secondary">Connect MetaMask</button>
+        <button id="create-submit" class="btn btn-primary" disabled>Submit (connect wallet first)</button>
+      </div>
+      <p id="create-status" class="create-status"></p>
+    </div>
+  </div>
+
+  <div id="sep-bonds-mount"></div>
+
   <div id="sep-proposals" class="sep-cards">
     <p class="sep-empty">Loading…</p>
   </div>
