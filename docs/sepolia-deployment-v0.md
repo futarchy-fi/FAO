@@ -68,6 +68,24 @@ $ cast call <arb> 'evaluator()(address)'
 - Anchor timestamp: `1779255564` (block 10883925)
 - TWAP window end: anchor + 2h = `1779262164`
 
+## Second live promote (post-topup, phase-5 cycle 2)
+
+**Tx:** `0xf7d7ee50ba82c1e5fa83d22c5ece6de3fdead622d1f069b54decd4097e8b1729`
+**Block:** 10886886
+**Gas used:** 15_601_636
+**Promotion name:** `"live-cycle-2"`
+
+**Created on-chain:**
+- Proposal contract: `0x24fc7dc92133718a7d24baa7507ece8f6748942c`
+- YES pool: `0x9488cffc6697da6b4bcc3ee565602af07630eea2`
+- NO pool: `0x539545b09df6fe8cb044fbb5936024754d6f5449`
+- Anchor timestamp: `0x6a0dedb8` ≈ 1779288504
+- TWAP window end: anchor + 2h = 1779295704
+
+This is the **second successful live promote** following the wallet
+top-up at ~17:30 UTC 2026-05-20. The autonomous loop now has two
+complete cycles' worth of broadcast evidence on chain.
+
 ## First live resolve (full lifecycle proven)
 
 **Tx:** `0x78e8426435f881b7837d8804c1b420818fd833a3e3f39ceba70a06677fb21c1e`
