@@ -38,9 +38,10 @@ import {IFutarchyConditionalRouter} from "../src/interfaces/IFutarchyConditional
 ///   forge script script/DeploySepoliaOnchainFutarchy.s.sol \
 ///     --rpc-url $SEPOLIA_RPC --broadcast -vvvv
 contract DeploySepoliaOnchainFutarchy is Script {
-    // Defaults for Sepolia.
+    // Defaults for Sepolia (sourced from lib/seer-demo/contracts/deployments/sepolia/).
     address internal constant DEFAULT_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
     address internal constant DEFAULT_CTF = 0x8bdC504dC3A05310059c1c67E0A2667309D27B93;
+    address internal constant DEFAULT_WRAPPED_1155_FACTORY = 0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
     address internal constant DEFAULT_UNIV3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c;
     uint24 internal constant DEFAULT_FEE_TIER = 500;
     uint16 internal constant DEFAULT_OBSERVATION_CARDINALITY = 1_000;
@@ -54,7 +55,7 @@ contract DeploySepoliaOnchainFutarchy is Script {
         address fao = vm.envAddress("FAO_TOKEN");
         address weth = vm.envOr("WETH", DEFAULT_WETH);
         address ctfAddr = vm.envOr("CTF", DEFAULT_CTF);
-        address wrappedFactoryAddr = vm.envAddress("WRAPPED_1155_FACTORY");
+        address wrappedFactoryAddr = vm.envOr("WRAPPED_1155_FACTORY", DEFAULT_WRAPPED_1155_FACTORY);
         address univ3FactoryAddr = vm.envOr("UNIV3_FACTORY", DEFAULT_UNIV3_FACTORY);
         address spotPool = vm.envAddress("SPOT_POOL");
         uint24 feeTier = uint24(vm.envOr("FEE_TIER", uint256(DEFAULT_FEE_TIER)));
