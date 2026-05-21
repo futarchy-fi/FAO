@@ -105,9 +105,9 @@ contract FAOOfficialProposalOrchestrator {
         RESOLVER = resolver;
     }
 
-    /// @notice One-shot wiring: set the liquidity adapter. Immutable once set.
+    /// @notice Wire (or replace) the liquidity adapter. Admin-only; testnet v0 keeps
+    /// this swappable so we can patch adapter bugs without rebuilding the full stack.
     function setAdapter(IFAOLiquidityAdapter newAdapter) external onlyAdmin {
-        if (address(adapter) != address(0)) revert AdapterAlreadySet();
         adapter = newAdapter;
         emit AdapterSet(address(newAdapter));
     }

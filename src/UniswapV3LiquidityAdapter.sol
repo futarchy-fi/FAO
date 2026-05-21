@@ -293,17 +293,18 @@ contract UniswapV3LiquidityAdapter is IFAOLiquidityAdapter, IUniswapV3MintCallba
         address collateral,
         bytes32 conditionId,
         uint256 indexSet,
-        address wrapper,
+        address /* wrapper */,
         bytes memory tokenData,
         uint256 amount
     ) internal {
         bytes32 collectionId = CTF.getCollectionId(bytes32(0), conditionId, indexSet);
         uint256 tokenId = CTF.getPositionId(collateral, collectionId);
-        // safeTransferFrom triggers wrapper.onERC1155Received → wrapper.mint(adapter,
-        // amount). We pass tokenData so the wrapper can identify (and lazily-deploy
-        // if needed) the correct ERC20 instance.
+        // Gnosis Wrapped1155Factory pattern: transfer the ERC1155 to the FACTORY,
+        // which receives it in onERC1155Received, lazy-deploys the per-tokenId
+        // wrapper if needed, and mints `amount` of the wrapped ERC20 to `operator`
+        // (i.e. msg.sender of safeTransferFrom — this adapter).
         IConditionalTokensSplitAndTransfer(address(CTF)).safeTransferFrom(
-            address(this), wrapper, tokenId, amount, tokenData
+            address(this), address(W1155), tokenId, amount, tokenData
         );
     }
 
@@ -321,5 +322,29 @@ contract UniswapV3LiquidityAdapter is IFAOLiquidityAdapter, IUniswapV3MintCallba
         // Reset-then-set is safest across USDT-like tokens, but our two collaterals
         // (FAO, WETH) are both well-behaved. Single-shot approve is enough.
         IERC20Minimal(token).approve(spender, type(uint256).max);
+    }
+
+    // ─── ERC1155 receiver hooks ────────────────────────────────────────────
+    // CTF.splitPosition mints ERC1155 positions to msg.sender (this adapter)
+    // and performs a safe-transfer callback. We accept all transfers.
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return 0xf23a6e61;
+    }
+
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return 0xbc197c81;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x4e2312e0 || interfaceId == 0x01ffc9a7;
     }
 }

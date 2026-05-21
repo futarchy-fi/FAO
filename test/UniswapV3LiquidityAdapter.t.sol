@@ -112,6 +112,12 @@ contract MockWrapped1155 is IERC20Minimal, IMockWrapper {
         totalSupply += amount;
     }
 
+    /// @notice Open helper so the W1155Factory mock can mint on the wrapped's behalf.
+    function factoryMint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        totalSupply += amount;
+    }
+
     /// @notice Called by CTF.safeTransferFrom — wraps 1:1.
     function onERC1155Received(address operator, address, uint256, uint256 value, bytes calldata)
         external
@@ -253,6 +259,23 @@ contract MockW1155Factory is IWrapped1155FactoryLike {
             out[i] = name32[i];
         }
         return string(out);
+    }
+
+    // Gnosis Wrapped1155Factory hook: receive ERC1155 from CTF, lazy-deploy
+    // the wrapper, mint the wrapped ERC20 to `operator`.
+    function onERC1155Received(address operator, address, uint256 id, uint256 value, bytes calldata data)
+        external
+        returns (bytes4)
+    {
+        bytes32 s = keccak256(abi.encodePacked(msg.sender, id, data));
+        address w = wrapped[s];
+        if (w == address(0)) {
+            string memory n = _decodeName(data);
+            w = address(new MockWrapped1155(n, msg.sender, id, data));
+            wrapped[s] = w;
+        }
+        MockWrapped1155(w).factoryMint(operator, value);
+        return bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"));
     }
 }
 
