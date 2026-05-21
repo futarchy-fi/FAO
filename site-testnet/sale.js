@@ -16,11 +16,11 @@
   // === EDIT-AFTER-DEPLOY ===
   // Set to the FAOSale address printed by DeployFAOSaleSepolia.s.sol.
   // Leave as the zero address before deploy — the UI shows a placeholder.
-  const SALE_ADDR = '0x0000000000000000000000000000000000000000';
+  const SALE_ADDR = '0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678';
   // =========================
 
   const FAO_TOKEN_ADDR = '0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65';
-  const RPC = 'https://sepolia.drpc.org';
+  const RPC = 'https://ethereum-sepolia.publicnode.com';
   const SEPOLIA_CHAIN_ID = 11155111n;
   const REFRESH_INTERVAL = 30_000;
   const ZERO = '0x0000000000000000000000000000000000000000';
