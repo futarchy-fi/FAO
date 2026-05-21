@@ -86,7 +86,7 @@
   function wireControls() {
     const buyBtn = $$('#sale-buy');
     const input = $$('#sale-input');
-    if (buyBtn) buyBtn.addEventListener('click', onBuy);
+    if (buyBtn) buyBtn.addEventListener('click', onBuyPreview);
     if (input) input.addEventListener('input', updateCostPreview);
 
     document.querySelectorAll('[data-quick-buy]').forEach(btn => {
@@ -97,6 +97,25 @@
         updateCostPreview();
       });
     });
+
+    const cancelBtn = $$('#sale-confirm-cancel');
+    const goBtn = $$('#sale-confirm-go');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeConfirmCard);
+    if (goBtn) goBtn.addEventListener('click', onBuyExecute);
+  }
+
+  function showConfirmCard() {
+    const card = $$('#sale-confirm-card');
+    const btn = $$('#sale-buy');
+    if (card) card.hidden = false;
+    if (btn) btn.hidden = true;
+  }
+  function closeConfirmCard() {
+    const card = $$('#sale-confirm-card');
+    const btn = $$('#sale-buy');
+    if (card) card.hidden = true;
+    if (btn) btn.hidden = false;
+    setBuyStatus('');
   }
 
   function setBuyStatus(text, kind) {
@@ -124,8 +143,16 @@
     return 'initial-sale';
   }
 
-  // ─── Buy flow ────────────────────────────────────────────────────────
-  async function onBuy() {
+  // ─── Buy flow (two-stage) ────────────────────────────────────────────
+  //
+  // Stage 1 (onBuyPreview): user clicks Buy. We connect the wallet if not
+  // already connected, quote the cost, and render an in-app preview card
+  // so the user can sanity-check what's about to happen BEFORE MetaMask's
+  // opaque hex popup. The actual tx is NOT sent yet.
+  //
+  // Stage 2 (onBuyExecute): user clicks "Confirm in wallet →" inside the
+  // preview card. We send the tx and the wallet asks for final approval.
+  async function onBuyPreview() {
     const inst = currentInstance();
     const sAddr = saleAddress(inst);
     if (!sAddr) { setBuyStatus('No sale on the active instance.', 'error'); return; }
@@ -137,38 +164,73 @@
       return;
     }
 
-    const buyBtn = $$('#sale-buy');
-    if (!buyBtn) return;
-    buyBtn.disabled = true;
-
     try {
-      // 1. Ensure wallet — if not yet connected, trigger the global connect
-      //    flow (asks for accounts, switches chain to Sepolia if needed,
-      //    builds a BrowserProvider). No "connect first" friction prompt.
-      let signer = window.activeSigner;
-      if (!signer) {
+      // Auto-connect wallet on first Buy click; receive-address only known
+      // once the wallet is connected.
+      if (!window.activeSigner) {
         setBuyStatus('Connecting wallet…', 'pending');
-        signer = await window.connectWallet();
+        await window.connectWallet();
       }
 
-      // 2. Quote price at the latest block.
+      // Quote the current price at the latest block.
       const saleR = new ethers.Contract(sAddr, SALE_ABI, provider);
       const priceWei = await saleR.currentPriceWeiPerToken();
       const cost = priceWei * BigInt(n);
 
-      setBuyStatus(`Confirm in wallet · ${fmtEth(cost)}…`, 'pending');
+      const sym = $$('#sale-input-suffix')?.textContent || 'TKN';
+      const recv = window.connectedWallet || '0x…';
+      if ($$('#sale-confirm-buy'))  $$('#sale-confirm-buy').textContent  = `${n} ${sym}`;
+      if ($$('#sale-confirm-pay'))  $$('#sale-confirm-pay').textContent  = `${(+ethers.formatEther(cost)).toFixed(6)} ETH`;
+      if ($$('#sale-confirm-sale')) $$('#sale-confirm-sale').textContent = sAddr;
+      if ($$('#sale-confirm-recv')) $$('#sale-confirm-recv').textContent = recv;
+
+      showConfirmCard();
+      setBuyStatus('Review the summary above, then confirm in your wallet.', 'pending');
+    } catch (e) {
+      console.error(e);
+      setBuyStatus(`Connect failed: ${e?.shortMessage || e?.message || e}`, 'error');
+    }
+  }
+
+  async function onBuyExecute() {
+    const inst = currentInstance();
+    const sAddr = saleAddress(inst);
+    if (!sAddr) { setBuyStatus('No sale on the active instance.', 'error'); return; }
+
+    const input = $$('#sale-input');
+    const n = parseInt(input?.value || '', 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      setBuyStatus('Enter a positive whole number of tokens.', 'error');
+      closeConfirmCard();
+      return;
+    }
+
+    const goBtn = $$('#sale-confirm-go');
+    const cancelBtn = $$('#sale-confirm-cancel');
+    if (goBtn) goBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    try {
+      const signer = window.activeSigner || (await window.connectWallet());
+      const saleR = new ethers.Contract(sAddr, SALE_ABI, provider);
+      const priceWei = await saleR.currentPriceWeiPerToken();
+      const cost = priceWei * BigInt(n);
+
+      setBuyStatus(`Waiting for wallet approval · ${fmtEth(cost)}…`, 'pending');
       const sale = new ethers.Contract(sAddr, SALE_ABI, signer);
       const tx = await sale.buy(n, { value: cost });
-      setBuyStatus(`Mining…`, 'pending');
+      setBuyStatus('Mining…', 'pending');
       await tx.wait();
       setBuyStatus(`Bought ${n} tokens for ${fmtEthShort(cost)} ✓`, 'ok');
+      closeConfirmCard();
       await refresh();
     } catch (e) {
       console.error(e);
       const msg = e?.shortMessage || e?.message || String(e);
       setBuyStatus(`Buy failed: ${msg}`, 'error');
     } finally {
-      buyBtn.disabled = false;
+      if (goBtn) goBtn.disabled = false;
+      if (cancelBtn) cancelBtn.disabled = false;
     }
   }
 

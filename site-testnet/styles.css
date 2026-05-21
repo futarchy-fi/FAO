@@ -1811,3 +1811,50 @@ body.has-topbar nav.nav { display: none; }
   border-radius: 12px;
 }
 .sale-empty-card h2 { margin-top: 0; }
+
+/* ─── Sale pre-confirm card ───────────────────────────────────── */
+.sale-confirm-card {
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid #56e88f;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.sale-confirm-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+.sale-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.sale-confirm-row:last-of-type { border-bottom: none; }
+.sale-confirm-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.sale-confirm-row strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+  max-width: 70%;
+}
+.sale-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sale-confirm-actions .btn { flex: 1; }
