@@ -31,7 +31,7 @@
 
   // REGISTRY_ADDR — set this after deploying FutarchyRegistry.sol.
   // Until then it stays as ZeroAddress and the UI falls back to FAO bootstrap.
-  const REGISTRY_ADDR = '0x0000000000000000000000000000000000000000'; // REGISTRY_ADDR
+  const REGISTRY_ADDR = '0x554B437D9D47B071DffFB40933e63052157405CA'; // REGISTRY_ADDR
 
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 60_000;
