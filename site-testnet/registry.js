@@ -478,17 +478,30 @@
   // ─── Boot ────────────────────────────────────────────────────────────
 
   async function init() {
-    provider = new ethers.JsonRpcProvider(RPC);
+    try {
+      provider = new ethers.JsonRpcProvider(RPC);
 
-    await loadInstances();
-    // Counts are optional; the picker still renders without them.
-    loadProposalCounts().then(() => renderPicker()).catch(() => {});
+      await loadInstances();
+      // Counts are optional; the picker still renders without them.
+      loadProposalCounts().then(() => renderPicker()).catch((e) => console.error('[registry] loadProposalCounts failed', e));
 
-    restoreActiveId();
-    publishActiveInstance();
-    renderPicker();
-    updateActiveHeader();
-    wireCreateModal();
+      restoreActiveId();
+      publishActiveInstance();
+      renderPicker();
+      updateActiveHeader();
+      wireCreateModal();
+    } catch (err) {
+      console.error('[registry] init failed:', err);
+      const picker = $$('#instances-picker');
+      const header = $$('#instance-active-header');
+      const msg = err && (err.message || String(err)) || 'unknown error';
+      if (picker) {
+        picker.innerHTML = `<p class="sep-empty">Registry init failed: ${escapeHtml(msg)}. Check browser console.</p>`;
+      }
+      if (header) {
+        header.innerHTML = `<span class="instance-active-label">Active instance:</span><strong>error</strong>`;
+      }
+    }
 
     // Periodic refresh — keeps the picker count up to date and picks up new
     // instances created from other tabs / wallets.
