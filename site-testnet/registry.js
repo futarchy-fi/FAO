@@ -293,12 +293,17 @@
   }
 
   // Pretty-print + class hint for the per-instance sale phase badge.
+  // `phase-ended` is internally distinct (the initial window timer has elapsed
+  // but the sale hasn't been finalized — still selling at the initial price)
+  // but from a user's POV it's still the same "initial sale" lifecycle stage,
+  // so it shares the label. The amber color still flags that finalization is
+  // overdue for the admin who's watching.
   function salePhaseBadge(phase) {
     switch (phase) {
-      case 'initial-sale':   return { label: 'initial sale',   cls: 'badge-initial' };
-      case 'phase-ended':    return { label: 'awaiting phase 2', cls: 'badge-ended' };
-      case 'bonding-curve':  return { label: 'bonding curve',  cls: 'badge-curve' };
-      case 'not-started':    return { label: 'not started',    cls: 'badge-pending' };
+      case 'initial-sale':   return { label: 'initial sale',  cls: 'badge-initial' };
+      case 'phase-ended':    return { label: 'initial sale',  cls: 'badge-ended' };
+      case 'bonding-curve':  return { label: 'bonding curve', cls: 'badge-curve' };
+      case 'not-started':    return { label: 'not started',   cls: 'badge-pending' };
       default:               return null;
     }
   }
