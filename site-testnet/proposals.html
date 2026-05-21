@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Proposals — FAO v0 testnet</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
+  <script src="shared.js" defer></script>
+  <script src="sepolia.js" defer></script>
+  <script src="bonds.js" defer></script>
+</head>
+<body class="has-topbar" data-page="proposals">
+
+<div id="topbar-root"></div>
+
+<section id="proposals" class="section">
+  <h2 class="section-title">Proposals</h2>
+  <p class="section-subtitle">
+    Each card shows one proposal's lifecycle: candidate, in TWAP window, ready
+    to resolve, or resolved. Reads from the active futarchy's
+    <code>FAOFutarchyFactory</code>, <code>FAOTwapResolver</code>, and
+    <code>ConditionalTokens</code> live from Sepolia.
+  </p>
+
+  <div class="create-box">
+    <h3 class="create-title">Create proposal (permissionless)</h3>
+    <p class="create-note">
+      Calls <code>FAOFutarchyFactory.createProposal(...)</code> on the active
+      instance. Costs ~0.002 ETH on Sepolia. Promotion (creates pools + starts
+      TWAP window) is admin-only — operator runs it via the auto-promote daemon.
+    </p>
+    <div class="create-form">
+      <input id="create-name" type="text" placeholder="Proposal name (e.g., Should we ship feature X?)" maxlength="80" />
+      <textarea id="create-desc" placeholder="Description (optional)" maxlength="400" rows="3"></textarea>
+      <div class="create-actions">
+        <button id="connect-wallet" class="btn btn-secondary">Connect MetaMask</button>
+        <button id="create-submit" class="btn btn-primary" disabled>Submit (connect wallet first)</button>
+      </div>
+      <p id="create-status" class="create-status"></p>
+    </div>
+  </div>
+
+  <div id="sep-bonds-mount"></div>
+
+  <div id="sep-proposals" class="sep-cards">
+    <p class="sep-empty">Loading…</p>
+  </div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deployed contracts — FAO v0 testnet</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
+  <script src="shared.js" defer></script>
+</head>
+<body class="has-topbar" data-page="contracts">
+
+<div id="topbar-root"></div>
+
+<section id="contracts" class="section">
+  <h2 class="section-title">Deployed contracts</h2>
+  <p class="section-subtitle">
+    Long-lived addresses on Sepolia. Each futarchy instance deploys its own
+    private set of (token + sale + arbitration + resolver + factory + orchestrator
+    + spotPool); those per-instance addresses live on the Home rankings table.
+  </p>
+
+  <h3 class="contracts-group-title">v3 registry (shared)</h3>
+  <table class="contracts-table">
+    <thead><tr><th>Contract</th><th>Address</th></tr></thead>
+    <tbody>
+      <tr><td>FutarchyRegistry (v3)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x45F1F8Bb80539cddFfB945dBe4C53A65d98296C0" target="_blank" rel="noopener">0x45F1F8Bb80539cddFfB945dBe4C53A65d98296C0</a></td></tr>
+      <tr><td>TokenAndArbitrationDeployer</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xF5D51c01Ee842CEF44711e13b14FDDb82bC3a645" target="_blank" rel="noopener">0xF5D51c01Ee842CEF44711e13b14FDDb82bC3a645</a></td></tr>
+      <tr><td>FutarchyStackDeployer</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x76d6F1Ebd894A7493e709bedF610f83032c242cb" target="_blank" rel="noopener">0x76d6F1Ebd894A7493e709bedF610f83032c242cb</a></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="contracts-group-title">FAO bootstrap instance</h3>
+  <table class="contracts-table">
+    <thead><tr><th>Contract</th><th>Address</th></tr></thead>
+    <tbody>
+      <tr><td>FAOToken</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65" target="_blank" rel="noopener">0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65</a></td></tr>
+      <tr><td>FAOSale</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678" target="_blank" rel="noopener">0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678</a></td></tr>
+      <tr><td>SaleSpotSeeder (sale → spot LP)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x485a00df4eb5ef1b5836e4b966404f94d092c72f" target="_blank" rel="noopener">0x485a00df4eb5ef1b5836e4b966404f94d092c72f</a></td></tr>
+      <tr><td>FAO/WETH spot pool (UniV3)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x5dac596a38a294c03d7fac840d031708c970da79" target="_blank" rel="noopener">0x5dac596a38a294c03d7fac840d031708c970da79</a></td></tr>
+      <tr><td>FAOFutarchyProposal (impl)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x098990c0e1a4a84f03b236f16cd34ed140803555" target="_blank" rel="noopener">0x098990c0e1a4a84f03b236f16cd34ed140803555</a></td></tr>
+      <tr><td>FAOTwapResolver</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xC17408966d424A3fc8fAf9F007413FA842bDB479" target="_blank" rel="noopener">0xC17408966d424A3fc8fAf9F007413FA842bDB479</a></td></tr>
+      <tr><td>FAOFutarchyFactory</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x208d0760c742a4fb46932811ec843f08752f6ab3" target="_blank" rel="noopener">0x208d0760c742a4fb46932811ec843f08752f6ab3</a></td></tr>
+      <tr><td>FAOOfficialProposalOrchestrator</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xc17D88Bf0c16c0c2F1dEBd375163Fc538aB5aBF5" target="_blank" rel="noopener">0xc17D88Bf0c16c0c2F1dEBd375163Fc538aB5aBF5</a></td></tr>
+      <tr><td>UniswapV3LiquidityAdapter</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A" target="_blank" rel="noopener">0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A</a></td></tr>
+      <tr><td>FutarchyArbitration</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x9D7692738a4d323338b9007d65d7F79e013B3476" target="_blank" rel="noopener">0x9D7692738a4d323338b9007d65d7F79e013B3476</a></td></tr>
+      <tr><td>CtfRouter</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x5C2c0684D3CFA0FAd75C374993b9A60b4230128B" target="_blank" rel="noopener">0x5C2c0684D3CFA0FAd75C374993b9A60b4230128B</a></td></tr>
+      <tr><td>FutarchyCtfSettlementOracle</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x9EcB08E5B0c2B4ece148A55073c62f5fb4e0055F" target="_blank" rel="noopener">0x9EcB08E5B0c2B4ece148A55073c62f5fb4e0055F</a></td></tr>
+      <tr><td>FutarchyEvaluator</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xdE54C348Cd845eb0408f8dA665245C69aFF640Cf" target="_blank" rel="noopener">0xdE54C348Cd845eb0408f8dA665245C69aFF640Cf</a></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="contracts-group-title">External dependencies (Sepolia)</h3>
+  <table class="contracts-table">
+    <thead><tr><th>Contract</th><th>Address</th></tr></thead>
+    <tbody>
+      <tr><td>ConditionalTokens (Seer)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x8bdC504dC3A05310059c1c67E0A2667309D27B93" target="_blank" rel="noopener">0x8bdC504dC3A05310059c1c67E0A2667309D27B93</a></td></tr>
+      <tr><td>Wrapped1155Factory (Seer)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xD194319D1804C1051DD21Ba1Dc931cA72410B79f" target="_blank" rel="noopener">0xD194319D1804C1051DD21Ba1Dc931cA72410B79f</a></td></tr>
+      <tr><td>UniswapV3 Factory (canonical)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0x0227628f3F023bb0B980b67D528571c95c6DaC1c" target="_blank" rel="noopener">0x0227628f3F023bb0B980b67D528571c95c6DaC1c</a></td></tr>
+      <tr><td>WETH (Sepolia)</td><td class="addr"><a href="https://sepolia.etherscan.io/address/0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14" target="_blank" rel="noopener">0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>

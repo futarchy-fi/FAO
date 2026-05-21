@@ -1316,3 +1316,142 @@ a:hover { text-decoration: underline; }
   color: var(--bg);
   border-color: var(--text);
 }
+
+/* ─── Topbar (shared.js) ──────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(10, 10, 14, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+}
+.topbar-brand {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.topbar-links {
+  list-style: none;
+  display: flex;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+}
+.topbar-links li a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+}
+.topbar-links li a:hover { color: var(--text); }
+.topbar-links li a.topbar-link-active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.active-inst-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.active-inst-chip:hover { border-color: var(--text-muted); }
+.active-inst-label { color: var(--text-muted); }
+.active-inst-symbol { color: var(--text); font-weight: 600; }
+.active-inst-caret { color: var(--text-muted); font-size: 10px; }
+.active-inst-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 60;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.active-inst-menu-row {
+  padding: 8px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 13px;
+}
+.active-inst-menu-row:hover { background: var(--bg); }
+.active-inst-menu-row strong { color: var(--text); }
+.active-inst-menu-row span { color: var(--text-muted); }
+.active-inst-menu-empty {
+  padding: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+.topbar-connect {
+  white-space: nowrap;
+}
+
+/* The old fullscreen nav is hidden when the topbar takes over. */
+body.has-topbar nav.nav { display: none; }
+
+/* ─── Section head + create page ───────────────────────────────── */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.section-head .section-title { margin: 0; }
+.create-page-form {
+  max-width: 720px;
+  margin: 24px 0 0 0;
+}
+.create-page-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+.contracts-group-title {
+  margin-top: 32px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create a futarchy — FAO v0 testnet</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
+  <script src="shared.js" defer></script>
+  <script src="create.js" defer></script>
+</head>
+<body class="has-topbar" data-page="create">
+
+<div id="topbar-root"></div>
+
+<section id="create" class="section">
+  <h2 class="section-title">Create a new futarchy</h2>
+  <p class="section-subtitle">
+    Calls <code>FutarchyRegistry.createFutarchyPart1(...)</code> then
+    <code>createFutarchyPart2(id)</code> on Sepolia. Deploys a brand-new
+    <code>GenericFutarchyToken</code> (zero supply), <code>InstanceSale</code>,
+    <code>ParameterizedArbitration</code>, <code>FAOTwapResolver</code>,
+    <code>FAOFutarchyFactory</code>, <code>FAOOfficialProposalOrchestrator</code>,
+    and FAO/WETH spot pool — all wired together. All token supply originates
+    from the sale; nothing is minted to the creator.
+  </p>
+
+  <form id="create-instance-form" class="create-instance-form create-page-form">
+    <label class="form-label">Name
+      <input id="ci-name" type="text" placeholder="e.g. Acme Governance" maxlength="60" required />
+    </label>
+    <label class="form-label">Symbol
+      <input id="ci-symbol" type="text" placeholder="e.g. ACME" maxlength="10" required />
+    </label>
+    <label class="form-label">Description
+      <textarea id="ci-description" placeholder="What is this futarchy for?" maxlength="400" rows="3"></textarea>
+    </label>
+
+    <p class="modal-section-label">Token sale — all supply originates here</p>
+    <div class="form-row">
+      <label class="form-label">Sale price
+        <input id="ci-price" type="text" placeholder="0.0001" value="0.0001" required />
+        <span class="form-hint">1 token = X ETH (initial phase)</span>
+      </label>
+      <label class="form-label">Min initial sold
+        <input id="ci-min-sold" type="text" value="100" required />
+        <span class="form-hint">tokens before phase 2</span>
+      </label>
+      <label class="form-label">Initial phase
+        <input id="ci-sale-duration" type="number" min="1" step="1" value="60" required />
+        <span class="form-hint">minutes</span>
+      </label>
+    </div>
+
+    <p class="modal-section-label">Resolver + bonds</p>
+    <div class="form-row">
+      <label class="form-label">Timeout
+        <input id="ci-timeout" type="number" min="1" step="1" value="120" required />
+        <span class="form-hint">minutes</span>
+      </label>
+      <label class="form-label">TWAP window
+        <input id="ci-twap" type="number" min="1" step="1" value="60" required />
+        <span class="form-hint">minutes</span>
+      </label>
+      <label class="form-label">Base bond (baseX)
+        <input id="ci-bond" type="text" value="0.001" required />
+        <span class="form-hint">WETH</span>
+      </label>
+    </div>
+
+    <div class="create-page-actions">
+      <a href="./" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create futarchy</button>
+    </div>
+    <p id="create-instance-status" class="create-instance-status"></p>
+  </form>
+</section>
+
+</body>
+</html>

@@ -80,10 +80,15 @@
 
     wireControls();
 
-    // Re-render whenever registry.js publishes a new active instance.
     window.addEventListener('fao:activeInstanceChanged', () => {
       refresh().catch((e) => console.error('[sale] refresh failed', e));
     });
+
+    if (!window.activeInstance) {
+      await new Promise((resolve) => {
+        window.addEventListener('fao:sharedReady', resolve, { once: true });
+      });
+    }
 
     await refresh();
     refreshTimer = setInterval(() => {

@@ -135,12 +135,19 @@
   async function init() {
     provider = new ethers.JsonRpcProvider(RPC);
 
-    // Listen for instance switches from registry.js. Clear + refresh.
+    // Listen for instance switches from shared.js. Clear + refresh.
     window.addEventListener('fao:activeInstanceChanged', () => {
       clearList();
-      // Schedule a microtask so the chip click finishes first.
       Promise.resolve().then(refresh);
     });
+
+    // shared.js boots asynchronously — wait for it before the first refresh
+    // so window.activeInstance is set.
+    if (!window.activeInstance) {
+      await new Promise((resolve) => {
+        window.addEventListener('fao:sharedReady', resolve, { once: true });
+      });
+    }
 
     await refresh();
     setInterval(refresh, REFRESH_INTERVAL);
@@ -174,13 +181,16 @@
       safe(() => factory.oracle(), ethers.ZeroAddress),
     ]);
 
-    // Header stats.
-    $$('#sep-block').textContent = blockNumber;
-    $$('#sep-markets-count').textContent = marketsCount.toString();
-    $$('#sep-op-balance').textContent = fmtEth(opBalance);
-    $$('#sep-oracle-ok').textContent =
-      oracleAddr.toLowerCase() === (inst.resolver || '').toLowerCase() ? '✓ wired' : '✗ mismatch';
-    $$('#sep-updated').textContent = new Date().toLocaleTimeString();
+    // Header stats. Only the Home page renders these slots — guard against
+    // missing nodes so the proposals page doesn't NPE.
+    if ($$('#sep-block'))         $$('#sep-block').textContent = blockNumber;
+    if ($$('#sep-markets-count')) $$('#sep-markets-count').textContent = marketsCount.toString();
+    if ($$('#sep-op-balance'))    $$('#sep-op-balance').textContent = fmtEth(opBalance);
+    if ($$('#sep-oracle-ok')) {
+      $$('#sep-oracle-ok').textContent =
+        oracleAddr.toLowerCase() === (inst.resolver || '').toLowerCase() ? '✓ wired' : '✗ mismatch';
+    }
+    if ($$('#sep-updated'))       $$('#sep-updated').textContent = new Date().toLocaleTimeString();
 
     // Per-proposal cards.
     const container = $$('#sep-proposals');

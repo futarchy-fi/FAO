@@ -591,6 +591,14 @@
 
   async function init() {
     provider = new ethers.JsonRpcProvider(RPC);
+
+    // Wait for shared.js to publish window.activeInstance.
+    if (!window.activeInstance) {
+      await new Promise((resolve) => {
+        window.addEventListener('fao:sharedReady', resolve, { once: true });
+      });
+    }
+
     await loadGlobals();
     observeProposalsContainer();
     // Initial pass once sepolia.js has populated cards.
