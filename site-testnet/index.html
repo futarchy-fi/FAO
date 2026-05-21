@@ -107,6 +107,23 @@
     <button id="create-instance-open" class="btn btn-primary">+ Create new futarchy</button>
   </div>
 
+  <div id="instances-rankings-wrap" class="instances-rankings-wrap">
+    <table class="rankings-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Token</th>
+          <th>Name</th>
+          <th class="rank-sort" data-rank-sort="raised">Raised (ETH)</th>
+          <th class="rank-sort rank-sort-active" data-rank-sort="mcap">Market cap (ETH)</th>
+        </tr>
+      </thead>
+      <tbody id="rankings-rows">
+        <tr><td colspan="5" class="rank-empty">Loading sales…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <div id="instances-picker" class="instances-picker">
     <p class="sep-empty">Loading instances…</p>
   </div>
@@ -136,16 +153,22 @@
       <label class="form-label">Description
         <textarea id="ci-description" placeholder="What is this futarchy for?" maxlength="400" rows="2"></textarea>
       </label>
+      <p class="modal-section-label">Token sale — all supply originates here</p>
       <div class="form-row">
-        <label class="form-label">Initial supply
-          <input id="ci-supply" type="text" placeholder="1000000" value="1000000" required />
-          <span class="form-hint">tokens, 18 decimals</span>
-        </label>
-        <label class="form-label">Initial price
+        <label class="form-label">Sale price
           <input id="ci-price" type="text" placeholder="0.0001" value="0.0001" required />
-          <span class="form-hint">1 token = X WETH</span>
+          <span class="form-hint">1 token = X ETH (initial phase)</span>
+        </label>
+        <label class="form-label">Min initial sold
+          <input id="ci-min-sold" type="text" value="100" required />
+          <span class="form-hint">tokens before phase 2</span>
+        </label>
+        <label class="form-label">Initial phase
+          <input id="ci-sale-duration" type="number" min="1" step="1" value="60" required />
+          <span class="form-hint">minutes</span>
         </label>
       </div>
+      <p class="modal-section-label">Resolver + bonds</p>
       <div class="form-row">
         <label class="form-label">Timeout
           <input id="ci-timeout" type="number" min="1" step="1" value="120" required />

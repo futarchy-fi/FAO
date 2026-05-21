@@ -64,6 +64,7 @@ contract FutarchyRegistry {
         string description;
         address creator;
         address token;
+        address sale;                // InstanceSale that owns MINTER_ROLE on token
         address arbitration;
         address resolver;            // address(0) until Part2
         address factory;             // address(0) until Part2
@@ -75,18 +76,6 @@ contract FutarchyRegistry {
         uint160 initialSqrtPriceX96;
         uint32 timeout;
         uint32 twapWindow;
-    }
-
-    /// @dev Calldata bag for `createFutarchy*` so we don't pay a per-arg stack slot.
-    struct CreateParams {
-        string name;
-        string symbol;
-        string description;
-        uint256 initialTokenSupply;
-        uint160 initialSqrtPriceX96;
-        uint32 timeout;
-        uint32 twapWindow;
-        uint256 baseBondX;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -124,6 +113,7 @@ contract FutarchyRegistry {
         string name,
         string symbol,
         address token,
+        address sale,
         address arbitration
     );
 
@@ -147,6 +137,7 @@ contract FutarchyRegistry {
         string name,
         string symbol,
         address token,
+        address sale,
         address arbitration,
         address resolver,
         address factory,
@@ -204,16 +195,17 @@ contract FutarchyRegistry {
     //  External — 2-phase flow
     // ═══════════════════════════════════════════════════════
 
-    /// @notice Phase 1: deploys token + arbitration + registers a pending slot.
-    ///         After this call, the instance has token+arbitration but no
-    ///         factory/resolver/orchestrator/spotPool yet. `status =
-    ///         PENDING_PART2`. Caller MUST run `createFutarchyPart2(id)` next.
-    /// @dev    Gas budget: ≤ 13M. Measured ~3.5M with current contracts.
+    /// @notice Phase 1: deploys token + sale + arbitration + registers a
+    ///         pending slot. Token starts at 0 supply; the sale holds
+    ///         MINTER_ROLE so all supply originates from public buys.
+    /// @dev    Gas budget: ≤ 13M. Measured ~4M with sale included.
     function createFutarchyPart1(
         string calldata name,
         string calldata symbol,
         string calldata description,
-        uint256 initialTokenSupply,
+        uint256 initialPriceWeiPerToken,
+        uint256 minInitialPhaseSold,
+        uint256 initialPhaseDuration,
         uint160 initialSqrtPriceX96,
         uint32 timeout,
         uint32 twapWindow,
@@ -223,11 +215,15 @@ contract FutarchyRegistry {
 
         address creator = msg.sender;
 
-        // Deploy token (with full initial supply minted to creator).
-        address token =
-            TOKEN_ARB_DEPLOYER.deployToken(name, symbol, creator, initialTokenSupply);
+        // Deploy token + sale atomically; sale gets MINTER_ROLE on the token,
+        // the deployer renounces its temporary admin role, creator is left as
+        // the token's DEFAULT_ADMIN.
+        (address token, address sale) = TOKEN_ARB_DEPLOYER.deployTokenAndSale(
+            name, symbol, creator,
+            initialPriceWeiPerToken, minInitialPhaseSold, initialPhaseDuration
+        );
 
-        // Deploy parameterized arbitration (creator is admin/owner).
+        // Parameterized arbitration (creator is admin/owner).
         address arb = TOKEN_ARB_DEPLOYER.deployArbitration(
             creator, WETH, baseBondX, DEFAULT_MAX_QUEUE, timeout
         );
@@ -241,6 +237,7 @@ contract FutarchyRegistry {
                 description: description,
                 creator: creator,
                 token: token,
+                sale: sale,
                 arbitration: arb,
                 resolver: address(0),
                 factory: address(0),
@@ -254,7 +251,7 @@ contract FutarchyRegistry {
             })
         );
 
-        emit FutarchyPart1Created(id, creator, name, symbol, token, arb);
+        emit FutarchyPart1Created(id, creator, name, symbol, token, sale, arb);
     }
 
     /// @notice Phase 2: deploys resolver + factory + orchestrator + creates
@@ -312,71 +309,13 @@ contract FutarchyRegistry {
             inst.name,
             inst.symbol,
             token,
+            inst.sale,
             inst.arbitration,
             stack.resolver,
             stack.factory,
             stack.orchestrator,
             spotPool
         );
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  External — legacy one-shot (kept for callers without gas-cap issues)
-    // ═══════════════════════════════════════════════════════
-
-    /// @notice Deploy a new futarchy instance and wire it end-to-end in a
-    ///         single tx. Combines Part1 + Part2.
-    /// @dev    Convenience wrapper — uses the same code paths as Part1/Part2
-    ///         so the resulting on-chain state is identical. ~18.8M gas on
-    ///         mainnet/Sepolia; prefer the 2-phase flow if you're going
-    ///         through a public RPC with a 16.7M `eth_estimateGas` cap.
-    function createFutarchy(
-        string calldata name,
-        string calldata symbol,
-        string calldata description,
-        uint256 initialTokenSupply,
-        uint160 initialSqrtPriceX96,
-        uint32 timeout,
-        uint32 twapWindow,
-        uint256 baseBondX
-    ) external returns (uint256 id) {
-        // Part1 — inlined so msg.sender stays as the original caller and we
-        // don't pay for an extra external call back into this contract.
-        _validate(name, symbol, initialSqrtPriceX96, timeout, twapWindow, baseBondX);
-        address creator = msg.sender;
-
-        address token =
-            TOKEN_ARB_DEPLOYER.deployToken(name, symbol, creator, initialTokenSupply);
-        address arb = TOKEN_ARB_DEPLOYER.deployArbitration(
-            creator, WETH, baseBondX, DEFAULT_MAX_QUEUE, timeout
-        );
-
-        id = _instances.length;
-        _instances.push(
-            FutarchyInstance({
-                name: name,
-                symbol: symbol,
-                description: description,
-                creator: creator,
-                token: token,
-                arbitration: arb,
-                resolver: address(0),
-                factory: address(0),
-                orchestrator: address(0),
-                spotPool: address(0),
-                createdAt: block.timestamp,
-                status: InstanceStatus.PENDING_PART2,
-                initialSqrtPriceX96: initialSqrtPriceX96,
-                timeout: timeout,
-                twapWindow: twapWindow
-            })
-        );
-
-        emit FutarchyPart1Created(id, creator, name, symbol, token, arb);
-
-        // Part2 — delegate to the regular public entry so storage layout
-        // changes only have to be maintained in one place.
-        this.createFutarchyPart2(id);
     }
 
     // ═══════════════════════════════════════════════════════

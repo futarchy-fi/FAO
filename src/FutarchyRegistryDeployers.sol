@@ -5,6 +5,7 @@ import {FAOFutarchyFactory} from "./FAOFutarchyFactory.sol";
 import {FAOOfficialProposalOrchestrator} from "./FAOOfficialProposalOrchestrator.sol";
 import {FAOTwapResolver} from "./FAOTwapResolver.sol";
 import {GenericFutarchyToken} from "./GenericFutarchyToken.sol";
+import {InstanceSale} from "./InstanceSale.sol";
 import {ParameterizedArbitration} from "./ParameterizedArbitration.sol";
 import {IConditionalTokensLike} from "./interfaces/IConditionalTokensLike.sol";
 import {IFAOFutarchyTwapResolver} from "./interfaces/IFAOFutarchyOracle.sol";
@@ -35,6 +36,37 @@ contract TokenAndArbitrationDeployer {
         uint256 timeout
     ) external returns (address) {
         return address(new ParameterizedArbitration(admin, weth, baseBondX, maxQueue, timeout));
+    }
+
+    /// @notice Deploy a fresh token + sale atomically: token starts at 0 supply,
+    /// sale is granted `MINTER_ROLE`, then this deployer renounces its admin
+    /// roles so only `creator` retains DEFAULT_ADMIN_ROLE on the token.
+    function deployTokenAndSale(
+        string calldata name,
+        string calldata symbol,
+        address creator,
+        uint256 initialPriceWeiPerToken,
+        uint256 minInitialPhaseSold,
+        uint256 initialPhaseDuration
+    ) external returns (address tokenAddr, address saleAddr) {
+        // 1. Deploy the token with THIS contract as the initial admin so we can
+        //    grant MINTER_ROLE to the sale below. `initialSupply` is 0 — all
+        //    supply must come from the sale.
+        GenericFutarchyToken token = new GenericFutarchyToken(name, symbol, address(this), 0);
+        tokenAddr = address(token);
+
+        // 2. Deploy the sale, then grant it MINTER_ROLE on the token.
+        InstanceSale sale = new InstanceSale(
+            tokenAddr, creator, initialPriceWeiPerToken, minInitialPhaseSold, initialPhaseDuration
+        );
+        saleAddr = address(sale);
+        token.grantRole(token.MINTER_ROLE(), saleAddr);
+
+        // 3. Hand DEFAULT_ADMIN_ROLE to the creator, then renounce our own
+        //    privileges. The deployer keeps nothing.
+        token.grantRole(token.DEFAULT_ADMIN_ROLE(), creator);
+        token.renounceRole(token.MINTER_ROLE(), address(this));
+        token.renounceRole(token.DEFAULT_ADMIN_ROLE(), address(this));
     }
 }
 

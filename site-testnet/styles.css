@@ -1212,3 +1212,63 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
 }
 .sale-mono { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+
+/* ─── Rankings table ───────────────────────────────────────────── */
+.instances-rankings-wrap {
+  margin: 16px 0 8px 0;
+  overflow-x: auto;
+}
+.rankings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.rankings-table th,
+.rankings-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.rankings-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+}
+.rankings-table .rank-sort {
+  cursor: pointer;
+  user-select: none;
+}
+.rankings-table .rank-sort:hover {
+  color: var(--text);
+}
+.rankings-table .rank-sort-active {
+  color: var(--text);
+  text-decoration: underline;
+}
+.rankings-table .rank-num {
+  font-family: var(--mono);
+  text-align: right;
+}
+.rankings-table .rank-empty {
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+.rankings-table .rank-row {
+  cursor: pointer;
+}
+.rankings-table .rank-row:hover {
+  background: var(--bg-elevated);
+}
+.rankings-table .rank-row-active {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+.modal-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 8px 0 0 0;
+}

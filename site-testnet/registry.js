@@ -31,7 +31,7 @@
 
   // REGISTRY_ADDR — set this after deploying FutarchyRegistry.sol.
   // Until then it stays as ZeroAddress and the UI falls back to FAO bootstrap.
-  const REGISTRY_ADDR = '0xd658a63384794a6bc7724b46cc35366bb8120cb2'; // REGISTRY_ADDR (v2 — 2-phase create)
+  const REGISTRY_ADDR = '0x45F1F8Bb80539cddFfB945dBe4C53A65d98296C0'; // REGISTRY_ADDR (v3 — token+sale+arbitration)
 
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 60_000;
@@ -47,6 +47,7 @@
     description: 'Bootstrap futarchy instance for the FAO v0 testnet stack.',
     creator: '0x693E3FB46Bb36eE43C702FE94f9463df0691b43d',
     token: '0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65',
+    sale: '0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678',
     arbitration: '0x9D7692738a4d323338b9007d65d7F79e013B3476',
     resolver: '0xC17408966d424A3fc8fAf9F007413FA842bDB479',
     factory: '0x208d0760c742a4fb46932811ec843f08752f6ab3',
@@ -72,19 +73,24 @@
   //   2 = READY          (both phases complete, fully usable)
   const REGISTRY_ABI = [
     'function instancesCount() view returns (uint256)',
-    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow))',
-    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow)[])',
+    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow))',
+    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow)[])',
     'function isPendingPart2(uint256 id) view returns (bool)',
-    // 2-phase create flow — preferred path for public RPCs with a 16.7M
-    // eth_estimateGas cap (MetaMask's default Sepolia endpoint).
-    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialTokenSupply, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
+    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialPriceWeiPerToken, uint256 minInitialPhaseSold, uint256 initialPhaseDuration, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
     'function createFutarchyPart2(uint256 id)',
-    // Legacy atomic create — still works, used by forge scripts or any RPC
-    // without a client-side gas cap.
-    'function createFutarchy(string name, string symbol, string description, uint256 initialTokenSupply, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
-    'event FutarchyPart1Created(uint256 indexed id, address indexed creator, string name, string symbol, address token, address arbitration)',
+    'event FutarchyPart1Created(uint256 indexed id, address indexed creator, string name, string symbol, address token, address sale, address arbitration)',
     'event FutarchyPart2Created(uint256 indexed id, address indexed creator, address resolver, address factory, address orchestrator, address spotPool)',
-    'event FutarchyCreated(uint256 indexed id, address indexed creator, string name, string symbol, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool)',
+    'event FutarchyCreated(uint256 indexed id, address indexed creator, string name, string symbol, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool)',
+  ];
+
+  // Minimal sale ABI for the per-instance summary (raised + price + supply).
+  const SALE_ABI = [
+    'function totalAmountRaised() view returns (uint256)',
+    'function currentPriceWeiPerToken() view returns (uint256)',
+    'function initialPhaseFinalized() view returns (bool)',
+  ];
+  const TOKEN_ABI = [
+    'function totalSupply() view returns (uint256)',
   ];
 
   // InstanceStatus enum mirror.
@@ -157,10 +163,10 @@
   // ─── Instance registry read path ─────────────────────────────────────
 
   function unpackInstance(id, raw) {
-    // raw is the struct returned by registry.instances() — ethers v6 returns
-    // it as a Result object indexable by field name OR positional index.
-    // Fields 0-10 are the legacy struct; 11-14 are the 2-phase additions.
-    const statusRaw = raw.status ?? raw[11];
+    // v3 FutarchyInstance layout (16 fields): name, symbol, description,
+    // creator, token, sale, arbitration, resolver, factory, orchestrator,
+    // spotPool, createdAt, status, initialSqrtPriceX96, timeout, twapWindow.
+    const statusRaw = raw.status ?? raw[12];
     return {
       id,
       name:         raw.name         ?? raw[0],
@@ -168,12 +174,13 @@
       description:  raw.description  ?? raw[2],
       creator:      raw.creator      ?? raw[3],
       token:        raw.token        ?? raw[4],
-      arbitration:  raw.arbitration  ?? raw[5],
-      resolver:     raw.resolver     ?? raw[6],
-      factory:      raw.factory      ?? raw[7],
-      orchestrator: raw.orchestrator ?? raw[8],
-      spotPool:     raw.spotPool     ?? raw[9],
-      createdAt:    Number(raw.createdAt ?? raw[10] ?? 0),
+      sale:         raw.sale         ?? raw[5],
+      arbitration:  raw.arbitration  ?? raw[6],
+      resolver:     raw.resolver     ?? raw[7],
+      factory:      raw.factory      ?? raw[8],
+      orchestrator: raw.orchestrator ?? raw[9],
+      spotPool:     raw.spotPool     ?? raw[10],
+      createdAt:    Number(raw.createdAt ?? raw[11] ?? 0),
       status:       statusRaw == null ? STATUS_READY : Number(statusRaw),
       bootstrap:    false,
     };
@@ -227,17 +234,110 @@
     }
   }
 
+  // Per-instance sale + token metrics for the ranking table: amount raised
+  // (in ETH), token supply, current per-token price, and derived market cap.
+  // Skips instances with no sale (legacy / pending), leaving their values as
+  // null so the renderer can render an em-dash.
+  async function loadSaleMetrics() {
+    const results = await Promise.all(instances.map(async (inst) => {
+      if (!inst.sale || isZeroAddress(inst.sale) || !inst.token) {
+        return { raisedWei: null, supplyWei: null, priceWei: null, mcapWei: null };
+      }
+      const sale = new ethers.Contract(inst.sale, SALE_ABI, provider);
+      const token = new ethers.Contract(inst.token, TOKEN_ABI, provider);
+      const [raised, supply, price] = await Promise.all([
+        safe(() => sale.totalAmountRaised(), null),
+        safe(() => token.totalSupply(), null),
+        safe(() => sale.currentPriceWeiPerToken(), null),
+      ]);
+      let mcap = null;
+      if (supply != null && price != null) {
+        // supply is in wei-of-token (1e18 = 1 whole token); price is wei per
+        // whole token. mcap_wei = (supply / 1e18) * price = supply * price / 1e18.
+        mcap = (BigInt(supply) * BigInt(price)) / 10n ** 18n;
+      }
+      return {
+        raisedWei: raised == null ? null : BigInt(raised),
+        supplyWei: supply == null ? null : BigInt(supply),
+        priceWei:  price  == null ? null : BigInt(price),
+        mcapWei:   mcap,
+      };
+    }));
+    for (let i = 0; i < instances.length; i++) {
+      Object.assign(instances[i], results[i]);
+    }
+  }
+
+  let rankSortKey = 'mcap'; // 'mcap' or 'raised'
+
+  function renderRankings() {
+    const tbody = $$('#rankings-rows');
+    if (!tbody) return;
+
+    const visible = instances.filter(i => i.bootstrap || (i.sale && !isZeroAddress(i.sale)));
+    if (visible.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="rank-empty">No active sales yet.</td></tr>`;
+      return;
+    }
+
+    const sortFn = (a, b) => {
+      const ka = a[rankSortKey === 'mcap' ? 'mcapWei' : 'raisedWei'];
+      const kb = b[rankSortKey === 'mcap' ? 'mcapWei' : 'raisedWei'];
+      if (ka == null && kb == null) return 0;
+      if (ka == null) return 1;
+      if (kb == null) return -1;
+      return ka > kb ? -1 : ka < kb ? 1 : 0;
+    };
+    const sorted = [...visible].sort(sortFn);
+
+    tbody.innerHTML = sorted.map((inst, i) => {
+      const symbol = escapeHtml(inst.symbol || '');
+      const name = escapeHtml(inst.name || `Instance #${inst.id}`);
+      const raised = inst.raisedWei == null ? '—' : (+ethers.formatEther(inst.raisedWei)).toFixed(4);
+      const mcap   = inst.mcapWei   == null ? '—' : (+ethers.formatEther(inst.mcapWei)).toFixed(4);
+      const isActive = inst.id === activeId ? ' rank-row-active' : '';
+      return `
+        <tr class="rank-row${isActive}" data-rank-instance-id="${inst.id}">
+          <td>${i + 1}</td>
+          <td><strong>${symbol}</strong></td>
+          <td>${name}</td>
+          <td class="rank-num">${raised}</td>
+          <td class="rank-num">${mcap}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  function wireRankingsControls() {
+    document.querySelectorAll('.rank-sort').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.rankSort;
+        if (!key) return;
+        rankSortKey = key;
+        document.querySelectorAll('.rank-sort').forEach(x => x.classList.toggle('rank-sort-active', x === th));
+        renderRankings();
+      });
+    });
+    document.addEventListener('click', (ev) => {
+      const row = ev.target.closest('[data-rank-instance-id]');
+      if (!row) return;
+      const id = Number(row.dataset.rankInstanceId);
+      if (Number.isFinite(id)) selectInstance(id);
+    });
+  }
+
   // ─── Instance selection ──────────────────────────────────────────────
 
   function restoreActiveId() {
+    // Only consider visible (has-sale) instances when picking a default.
+    const visible = instances.filter(i => i.bootstrap || (i.sale && !isZeroAddress(i.sale)));
     let saved = null;
     try { saved = localStorage.getItem(STORAGE_KEY); }
     catch (_) { saved = null; }
     const n = saved == null ? null : Number(saved);
-    if (n != null && Number.isFinite(n) && instances.some(i => i.id === n)) {
+    if (n != null && Number.isFinite(n) && visible.some(i => i.id === n)) {
       activeId = n;
     } else {
-      activeId = instances[0]?.id ?? 0;
+      activeId = visible[0]?.id ?? instances[0]?.id ?? 0;
     }
   }
 
@@ -270,6 +370,7 @@
     persistActiveId();
     publishActiveInstance();
     renderPicker();
+    renderRankings();
     updateActiveHeader();
   }
 
@@ -283,12 +384,18 @@
     const mount = $$('#instances-picker');
     if (!mount) return;
 
-    if (instances.length === 0) {
-      mount.innerHTML = `<p class="sep-empty">No futarchy instances found.</p>`;
+    // v3 contract: hide any instance whose token has no attached sale, since
+    // those have no public mint path and no spot-pool liquidity by default.
+    // The FAO bootstrap is allowed in (sale = FAOSale). Legacy v2 instances
+    // without a `sale` field are filtered out.
+    const visible = instances.filter(inst => inst.bootstrap || (inst.sale && !isZeroAddress(inst.sale)));
+
+    if (visible.length === 0) {
+      mount.innerHTML = `<p class="sep-empty">No futarchy instances with an active sale yet.</p>`;
       return;
     }
 
-    mount.innerHTML = instances.map(inst => {
+    mount.innerHTML = visible.map(inst => {
       const isActive = inst.id === activeId;
       const isPending = inst.status === STATUS_PENDING_PART2;
       const subtitle = isPending
@@ -483,27 +590,36 @@
     const name = ($$('#ci-name').value || '').trim();
     const symbol = ($$('#ci-symbol').value || '').trim();
     const description = ($$('#ci-description').value || '').trim();
-    const supplyStr = ($$('#ci-supply').value || '').trim();
     const priceStr = ($$('#ci-price').value || '').trim();
+    const minSoldStr = ($$('#ci-min-sold').value || '').trim();
+    const saleDurMin = Number($$('#ci-sale-duration').value || '60');
     const timeoutMin = Number($$('#ci-timeout').value || '120');
     const twapMin = Number($$('#ci-twap').value || '60');
     const baseBondStr = ($$('#ci-bond').value || '').trim();
 
     if (!name)   { setCreateStatus('Name is required.', 'error'); return; }
     if (!symbol) { setCreateStatus('Symbol is required.', 'error'); return; }
-    if (!supplyStr) { setCreateStatus('Initial supply is required.', 'error'); return; }
-    if (!priceStr)  { setCreateStatus('Initial price is required.', 'error'); return; }
+    if (!priceStr)  { setCreateStatus('Sale price is required.', 'error'); return; }
+    if (!minSoldStr) { setCreateStatus('Min initial sold is required.', 'error'); return; }
     if (!baseBondStr) { setCreateStatus('Base bond is required.', 'error'); return; }
+    if (!isFinite(saleDurMin) || saleDurMin <= 0) { setCreateStatus('Sale phase must be > 0 min.', 'error'); return; }
     if (!isFinite(timeoutMin) || timeoutMin <= 0) { setCreateStatus('Timeout must be > 0 min.', 'error'); return; }
     if (!isFinite(twapMin) || twapMin <= 0) { setCreateStatus('TWAP window must be > 0 min.', 'error'); return; }
-
-    let supplyWei;
-    try { supplyWei = ethers.parseUnits(supplyStr, 18); }
-    catch (_) { setCreateStatus(`Invalid supply: ${escapeHtml(supplyStr)}`, 'error'); return; }
 
     let priceFloat;
     try { priceFloat = parseFloat(priceStr); }
     catch (_) { setCreateStatus(`Invalid price: ${escapeHtml(priceStr)}`, 'error'); return; }
+    if (!isFinite(priceFloat) || priceFloat <= 0) { setCreateStatus('Sale price must be > 0.', 'error'); return; }
+
+    // Sale uses uint256 wei per whole token. Spot pool uses sqrtPriceX96 (= same price).
+    let initialPriceWei;
+    try { initialPriceWei = ethers.parseEther(priceStr); }
+    catch (_) { setCreateStatus(`Invalid price: ${escapeHtml(priceStr)}`, 'error'); return; }
+
+    let minInitialSold;
+    try { minInitialSold = BigInt(minSoldStr); }
+    catch (_) { setCreateStatus(`Invalid min-sold: ${escapeHtml(minSoldStr)}`, 'error'); return; }
+    if (minInitialSold <= 0n) { setCreateStatus('Min initial sold must be > 0.', 'error'); return; }
 
     let sqrtPriceX96;
     try { sqrtPriceX96 = priceToSqrtPriceX96(priceFloat); }
@@ -513,6 +629,7 @@
     try { bondWei = ethers.parseEther(baseBondStr); }
     catch (_) { setCreateStatus(`Invalid bond: ${escapeHtml(baseBondStr)}`, 'error'); return; }
 
+    const initialPhaseSec = Math.floor(saleDurMin * 60);
     const timeoutSec = Math.floor(timeoutMin * 60);
     const twapSec = Math.floor(twapMin * 60);
 
@@ -526,12 +643,14 @@
       const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, sig);
 
       // ─── Step 1/2 ──────────────────────────────────────────────────────
-      setCreateStatus('Step 1/2: deploying token + arbitration…', 'pending');
+      setCreateStatus('Step 1/2: deploying token + sale + arbitration…', 'pending');
       const tx1 = await reg.createFutarchyPart1(
         name,
         symbol,
         description,
-        supplyWei,
+        initialPriceWei,
+        minInitialSold,
+        BigInt(initialPhaseSec),
         sqrtPriceX96,
         timeoutSec,
         twapSec,
@@ -550,7 +669,7 @@
       // most recent id is always the newly-created one for this caller.
       let newId;
       const part1Topic = ethers.id(
-        'FutarchyPart1Created(uint256,address,string,string,address,address)'
+        'FutarchyPart1Created(uint256,address,string,string,address,address,address)'
       );
       const part1Log = rec1.logs && rec1.logs.find(l =>
         l.address.toLowerCase() === REGISTRY_ADDR.toLowerCase() && l.topics[0] === part1Topic
@@ -644,12 +763,16 @@
       provider = new ethers.JsonRpcProvider(RPC);
 
       await loadInstances();
-      // Counts are optional; the picker still renders without them.
+      // Counts + sale metrics are optional async refreshes — render with
+      // what we have, then upgrade in-place when they complete.
       loadProposalCounts().then(() => renderPicker()).catch((e) => console.error('[registry] loadProposalCounts failed', e));
+      loadSaleMetrics().then(() => renderRankings()).catch((e) => console.error('[registry] loadSaleMetrics failed', e));
 
       restoreActiveId();
       publishActiveInstance();
       renderPicker();
+      renderRankings();
+      wireRankingsControls();
       updateActiveHeader();
       wireCreateModal();
     } catch (err) {
