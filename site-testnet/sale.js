@@ -143,7 +143,7 @@
       return;
     }
 
-    const browserProvider = new ethers.BrowserProvider(window.ethereum);
+    const browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
     const signer = await browserProvider.getSigner();
     const sale = new ethers.Contract(SALE_ADDR, SALE_ABI, signer);
 

@@ -299,11 +299,12 @@
       return;
     }
     try {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await browserProvider.send('eth_requestAccounts', []);
-      const network = await browserProvider.getNetwork();
-      if (Number(network.chainId) !== 11155111) {
-        // Try to switch to Sepolia.
+      // Request accounts + chain via raw EIP-1193 first so we don't pin a
+      // BrowserProvider to the wrong chain (ethers v6 throws "network changed"
+      // on tx submission if the wallet moves after provider construction).
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const cid = await window.ethereum.request({ method: 'eth_chainId' });
+      if (BigInt(cid) !== 11155111n) {
         try {
           await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
@@ -314,6 +315,7 @@
           return;
         }
       }
+      const browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
       signer = await browserProvider.getSigner();
       wallet = accounts[0];
       const btn = $$('#connect-wallet');

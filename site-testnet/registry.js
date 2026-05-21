@@ -88,7 +88,6 @@
   ];
 
   // InstanceStatus enum mirror.
-  const STATUS_NONE = 0;
   const STATUS_PENDING_PART2 = 1;
   const STATUS_READY = 2;
 
@@ -430,13 +429,29 @@
     el.className = `create-instance-status create-instance-status-${kind || 'info'}`;
   }
 
+  // Reset any cached provider/signer when the wallet's chain changes — ethers v6
+  // pins the network on construction and throws "network changed: X => Y" if the
+  // underlying wallet later moves. Hook the EIP-1193 event once so subsequent
+  // ensureSigner() calls rebuild against the current chain.
+  if (typeof window !== 'undefined' && window.ethereum && !window.__faoChainHookInstalled) {
+    window.__faoChainHookInstalled = true;
+    const reset = () => { signer = undefined; browserProvider = undefined; connectedWallet = undefined; };
+    window.ethereum.on?.('chainChanged', reset);
+    window.ethereum.on?.('accountsChanged', reset);
+  }
+
   async function ensureSigner() {
     if (signer && connectedWallet) return signer;
     if (!window.ethereum) throw new Error('No injected wallet. Install MetaMask.');
-    browserProvider = new ethers.BrowserProvider(window.ethereum);
-    const accounts = await browserProvider.send('eth_requestAccounts', []);
-    const network = await browserProvider.getNetwork();
-    if (Number(network.chainId) !== 11155111) {
+
+    // 1. Request accounts first via the raw EIP-1193 channel so we don't pin
+    //    a BrowserProvider to the wrong chain.
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+    // 2. Switch chain if needed — BEFORE constructing the ethers provider, so
+    //    the provider's cached network matches what's about to sign.
+    const cid = await window.ethereum.request({ method: 'eth_chainId' });
+    if (BigInt(cid) !== 11155111n) {
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
@@ -446,6 +461,9 @@
         throw new Error('Switch your wallet to Sepolia (chainId 11155111).');
       }
     }
+
+    // 3. Build the provider/signer against the now-correct chain.
+    browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
     signer = await browserProvider.getSigner();
     connectedWallet = accounts[0];
     return signer;

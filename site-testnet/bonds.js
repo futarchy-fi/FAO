@@ -341,10 +341,11 @@
     if (signer && connectedWallet) return signer;
     if (!window.ethereum) throw new Error('No injected wallet. Install MetaMask.');
 
-    browserProvider = new ethers.BrowserProvider(window.ethereum);
-    const accounts = await browserProvider.send('eth_requestAccounts', []);
-    const network = await browserProvider.getNetwork();
-    if (Number(network.chainId) !== 11155111) {
+    // Switch chain BEFORE constructing the ethers provider so ethers v6
+    // doesn't throw "network changed: X => Y" on the next tx.
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const cid = await window.ethereum.request({ method: 'eth_chainId' });
+    if (BigInt(cid) !== 11155111n) {
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
@@ -354,6 +355,7 @@
         throw new Error('Switch your wallet to Sepolia (chainId 11155111).');
       }
     }
+    browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
     signer = await browserProvider.getSigner();
     connectedWallet = accounts[0];
 
