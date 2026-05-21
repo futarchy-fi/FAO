@@ -59,6 +59,15 @@ contract MockCTF is IConditionalTokensLike {
         return uint256(keccak256(abi.encodePacked(c, col)));
     }
     function getOutcomeSlotCount(bytes32 cid) external view returns (uint256) { return slots[cid]; }
+
+    // ── Unused-in-registry-tests CTF surface area ──
+    // The shared `IConditionalTokensLike` interface includes `splitPosition`,
+    // `mergePositions`, and `safeTransferFrom` for the liquidity-adapter code
+    // path. Registry tests never exercise those entry points, but the mock
+    // must implement them so the contract is concrete.
+    function splitPosition(address, bytes32, bytes32, uint256[] calldata, uint256) external {}
+    function mergePositions(address, bytes32, bytes32, uint256[] calldata, uint256) external {}
+    function safeTransferFrom(address, address, uint256, uint256, bytes calldata) external {}
 }
 
 contract MockW1155 is IWrapped1155FactoryLike {
@@ -428,6 +437,263 @@ contract FutarchyRegistryTest is Test {
             registry.instances(id).description,
             "We hereby declare that everything is fine."
         );
+    }
+
+    // ─── 2-phase flow ──────────────────────────────────────────────────────
+
+    function _part1(address creator, string memory name, string memory symbol)
+        internal
+        returns (uint256 id)
+    {
+        vm.prank(creator);
+        return registry.createFutarchyPart1(
+            name,
+            symbol,
+            string.concat("Description for ", name),
+            INITIAL_SUPPLY,
+            SQRT_1,
+            TIMEOUT,
+            TWAP_WINDOW,
+            BASE_BOND
+        );
+    }
+
+    function test_createFutarchyPart1_setsPendingStatus() public {
+        uint256 id = _part1(ALICE, "PartOne", "P1");
+        FutarchyRegistry.FutarchyInstance memory inst = registry.instances(id);
+
+        // Token + arbitration must be live; the rest must still be zero.
+        assertTrue(inst.token != address(0), "token deployed");
+        assertTrue(inst.arbitration != address(0), "arbitration deployed");
+        assertEq(inst.resolver, address(0), "resolver not yet");
+        assertEq(inst.factory, address(0), "factory not yet");
+        assertEq(inst.orchestrator, address(0), "orchestrator not yet");
+        assertEq(inst.spotPool, address(0), "spotPool not yet");
+
+        // Status must be PENDING_PART2.
+        assertEq(
+            uint256(inst.status),
+            uint256(FutarchyRegistry.InstanceStatus.PENDING_PART2),
+            "status PENDING_PART2"
+        );
+
+        // Cached params must round-trip into Part2.
+        assertEq(inst.initialSqrtPriceX96, SQRT_1, "cached sqrt");
+        assertEq(uint256(inst.timeout), uint256(TIMEOUT), "cached timeout");
+        assertEq(uint256(inst.twapWindow), uint256(TWAP_WINDOW), "cached twap");
+
+        // Convenience view.
+        assertTrue(registry.isPendingPart2(id), "isPendingPart2 true");
+    }
+
+    function test_createFutarchyPart2_completesAndSetsReady() public {
+        uint256 id = _part1(ALICE, "PartTwo", "P2");
+
+        // Anyone can finish — but Alice runs it here.
+        vm.prank(ALICE);
+        registry.createFutarchyPart2(id);
+
+        FutarchyRegistry.FutarchyInstance memory inst = registry.instances(id);
+
+        // All six addresses must now be non-zero and distinct.
+        assertTrue(inst.token != address(0), "token");
+        assertTrue(inst.arbitration != address(0), "arbitration");
+        assertTrue(inst.resolver != address(0), "resolver");
+        assertTrue(inst.factory != address(0), "factory");
+        assertTrue(inst.orchestrator != address(0), "orchestrator");
+        assertTrue(inst.spotPool != address(0), "spotPool");
+        address[6] memory a = [
+            inst.token, inst.arbitration, inst.resolver, inst.factory, inst.orchestrator, inst.spotPool
+        ];
+        for (uint256 i = 0; i < 6; i++) {
+            for (uint256 j = i + 1; j < 6; j++) {
+                assertTrue(a[i] != a[j], "duplicate deployed address");
+            }
+        }
+
+        // Status flips to READY.
+        assertEq(
+            uint256(inst.status),
+            uint256(FutarchyRegistry.InstanceStatus.READY),
+            "status READY"
+        );
+        assertTrue(!registry.isPendingPart2(id), "no longer pending");
+
+        // Wiring should match what the legacy atomic path produces.
+        FAOTwapResolver resolver = FAOTwapResolver(inst.resolver);
+        assertEq(resolver.orchestrator(), inst.orchestrator, "resolver->orchestrator");
+
+        FAOOfficialProposalOrchestrator orch = FAOOfficialProposalOrchestrator(inst.orchestrator);
+        assertEq(address(orch.RESOLVER()), inst.resolver, "orch->resolver");
+        assertEq(address(orch.FACTORY()), inst.factory, "orch->factory");
+        assertEq(orch.COMPANY_TOKEN(), inst.token, "orch.company");
+        assertEq(orch.CURRENCY_TOKEN(), WETH, "orch.currency");
+        assertEq(orch.SPOT_POOL(), inst.spotPool, "orch.spotPool");
+    }
+
+    function test_createFutarchyPart2_revertsIfNotInPending() public {
+        // Id 0 doesn't exist yet.
+        vm.expectRevert(FutarchyRegistry.InvalidInstanceId.selector);
+        registry.createFutarchyPart2(0);
+
+        // Create + complete an instance the legacy way → READY → Part2 must
+        // refuse on AlreadyReady, NOT on NotInPendingPart2. That's covered
+        // in the next test; here we just confirm InvalidInstanceId for
+        // out-of-range ids after a successful create.
+        _create(ALICE, "Existing", "EX");
+        vm.expectRevert(FutarchyRegistry.InvalidInstanceId.selector);
+        registry.createFutarchyPart2(1);
+    }
+
+    function test_createFutarchyPart2_revertsIfAlreadyReady() public {
+        uint256 id = _create(ALICE, "Done", "DN"); // legacy atomic → READY
+        vm.expectRevert(FutarchyRegistry.AlreadyReady.selector);
+        registry.createFutarchyPart2(id);
+
+        // Also: a Part1 → Part2 instance can't be re-completed.
+        uint256 id2 = _part1(ALICE, "TwoStep", "2S");
+        registry.createFutarchyPart2(id2);
+        vm.expectRevert(FutarchyRegistry.AlreadyReady.selector);
+        registry.createFutarchyPart2(id2);
+    }
+
+    function test_createFutarchyPart2_canBeCalledByAnyone() public {
+        uint256 id = _part1(ALICE, "Helper", "HLP");
+        // BOB — not the original Part1 caller — completes Alice's deployment.
+        vm.prank(BOB);
+        registry.createFutarchyPart2(id);
+
+        FutarchyRegistry.FutarchyInstance memory inst = registry.instances(id);
+        // Status reaches READY regardless of who finished.
+        assertEq(
+            uint256(inst.status),
+            uint256(FutarchyRegistry.InstanceStatus.READY),
+            "ready"
+        );
+        // Creator field still points at Alice — orchestrator admin tracks
+        // the Part1 caller, not whoever finalized Part2.
+        assertEq(inst.creator, ALICE, "creator unchanged");
+        assertEq(
+            FAOOfficialProposalOrchestrator(inst.orchestrator).ADMIN(), ALICE, "orch admin = Alice"
+        );
+    }
+
+    /// @dev Gas budget check: Part1 must fit in 13M gas. Public RPCs cap
+    /// `eth_estimateGas` at 16.7M, so 13M leaves headroom for proxy
+    /// overhead and chain-side base costs.
+    function test_part1_gasUsed_underBudget() public {
+        // Use a fresh registry so per-test overhead doesn't pollute the read.
+        vm.prank(ALICE);
+        uint256 g0 = gasleft();
+        registry.createFutarchyPart1(
+            "GasOne",
+            "G1",
+            "gas budget check",
+            INITIAL_SUPPLY,
+            SQRT_1,
+            TIMEOUT,
+            TWAP_WINDOW,
+            BASE_BOND
+        );
+        uint256 used = g0 - gasleft();
+        emit log_named_uint("Part1 gas used", used);
+        assertLt(used, 13_000_000, "Part1 must fit under 13M gas");
+    }
+
+    /// @dev Gas budget check: Part2 must fit in 13M gas.
+    function test_part2_gasUsed_underBudget() public {
+        uint256 id = _part1(ALICE, "GasTwo", "G2");
+
+        uint256 g0 = gasleft();
+        registry.createFutarchyPart2(id);
+        uint256 used = g0 - gasleft();
+        emit log_named_uint("Part2 gas used", used);
+        assertLt(used, 13_000_000, "Part2 must fit under 13M gas");
+    }
+
+    /// @dev The legacy one-shot path must still produce a fully-wired
+    /// instance with status READY.
+    function test_createFutarchy_legacyOneShot_stillWorks() public {
+        uint256 id = _create(ALICE, "LegacyOrg", "LEG");
+        FutarchyRegistry.FutarchyInstance memory inst = registry.instances(id);
+        assertEq(
+            uint256(inst.status),
+            uint256(FutarchyRegistry.InstanceStatus.READY),
+            "legacy to READY"
+        );
+        assertTrue(inst.token != address(0), "token");
+        assertTrue(inst.arbitration != address(0), "arbitration");
+        assertTrue(inst.resolver != address(0), "resolver");
+        assertTrue(inst.factory != address(0), "factory");
+        assertTrue(inst.orchestrator != address(0), "orchestrator");
+        assertTrue(inst.spotPool != address(0), "spotPool");
+    }
+
+    function test_part1_emitsPart1Event() public {
+        vm.recordLogs();
+        uint256 id = _part1(ALICE, "EventP1", "EP1");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+
+        bytes32 wanted = keccak256(
+            "FutarchyPart1Created(uint256,address,string,string,address,address)"
+        );
+        bool seen;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].topics.length >= 3 && entries[i].topics[0] == wanted) {
+                assertEq(uint256(entries[i].topics[1]), id, "p1 event id");
+                assertEq(address(uint160(uint256(entries[i].topics[2]))), ALICE, "p1 event creator");
+                seen = true;
+                break;
+            }
+        }
+        assertTrue(seen, "FutarchyPart1Created must be emitted");
+    }
+
+    function test_part2_emitsPart2AndReadyEvents() public {
+        uint256 id = _part1(ALICE, "EventP2", "EP2");
+
+        vm.recordLogs();
+        registry.createFutarchyPart2(id);
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+
+        bytes32 wantedPart2 = keccak256(
+            "FutarchyPart2Created(uint256,address,address,address,address,address)"
+        );
+        bytes32 wantedReady = keccak256(
+            "FutarchyCreated(uint256,address,string,string,address,address,address,address,address,address)"
+        );
+        bool seenPart2;
+        bool seenReady;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].topics.length >= 1 && entries[i].topics[0] == wantedPart2) {
+                seenPart2 = true;
+            }
+            if (entries[i].topics.length >= 1 && entries[i].topics[0] == wantedReady) {
+                assertEq(uint256(entries[i].topics[1]), id, "ready event id");
+                assertEq(address(uint160(uint256(entries[i].topics[2]))), ALICE, "ready event creator");
+                seenReady = true;
+            }
+        }
+        assertTrue(seenPart2, "FutarchyPart2Created must be emitted");
+        assertTrue(seenReady, "FutarchyCreated must be emitted from Part2");
+    }
+
+    function test_createFutarchyPart1_validatesInputs() public {
+        // Same checks as the legacy one-shot — Part1 runs the validator too.
+        vm.expectRevert(FutarchyRegistry.EmptyName.selector);
+        registry.createFutarchyPart1("", "SYM", "d", 0, SQRT_1, TIMEOUT, TWAP_WINDOW, BASE_BOND);
+
+        vm.expectRevert(FutarchyRegistry.EmptySymbol.selector);
+        registry.createFutarchyPart1("N", "", "d", 0, SQRT_1, TIMEOUT, TWAP_WINDOW, BASE_BOND);
+
+        vm.expectRevert(FutarchyRegistry.ZeroSqrtPrice.selector);
+        registry.createFutarchyPart1("N", "S", "d", 0, 0, TIMEOUT, TWAP_WINDOW, BASE_BOND);
+
+        vm.expectRevert(FutarchyRegistry.InvalidResolverConfig.selector);
+        registry.createFutarchyPart1("N", "S", "d", 0, SQRT_1, 1 hours, 2 hours, BASE_BOND);
+
+        vm.expectRevert(FutarchyRegistry.InvalidBaseBond.selector);
+        registry.createFutarchyPart1("N", "S", "d", 0, SQRT_1, TIMEOUT, TWAP_WINDOW, 0);
     }
 }
 

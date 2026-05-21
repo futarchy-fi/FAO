@@ -874,27 +874,44 @@ a:hover { text-decoration: underline; }
 .instance-chip {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 14px 16px;
+  align-items: stretch;
+  gap: 0;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  cursor: pointer;
   text-align: left;
   font-family: var(--mono);
   color: var(--text);
   transition: border-color 0.2s, background 0.2s, transform 0.1s;
+  overflow: hidden;
+}
+.instance-chip-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  width: 100%;
 }
 .instance-chip:hover {
   background: var(--card-hover);
   border-color: var(--accent-dim);
 }
-.instance-chip:active { transform: translateY(1px); }
+.instance-chip-body:active { transform: translateY(1px); }
 .instance-chip-active {
   border-color: var(--accent);
   background: rgba(62, 255, 176, 0.06);
   box-shadow: 0 0 0 1px var(--accent-dim) inset;
+}
+.instance-chip-pending {
+  /* Subtle amber outline cue so half-deployed instances stand out. */
+  border-color: rgba(255, 200, 50, 0.5);
 }
 .instance-chip-head {
   display: flex;
@@ -919,6 +936,10 @@ a:hover { text-decoration: underline; }
   background: rgba(255, 200, 50, 0.18);
   color: #ffd76a;
 }
+.instance-chip-badge-pending {
+  background: rgba(255, 130, 60, 0.22);
+  color: #ffb066;
+}
 .instance-chip-name {
   font-size: 14px;
   font-weight: 600;
@@ -928,6 +949,27 @@ a:hover { text-decoration: underline; }
 .instance-chip-sub {
   font-size: 11px;
   color: var(--text-muted);
+}
+.instance-chip-complete-btn {
+  margin: 0 12px 12px 12px;
+  padding: 6px 10px;
+  background: rgba(255, 130, 60, 0.16);
+  color: #ffb066;
+  border: 1px solid rgba(255, 130, 60, 0.32);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.instance-chip-complete-btn:hover:not(:disabled) {
+  background: rgba(255, 130, 60, 0.28);
+  color: #ffd0a8;
+}
+.instance-chip-complete-btn:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 /* ─── Create Futarchy modal ─── */

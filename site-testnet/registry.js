@@ -53,21 +53,43 @@
     orchestrator: '0x7DF66Fd816c09bb534136C5688B55BBA9398d262',
     spotPool: '0x5dac596a38a294c03d7fac840d031708c970da79',
     createdAt: 0,
+    status: 2, // STATUS_READY — bootstrap is always fully wired
     bootstrap: true,
   };
 
   // ─── ABIs ────────────────────────────────────────────────────────────
 
-  // FutarchyRegistry (to be deployed). Field order matches the struct in
-  // FutarchyRegistry.sol described in the architecture brief; if the deploy
-  // adds fields, only update the destructuring in unpackInstance().
+  // FutarchyRegistry (deployed). Field order matches the FutarchyInstance struct
+  // in FutarchyRegistry.sol — the 2-phase patch added status + cached params at
+  // the end (status, initialSqrtPriceX96, timeout, twapWindow); unpackInstance()
+  // reads them so the picker can render a "pending part2" chip for half-deployed
+  // instances.
+  //
+  // InstanceStatus enum (matches src/FutarchyRegistry.sol):
+  //   0 = NONE
+  //   1 = PENDING_PART2  (Part1 ran; Part2 not yet)
+  //   2 = READY          (both phases complete, fully usable)
   const REGISTRY_ABI = [
     'function instancesCount() view returns (uint256)',
-    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt))',
-    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt)[])',
+    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow))',
+    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow)[])',
+    'function isPendingPart2(uint256 id) view returns (bool)',
+    // 2-phase create flow — preferred path for public RPCs with a 16.7M
+    // eth_estimateGas cap (MetaMask's default Sepolia endpoint).
+    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialTokenSupply, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
+    'function createFutarchyPart2(uint256 id)',
+    // Legacy atomic create — still works, used by forge scripts or any RPC
+    // without a client-side gas cap.
     'function createFutarchy(string name, string symbol, string description, uint256 initialTokenSupply, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
-    'event FutarchyCreated(uint256 indexed id, address indexed creator, string name, string symbol)',
+    'event FutarchyPart1Created(uint256 indexed id, address indexed creator, string name, string symbol, address token, address arbitration)',
+    'event FutarchyPart2Created(uint256 indexed id, address indexed creator, address resolver, address factory, address orchestrator, address spotPool)',
+    'event FutarchyCreated(uint256 indexed id, address indexed creator, string name, string symbol, address token, address arbitration, address resolver, address factory, address orchestrator, address spotPool)',
   ];
+
+  // InstanceStatus enum mirror.
+  const STATUS_NONE = 0;
+  const STATUS_PENDING_PART2 = 1;
+  const STATUS_READY = 2;
 
   // FAOFutarchyFactory.marketsCount() — used to show "N proposals" on each chip.
   const FACTORY_COUNT_ABI = [
@@ -137,6 +159,8 @@
   function unpackInstance(id, raw) {
     // raw is the struct returned by registry.instances() — ethers v6 returns
     // it as a Result object indexable by field name OR positional index.
+    // Fields 0-10 are the legacy struct; 11-14 are the 2-phase additions.
+    const statusRaw = raw.status ?? raw[11];
     return {
       id,
       name:         raw.name         ?? raw[0],
@@ -150,6 +174,7 @@
       orchestrator: raw.orchestrator ?? raw[8],
       spotPool:     raw.spotPool     ?? raw[9],
       createdAt:    Number(raw.createdAt ?? raw[10] ?? 0),
+      status:       statusRaw == null ? STATUS_READY : Number(statusRaw),
       bootstrap:    false,
     };
   }
@@ -265,29 +290,100 @@
 
     mount.innerHTML = instances.map(inst => {
       const isActive = inst.id === activeId;
-      const subtitle = inst.proposalsCount === null || inst.proposalsCount === undefined
-        ? (inst.bootstrap ? 'bootstrap' : `id #${inst.id}`)
-        : `${inst.proposalsCount} proposal${inst.proposalsCount === 1 ? '' : 's'}`;
+      const isPending = inst.status === STATUS_PENDING_PART2;
+      const subtitle = isPending
+        ? 'awaiting part 2 deploy'
+        : (inst.proposalsCount === null || inst.proposalsCount === undefined
+            ? (inst.bootstrap ? 'bootstrap' : `id #${inst.id}`)
+            : `${inst.proposalsCount} proposal${inst.proposalsCount === 1 ? '' : 's'}`);
       const symbol = escapeHtml(inst.symbol || '');
       const name = escapeHtml(inst.name || `Instance #${inst.id}`);
+
+      // Compose status badges. Bootstrap and pending are mutually exclusive
+      // (bootstrap is hardcoded to READY).
+      let badge = '';
+      if (inst.bootstrap) {
+        badge = '<span class="instance-chip-badge">bootstrap</span>';
+      } else if (isPending) {
+        badge = '<span class="instance-chip-badge instance-chip-badge-pending">pending part2</span>';
+      }
+
+      // "Complete deployment" button — only shown when this instance is in
+      // PENDING_PART2 state. Clicking it fires createFutarchyPart2(id) so
+      // anyone (not just the original Part1 caller) can finish a stuck
+      // deployment.
+      const completeBtn = isPending
+        ? `<button class="instance-chip-complete-btn" data-complete-id="${inst.id}" type="button">Complete deployment</button>`
+        : '';
+
+      const chipClasses = [
+        'instance-chip',
+        isActive ? 'instance-chip-active' : '',
+        isPending ? 'instance-chip-pending' : '',
+      ].filter(Boolean).join(' ');
+
       return `
-        <button class="instance-chip ${isActive ? 'instance-chip-active' : ''}" data-instance-id="${inst.id}">
-          <div class="instance-chip-head">
-            <span class="instance-chip-symbol">${symbol}</span>
-            ${inst.bootstrap ? '<span class="instance-chip-badge">bootstrap</span>' : ''}
-          </div>
-          <div class="instance-chip-name">${name}</div>
-          <div class="instance-chip-sub">${escapeHtml(subtitle)}</div>
-        </button>
+        <div class="${chipClasses}" data-instance-id="${inst.id}">
+          <button class="instance-chip-body" data-instance-id="${inst.id}" type="button">
+            <div class="instance-chip-head">
+              <span class="instance-chip-symbol">${symbol}</span>
+              ${badge}
+            </div>
+            <div class="instance-chip-name">${name}</div>
+            <div class="instance-chip-sub">${escapeHtml(subtitle)}</div>
+          </button>
+          ${completeBtn}
+        </div>
       `;
     }).join('');
 
-    // Wire clicks.
-    for (const btn of mount.querySelectorAll('.instance-chip')) {
+    // Wire selection clicks (on the chip body — outer div wraps the button so
+    // the "complete" action button doesn't double-trigger).
+    for (const btn of mount.querySelectorAll('.instance-chip-body')) {
       btn.addEventListener('click', () => {
         const id = Number(btn.dataset.instanceId);
         selectInstance(id);
       });
+    }
+    // Wire complete-deployment buttons.
+    for (const btn of mount.querySelectorAll('.instance-chip-complete-btn')) {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const id = Number(btn.dataset.completeId);
+        await completePendingPart2(id, btn);
+      });
+    }
+  }
+
+  /// Public-facing helper: finalize a PENDING_PART2 instance by firing
+  /// `createFutarchyPart2(id)`. Triggered by the "Complete deployment" chip
+  /// button. Anyone can call it on chain, so we don't gate on creator.
+  async function completePendingPart2(id, btn) {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+    }
+    try {
+      const sig = await ensureSigner();
+      const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, sig);
+      const tx = await reg.createFutarchyPart2(id);
+      if (btn) btn.textContent = `Waiting (tx ${tx.hash.slice(0, 8)}…)`;
+      const rec = await tx.wait();
+      console.info(`[registry] Part2 for instance #${id} confirmed in block ${rec.blockNumber}`);
+      // Reload + reselect the just-completed instance.
+      await loadInstances();
+      await loadProposalCounts();
+      selectInstance(id);
+      renderPicker();
+      updateActiveHeader();
+    } catch (err) {
+      console.error(`[registry] createFutarchyPart2(${id}) failed`, err);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Retry complete deployment';
+        btn.title = err.shortMessage || err.message || String(err);
+      }
     }
   }
 
@@ -401,11 +497,18 @@
     const timeoutSec = Math.floor(timeoutMin * 60);
     const twapSec = Math.floor(twapMin * 60);
 
+    // We run the 2-phase flow (Part1 then Part2). The combined atomic
+    // `createFutarchy(...)` would also work but trips MetaMask's default
+    // Sepolia RPC, which caps `eth_estimateGas` at 16_777_216 (~16.7M)
+    // while the full one-shot needs ~18.8M. Splitting keeps each tx well
+    // under the cap.
     try {
       const sig = await ensureSigner();
       const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, sig);
-      setCreateStatus('Submitting createFutarchy transaction…', 'pending');
-      const tx = await reg.createFutarchy(
+
+      // ─── Step 1/2 ──────────────────────────────────────────────────────
+      setCreateStatus('Step 1/2: deploying token + arbitration…', 'pending');
+      const tx1 = await reg.createFutarchyPart1(
         name,
         symbol,
         description,
@@ -416,25 +519,65 @@
         bondWei,
       );
       setCreateStatus(
-        `Tx sent: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>. Waiting confirmation…`,
+        `Step 1/2: tx sent <a href="${explorerTx(tx1.hash)}" target="_blank" rel="noopener">${tx1.hash.slice(0, 10)}…</a>. Waiting confirmation…`,
         'pending',
       );
-      const rec = await tx.wait();
-      setCreateStatus(`✓ Confirmed in block ${rec.blockNumber}. Refreshing instance list…`, 'ok');
+      const rec1 = await tx1.wait();
 
-      // Refresh + select the newest instance.
+      // Parse the new instance id from the FutarchyPart1Created event.
+      // Topic[0] = event hash, topic[1] = indexed id, topic[2] = indexed creator.
+      // We fall back to reading instancesCount() - 1 if the event is missing
+      // (e.g. RPC dropped logs from the receipt) — that's append-only so the
+      // most recent id is always the newly-created one for this caller.
+      let newId;
+      const part1Topic = ethers.id(
+        'FutarchyPart1Created(uint256,address,string,string,address,address)'
+      );
+      const part1Log = rec1.logs && rec1.logs.find(l =>
+        l.address.toLowerCase() === REGISTRY_ADDR.toLowerCase() && l.topics[0] === part1Topic
+      );
+      if (part1Log) {
+        newId = Number(BigInt(part1Log.topics[1]));
+      } else {
+        try {
+          const n = await reg.instancesCount();
+          newId = Number(n) - 1;
+        } catch (_) {
+          throw new Error('Part1 succeeded but could not determine new instance id; check tx logs and re-trigger Part2 from the picker.');
+        }
+      }
+
+      setCreateStatus(
+        `✓ Step 1/2 done (block ${rec1.blockNumber}, instance #${newId}). Starting step 2/2…`,
+        'pending',
+      );
+
+      // ─── Step 2/2 — auto-triggered ─────────────────────────────────────
+      const tx2 = await reg.createFutarchyPart2(newId);
+      setCreateStatus(
+        `Step 2/2: tx sent <a href="${explorerTx(tx2.hash)}" target="_blank" rel="noopener">${tx2.hash.slice(0, 10)}…</a>. Waiting confirmation…`,
+        'pending',
+      );
+      const rec2 = await tx2.wait();
+      setCreateStatus(
+        `✓ Step 2/2 done (block ${rec2.blockNumber}). Instance #${newId} is READY. Refreshing…`,
+        'ok',
+      );
+
+      // Refresh + select the new instance.
       await loadInstances();
       await loadProposalCounts();
-      // Heuristic: latest instance is the one with the highest id.
-      const latest = instances.reduce((a, b) => (a.id > b.id ? a : b), instances[0]);
-      if (latest) selectInstance(latest.id);
+      selectInstance(newId);
       renderPicker();
       updateActiveHeader();
 
-      setTimeout(() => closeCreateModal(), 1500);
+      setTimeout(() => closeCreateModal(), 1800);
     } catch (err) {
-      console.error('[registry] createFutarchy failed', err);
-      setCreateStatus(`Failed: ${escapeHtml(err.shortMessage || err.message || String(err))}`, 'error');
+      console.error('[registry] createFutarchy (2-phase) failed', err);
+      setCreateStatus(
+        `Failed: ${escapeHtml(err.shortMessage || err.message || String(err))}. If Step 1/2 succeeded, you can resume by clicking "Complete deployment" on the chip for the pending instance.`,
+        'error',
+      );
     }
   }
 
