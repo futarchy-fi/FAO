@@ -82,9 +82,13 @@ set -uo pipefail
 # ─── config ────────────────────────────────────────────────────────────────
 : "${PRIVATE_KEY:?PRIVATE_KEY env required}"
 : "${SEPOLIA_RPC:=https://sepolia.drpc.org}"
-: "${FUTARCHY_FACTORY:=0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0}"
-: "${ORCHESTRATOR:=0x7DF66Fd816c09bb534136C5688B55BBA9398d262}"
-: "${RESOLVER:=0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a}"
+: "${FUTARCHY_FACTORY:=0x208d0760c742a4fb46932811ec843f08752f6ab3}"
+: "${ORCHESTRATOR:=0xc17D88Bf0c16c0c2F1dEBd375163Fc538aB5aBF5}"
+: "${RESOLVER:=0xC17408966d424A3fc8fAf9F007413FA842bDB479}"
+: "${ADAPTER:=0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A}"
+: "${COMPANY_TOKEN:=0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65}"
+: "${CURRENCY_TOKEN:=0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14}"
+: "${PROMOTE_LIQUIDITY_WEI:=10000000000000000}"
 : "${ARBITRATION:=0x9D7692738a4d323338b9007d65d7F79e013B3476}"
 : "${ARBITRATION_DEPLOY_BLOCK:=10880000}"
 : "${PROMOTE_INTERVAL_SEC:=300}"
@@ -92,7 +96,8 @@ set -uo pipefail
 : "${LOG_SCAN_CHUNK_BLOCKS:=5000}"
 : "${RUN_HOURS:=24}"
 : "${FOUNDRY_IMAGE:=ghcr.io/foundry-rs/foundry:stable}"
-: "${GAS_PRICE:=1100000000}"
+: "${GAS_PRICE:=4000000000}"
+: "${PROMOTE_GAS_LIMIT:=15500000}"
 : "${PROMOTE_NAME_PREFIX:=auto}"
 
 mkdir -p out
@@ -161,10 +166,13 @@ cast_logs() {
 }
 
 # Wrapper: cast send (mutating). Logs success/failure but never aborts.
+# Optional extra cast flags can be appended via CAST_EXTRA env (e.g.
+# "--gas-limit 15500000"). Read once per call so callers can scope it.
 cast_send() {
   local label="$1"; shift
+  local extra="${CAST_EXTRA:-}"
   log "SEND[$label] $*"
-  if _in_foundry "cast send $* --rpc-url $SEPOLIA_RPC --private-key $PRIVATE_KEY --legacy --gas-price $GAS_PRICE" >>"$LOG" 2>&1; then
+  if _in_foundry "cast send $* --rpc-url $SEPOLIA_RPC --private-key $PRIVATE_KEY --legacy --gas-price $GAS_PRICE $extra" >>"$LOG" 2>&1; then
     log "SEND[$label] OK"
     return 0
   else
@@ -299,10 +307,35 @@ do_promote_tick() {
   name="${PROMOTE_NAME_PREFIX}-${nonce}"
   desc="Auto-promoted by auto_promote.sh (queued=${queued}) at $(ts). See script comments for design-gap context."
 
-  # createOfficialProposalAndMigrate(string,string,uint256) — builderTip=0
-  cast_send "promote" "$ORCHESTRATOR \
-    'createOfficialProposalAndMigrate(string,string,uint256)' \
-    \"$name\" \"$desc\" 0"
+  # Adapter migration pipeline (three sequential txs, atomic on the promote):
+  #   1. adapter.stage(amt, amt)                — records this operator's pull amounts
+  #   2. companyToken.approve(adapter, amt)     — allowance for splitPosition source
+  #   3. currencyToken.approve(adapter, amt)
+  #   4. orchestrator.createOfficialProposalAndMigrate(name, desc, 0)
+  #      → factory.createProposal → init YES/NO pools → adapter.migrate
+  #
+  # If any prep tx fails we still attempt the promote; the orchestrator will
+  # revert NothingStaged / ERC20TransferFailed and the daemon logs the error.
+  if [ -n "${ADAPTER:-}" ] && [ "$ADAPTER" != "0x0000000000000000000000000000000000000000" ]; then
+    cast_send "stage" "$ADAPTER \
+      'stage(uint256,uint256)' \
+      $PROMOTE_LIQUIDITY_WEI $PROMOTE_LIQUIDITY_WEI"
+    cast_send "approveCompany" "$COMPANY_TOKEN \
+      'approve(address,uint256)' \
+      $ADAPTER $PROMOTE_LIQUIDITY_WEI"
+    cast_send "approveCurrency" "$CURRENCY_TOKEN \
+      'approve(address,uint256)' \
+      $ADAPTER $PROMOTE_LIQUIDITY_WEI"
+  fi
+
+  # createOfficialProposalAndMigrate(string,string,uint256) — builderTip=0.
+  # Pass an explicit gas-limit so the RPC's eth_estimateGas cap doesn't
+  # block the tx; we use OBS_CARDINALITY=30 in the orchestrator so the
+  # whole atomic flow fits comfortably under 16.7M gas.
+  CAST_EXTRA="--gas-limit $PROMOTE_GAS_LIMIT" \
+    cast_send "promote" "$ORCHESTRATOR \
+      'createOfficialProposalAndMigrate(string,string,uint256)' \
+      \"$name\" \"$desc\" 0"
 }
 
 # ─── resolve loop ──────────────────────────────────────────────────────────

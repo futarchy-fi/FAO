@@ -48,9 +48,10 @@
     creator: '0x693E3FB46Bb36eE43C702FE94f9463df0691b43d',
     token: '0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65',
     arbitration: '0x9D7692738a4d323338b9007d65d7F79e013B3476',
-    resolver: '0x421d2FaDA1c4D84E9EF93A4cB09f7317481Ea91a',
-    factory: '0xc3154ec665545342C0E6aa1B81576D8E98d0cCa0',
-    orchestrator: '0x7DF66Fd816c09bb534136C5688B55BBA9398d262',
+    resolver: '0xC17408966d424A3fc8fAf9F007413FA842bDB479',
+    factory: '0x208d0760c742a4fb46932811ec843f08752f6ab3',
+    orchestrator: '0xc17D88Bf0c16c0c2F1dEBd375163Fc538aB5aBF5',
+    adapter: '0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A',
     spotPool: '0x5dac596a38a294c03d7fac840d031708c970da79',
     createdAt: 0,
     status: 2, // STATUS_READY — bootstrap is always fully wired
