@@ -103,7 +103,7 @@
     if (rankFilter === 'bonding-curve') visible = visible.filter(i => i.salePhase === 'bonding-curve');
 
     if (visible.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="rank-empty">No futarchies match this filter.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="rank-empty">No futarchies match this filter.</td></tr>`;
       return;
     }
     const cmp = (a, b) => {
@@ -125,14 +125,22 @@
       const b = salePhaseBadge(inst.salePhase);
       const badge = b ? `<span class="phase-badge ${b.cls}">${b.label}</span>` : '<span class="phase-badge badge-unknown">—</span>';
       const activeCls = inst.id === activeId ? ' rank-row-active' : '';
+      // Both columns deep-link to the sale page (primary action: buy). The
+      // Proposals page is one click away via the topbar.
+      const saleHref = `sale?inst=${inst.id}`;
+      const propsHref = `proposals?inst=${inst.id}`;
       return `
         <tr class="rank-row${activeCls}" data-rank-instance-id="${inst.id}">
           <td>${i + 1}</td>
-          <td><strong>${sym}</strong></td>
-          <td>${name}</td>
-          <td>${badge}</td>
+          <td><a class="rank-link" href="${saleHref}"><strong>${sym}</strong></a></td>
+          <td><a class="rank-link" href="${saleHref}">${name}</a></td>
+          <td><a class="rank-link" href="${saleHref}">${badge}</a></td>
           <td class="rank-num">${raised}</td>
           <td class="rank-num">${mcap}</td>
+          <td class="rank-actions">
+            <a class="rank-action-btn rank-action-buy" href="${saleHref}">Buy →</a>
+            <a class="rank-action-btn" href="${propsHref}">Proposals</a>
+          </td>
         </tr>`;
     }).join('');
   }
@@ -154,11 +162,18 @@
         renderRankings();
       });
     });
+    // Row clicks now navigate via <a> — but we still need to record the
+    // active instance in localStorage before the navigation happens so the
+    // destination page picks it up even before ?inst= is parsed.
     document.addEventListener('click', (ev) => {
-      const row = ev.target.closest('[data-rank-instance-id]');
+      const link = ev.target.closest('a.rank-link, a.rank-action-btn');
+      if (!link) return;
+      const row = link.closest('[data-rank-instance-id]');
       if (!row) return;
       const id = Number(row.dataset.rankInstanceId);
-      if (Number.isFinite(id)) window.setActiveInstance(id, true);
+      if (Number.isFinite(id) && window.setActiveInstance) {
+        window.setActiveInstance(id, false);
+      }
     });
   }
 

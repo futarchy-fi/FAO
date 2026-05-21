@@ -13,42 +13,118 @@
 
 <div id="topbar-root"></div>
 
-<section id="sale" class="section">
-  <h2 class="section-title">Buy tokens from the active sale</h2>
-  <p class="section-subtitle">
-    Each futarchy instance has its own <code>InstanceSale</code>. All token
-    supply originates from the sale: nothing is minted at creation. Initial
-    fixed-price phase, then a linear bonding curve once the minimum sold
-    threshold is hit and the initial window has ended.
-  </p>
-
-  <div id="sale-box" class="sale-box">
-    <div class="sale-grid">
-      <div class="sale-row"><span class="sale-label">Sale contract</span><span class="sale-value" id="sale-addr">…</span></div>
-      <div class="sale-row"><span class="sale-label">Token</span><span class="sale-value" id="sale-token">…</span></div>
-      <div class="sale-row"><span class="sale-label">Phase</span><span class="sale-value" id="sale-phase">…</span></div>
-      <div class="sale-row"><span class="sale-label">Current price</span><span class="sale-value" id="sale-price">…</span></div>
-      <div class="sale-row"><span class="sale-label">Total raised</span><span class="sale-value" id="sale-raised">…</span></div>
-      <div class="sale-row"><span class="sale-label">Initial-phase sold</span><span class="sale-value" id="sale-initial-sold">…</span></div>
-      <div class="sale-row"><span class="sale-label">Bonding-curve sold</span><span class="sale-value" id="sale-curve-sold">…</span></div>
-      <div class="sale-row"><span class="sale-label">Initial phase ends</span><span class="sale-value" id="sale-phase-end">…</span></div>
-      <div class="sale-row"><span class="sale-label">Your token balance</span><span class="sale-value" id="sale-balance">— (connect wallet)</span></div>
-      <div class="sale-row"><span class="sale-label">Your ETH balance</span><span class="sale-value" id="sale-eth">—</span></div>
-      <div class="sale-row"><span class="sale-label">Remaining initial-phase capacity</span><span class="sale-value" id="sale-remaining">—</span></div>
-    </div>
-
-    <div class="sale-form">
-      <button id="sale-connect" class="btn btn-secondary" type="button">Connect wallet</button>
-      <label class="sale-input-wrap">
-        <span class="sale-input-label">How many tokens to buy</span>
-        <input id="sale-input" type="number" min="1" step="1" value="1" />
-      </label>
-      <div class="sale-cost-line">
-        Cost: <span id="sale-cost">—</span>
+<section id="sale" class="section sale-page">
+  <!-- Hero strip: token identity + price + phase. -->
+  <div class="sale-hero">
+    <div class="sale-hero-left">
+      <div class="sale-hero-symbol" id="sale-hero-symbol">…</div>
+      <div class="sale-hero-text">
+        <h2 class="sale-hero-name" id="sale-hero-name">Loading…</h2>
+        <p class="sale-hero-desc" id="sale-hero-desc">&nbsp;</p>
+        <div class="sale-hero-meta">
+          <span class="phase-badge" id="sale-phase-badge">—</span>
+          <span class="sale-hero-sep">·</span>
+          <a id="sale-hero-addr" class="sale-hero-link" href="#" target="_blank" rel="noopener">contract</a>
+        </div>
       </div>
-      <button id="sale-buy" class="btn btn-primary" type="button">Buy</button>
+    </div>
+    <div class="sale-hero-right">
+      <div class="sale-hero-price-label">Current price</div>
+      <div class="sale-hero-price" id="sale-hero-price">…</div>
+      <div class="sale-hero-price-sub" id="sale-hero-price-sub">per token</div>
     </div>
   </div>
+
+  <!-- Initial-phase progress (hidden once finalized). -->
+  <div class="sale-progress-block" id="sale-progress-block" hidden>
+    <div class="sale-progress-head">
+      <span>Initial-phase progress</span>
+      <span id="sale-progress-text">— / —</span>
+    </div>
+    <div class="sale-progress-bar">
+      <div class="sale-progress-fill" id="sale-progress-fill" style="width:0%"></div>
+    </div>
+    <div class="sale-progress-foot" id="sale-progress-foot">Ends —</div>
+  </div>
+
+  <!-- Buy module + key sale stats side-by-side. -->
+  <div class="sale-buy-grid">
+    <div class="sale-buy-card">
+      <h3 class="sale-card-title">Buy tokens</h3>
+      <p class="sale-card-note" id="sale-buy-note">
+        All token supply originates from this sale. Pay ETH on Sepolia, receive
+        freshly-minted tokens to your wallet.
+      </p>
+
+      <div class="sale-quick-buy">
+        <span class="sale-quick-buy-label">Quick:</span>
+        <button class="sale-quick-btn" data-quick-buy="1" type="button">1</button>
+        <button class="sale-quick-btn" data-quick-buy="10" type="button">10</button>
+        <button class="sale-quick-btn" data-quick-buy="100" type="button">100</button>
+        <button class="sale-quick-btn" data-quick-buy="1000" type="button">1000</button>
+      </div>
+
+      <label class="sale-input-wrap-big">
+        <span class="sale-input-label">Amount</span>
+        <input id="sale-input" type="number" min="1" step="1" value="1" />
+        <span class="sale-input-suffix" id="sale-input-suffix">tokens</span>
+      </label>
+
+      <div class="sale-cost-preview">
+        <div class="sale-cost-row">
+          <span>Cost</span>
+          <strong id="sale-cost">—</strong>
+        </div>
+        <div class="sale-cost-row sale-cost-row-sub">
+          <span>Your ETH</span>
+          <span id="sale-eth">—</span>
+        </div>
+      </div>
+
+      <button id="sale-buy" class="btn btn-primary sale-buy-btn" type="button">Buy</button>
+      <p id="sale-buy-status" class="sale-buy-status"></p>
+    </div>
+
+    <div class="sale-stats-card">
+      <h3 class="sale-card-title">Sale stats</h3>
+      <div class="sale-stats-grid">
+        <div class="sale-stat">
+          <span class="sale-stat-label">Total raised</span>
+          <span class="sale-stat-value" id="sale-raised">…</span>
+        </div>
+        <div class="sale-stat">
+          <span class="sale-stat-label">Initial-phase sold</span>
+          <span class="sale-stat-value" id="sale-initial-sold">…</span>
+        </div>
+        <div class="sale-stat">
+          <span class="sale-stat-label">Bonding-curve sold</span>
+          <span class="sale-stat-value" id="sale-curve-sold">…</span>
+        </div>
+        <div class="sale-stat">
+          <span class="sale-stat-label">Initial phase ends</span>
+          <span class="sale-stat-value" id="sale-phase-end">…</span>
+        </div>
+        <div class="sale-stat">
+          <span class="sale-stat-label">Your token balance</span>
+          <span class="sale-stat-value" id="sale-balance">—</span>
+        </div>
+        <div class="sale-stat">
+          <span class="sale-stat-label">Remaining initial-phase capacity</span>
+          <span class="sale-stat-value" id="sale-remaining">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contract info, deemphasized. -->
+  <details class="sale-contract-details">
+    <summary>Contract addresses</summary>
+    <table class="sale-addr-table">
+      <tr><td>Sale</td><td class="addr" id="sale-addr-table-sale">…</td></tr>
+      <tr><td>Token</td><td class="addr" id="sale-addr-table-token">…</td></tr>
+      <tr><td>Spot pool</td><td class="addr" id="sale-addr-table-pool">…</td></tr>
+    </table>
+  </details>
 </section>
 
 </body>
