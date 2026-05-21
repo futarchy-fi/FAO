@@ -21,7 +21,7 @@
       <li><a href="#stack">Stack</a></li>
       <li><a href="#instances">Instances</a></li>
       <li><a href="#proposals">Proposals</a></li>
-      <li><a href="#sale">Buy FAO</a></li>
+      <li><a href="#sale">Buy</a></li>
       <li><a href="#contracts">Contracts</a></li>
       <li><a href="#docs">Docs</a></li>
       <li><a href="https://fao.futarchy.ai">Prod →</a></li>
@@ -108,18 +108,24 @@
   </div>
 
   <div id="instances-rankings-wrap" class="instances-rankings-wrap">
+    <div class="rank-filter-bar">
+      <button class="filter-pill filter-pill-active" data-rank-filter="all" type="button">All</button>
+      <button class="filter-pill" data-rank-filter="initial-sale" type="button">Initial sale</button>
+      <button class="filter-pill" data-rank-filter="bonding-curve" type="button">Bonding curve</button>
+    </div>
     <table class="rankings-table">
       <thead>
         <tr>
           <th>#</th>
           <th>Token</th>
           <th>Name</th>
+          <th>Phase</th>
           <th class="rank-sort" data-rank-sort="raised">Raised (ETH)</th>
           <th class="rank-sort rank-sort-active" data-rank-sort="mcap">Market cap (ETH)</th>
         </tr>
       </thead>
       <tbody id="rankings-rows">
-        <tr><td colspan="5" class="rank-empty">Loading sales…</td></tr>
+        <tr><td colspan="6" class="rank-empty">Loading sales…</td></tr>
       </tbody>
     </table>
   </div>
@@ -226,24 +232,25 @@
 </section>
 
 <section id="sale" class="section">
-  <h2 class="section-title">Buy FAO</h2>
+  <h2 class="section-title">Buy tokens from the active sale</h2>
   <p class="section-subtitle">
-    Mint FAO directly from <code>FAOSale</code> on Sepolia.
-    Initial fixed-price phase: 0.0001 ETH per FAO. After the initial cap is sold
-    and the phase window ends, the price follows a linear bonding curve.
-    Connect a wallet on Sepolia to buy.
+    Each futarchy instance has its own <code>InstanceSale</code>. All token
+    supply originates from the sale: there is no minted balance to anyone at
+    creation. Initial fixed-price phase, then a linear bonding curve once the
+    minimum sold threshold is hit and the initial window has ended.
   </p>
 
   <div id="sale-box" class="sale-box">
     <div class="sale-grid">
       <div class="sale-row"><span class="sale-label">Sale contract</span><span class="sale-value" id="sale-addr">…</span></div>
+      <div class="sale-row"><span class="sale-label">Token</span><span class="sale-value" id="sale-token">…</span></div>
       <div class="sale-row"><span class="sale-label">Phase</span><span class="sale-value" id="sale-phase">…</span></div>
       <div class="sale-row"><span class="sale-label">Current price</span><span class="sale-value" id="sale-price">…</span></div>
       <div class="sale-row"><span class="sale-label">Total raised</span><span class="sale-value" id="sale-raised">…</span></div>
       <div class="sale-row"><span class="sale-label">Initial-phase sold</span><span class="sale-value" id="sale-initial-sold">…</span></div>
       <div class="sale-row"><span class="sale-label">Bonding-curve sold</span><span class="sale-value" id="sale-curve-sold">…</span></div>
       <div class="sale-row"><span class="sale-label">Initial phase ends</span><span class="sale-value" id="sale-phase-end">…</span></div>
-      <div class="sale-row"><span class="sale-label">Your FAO balance</span><span class="sale-value" id="sale-balance">— (connect wallet)</span></div>
+      <div class="sale-row"><span class="sale-label">Your token balance</span><span class="sale-value" id="sale-balance">— (connect wallet)</span></div>
       <div class="sale-row"><span class="sale-label">Your ETH balance</span><span class="sale-value" id="sale-eth">—</span></div>
       <div class="sale-row"><span class="sale-label">Remaining initial-phase capacity</span><span class="sale-value" id="sale-remaining">—</span></div>
     </div>
@@ -251,13 +258,13 @@
     <div class="sale-form">
       <button id="sale-connect" class="btn btn-secondary" type="button">Connect wallet</button>
       <label class="sale-input-wrap">
-        <span class="sale-input-label">How many FAO to buy</span>
+        <span class="sale-input-label">How many tokens to buy</span>
         <input id="sale-input" type="number" min="1" step="1" value="1" />
       </label>
       <div class="sale-cost-line">
         Cost: <span id="sale-cost">—</span>
       </div>
-      <button id="sale-buy" class="btn btn-primary" type="button">Buy FAO</button>
+      <button id="sale-buy" class="btn btn-primary" type="button">Buy</button>
     </div>
   </div>
 </section>

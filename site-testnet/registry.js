@@ -83,11 +83,20 @@
     'event FutarchyCreated(uint256 indexed id, address indexed creator, string name, string symbol, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool)',
   ];
 
-  // Minimal sale ABI for the per-instance summary (raised + price + supply).
+  // Minimal sale ABI for the per-instance summary. Carries the InstanceSale
+  // immutable getters (SALE_START / INITIAL_PHASE_END) and the FAOSale
+  // mutable accessors (saleStart() / initialPhaseEnd()) so both shapes can
+  // be probed via safe() — whichever returns wins.
   const SALE_ABI = [
     'function totalAmountRaised() view returns (uint256)',
     'function currentPriceWeiPerToken() view returns (uint256)',
     'function initialPhaseFinalized() view returns (bool)',
+    'function SALE_START() view returns (uint256)',
+    'function INITIAL_PHASE_END() view returns (uint256)',
+    'function saleStart() view returns (uint256)',
+    'function initialPhaseEnd() view returns (uint256)',
+    'function MIN_INITIAL_PHASE_SOLD() view returns (uint256)',
+    'function initialTokensSold() view returns (uint256)',
   ];
   const TOKEN_ABI = [
     'function totalSupply() view returns (uint256)',
@@ -241,26 +250,41 @@
   async function loadSaleMetrics() {
     const results = await Promise.all(instances.map(async (inst) => {
       if (!inst.sale || isZeroAddress(inst.sale) || !inst.token) {
-        return { raisedWei: null, supplyWei: null, priceWei: null, mcapWei: null };
+        return {
+          raisedWei: null, supplyWei: null, priceWei: null, mcapWei: null,
+          salePhase: null,
+        };
       }
       const sale = new ethers.Contract(inst.sale, SALE_ABI, provider);
       const token = new ethers.Contract(inst.token, TOKEN_ABI, provider);
-      const [raised, supply, price] = await Promise.all([
+      const [raised, supply, price, finalized, phaseEndImm, phaseEndMut, saleStartImm, saleStartMut] = await Promise.all([
         safe(() => sale.totalAmountRaised(), null),
         safe(() => token.totalSupply(), null),
         safe(() => sale.currentPriceWeiPerToken(), null),
+        safe(() => sale.initialPhaseFinalized(), null),
+        safe(() => sale.INITIAL_PHASE_END(), null),
+        safe(() => sale.initialPhaseEnd(), null),
+        safe(() => sale.SALE_START(), null),
+        safe(() => sale.saleStart(), null),
       ]);
       let mcap = null;
       if (supply != null && price != null) {
-        // supply is in wei-of-token (1e18 = 1 whole token); price is wei per
-        // whole token. mcap_wei = (supply / 1e18) * price = supply * price / 1e18.
         mcap = (BigInt(supply) * BigInt(price)) / 10n ** 18n;
       }
+      const phaseEnd  = phaseEndImm  != null ? BigInt(phaseEndImm)  : (phaseEndMut  != null ? BigInt(phaseEndMut)  : 0n);
+      const saleStart = saleStartImm != null ? BigInt(saleStartImm) : (saleStartMut != null ? BigInt(saleStartMut) : 0n);
+      const nowSec = BigInt(Math.floor(Date.now() / 1000));
+      let salePhase;
+      if (saleStart === 0n)         salePhase = 'not-started';
+      else if (finalized === true)  salePhase = 'bonding-curve';
+      else if (phaseEnd && nowSec >= phaseEnd) salePhase = 'phase-ended';
+      else                          salePhase = 'initial-sale';
       return {
         raisedWei: raised == null ? null : BigInt(raised),
         supplyWei: supply == null ? null : BigInt(supply),
         priceWei:  price  == null ? null : BigInt(price),
         mcapWei:   mcap,
+        salePhase,
       };
     }));
     for (let i = 0; i < instances.length; i++) {
@@ -268,15 +292,30 @@
     }
   }
 
+  // Pretty-print + class hint for the per-instance sale phase badge.
+  function salePhaseBadge(phase) {
+    switch (phase) {
+      case 'initial-sale':   return { label: 'initial sale',   cls: 'badge-initial' };
+      case 'phase-ended':    return { label: 'awaiting phase 2', cls: 'badge-ended' };
+      case 'bonding-curve':  return { label: 'bonding curve',  cls: 'badge-curve' };
+      case 'not-started':    return { label: 'not started',    cls: 'badge-pending' };
+      default:               return null;
+    }
+  }
+
   let rankSortKey = 'mcap'; // 'mcap' or 'raised'
+  let rankFilter = 'all';   // 'all' | 'initial-sale' | 'bonding-curve'
 
   function renderRankings() {
     const tbody = $$('#rankings-rows');
     if (!tbody) return;
 
-    const visible = instances.filter(i => i.bootstrap || (i.sale && !isZeroAddress(i.sale)));
+    let visible = instances.filter(i => i.bootstrap || (i.sale && !isZeroAddress(i.sale)));
+    if (rankFilter === 'initial-sale')   visible = visible.filter(i => i.salePhase === 'initial-sale' || i.salePhase === 'phase-ended');
+    if (rankFilter === 'bonding-curve')  visible = visible.filter(i => i.salePhase === 'bonding-curve');
+
     if (visible.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="rank-empty">No active sales yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="rank-empty">No futarchies match this filter.</td></tr>`;
       return;
     }
 
@@ -296,11 +335,16 @@
       const raised = inst.raisedWei == null ? '—' : (+ethers.formatEther(inst.raisedWei)).toFixed(4);
       const mcap   = inst.mcapWei   == null ? '—' : (+ethers.formatEther(inst.mcapWei)).toFixed(4);
       const isActive = inst.id === activeId ? ' rank-row-active' : '';
+      const b = salePhaseBadge(inst.salePhase);
+      const badgeHtml = b
+        ? `<span class="phase-badge ${b.cls}">${b.label}</span>`
+        : '<span class="phase-badge badge-unknown">—</span>';
       return `
         <tr class="rank-row${isActive}" data-rank-instance-id="${inst.id}">
           <td>${i + 1}</td>
           <td><strong>${symbol}</strong></td>
           <td>${name}</td>
+          <td>${badgeHtml}</td>
           <td class="rank-num">${raised}</td>
           <td class="rank-num">${mcap}</td>
         </tr>`;
@@ -314,6 +358,13 @@
         if (!key) return;
         rankSortKey = key;
         document.querySelectorAll('.rank-sort').forEach(x => x.classList.toggle('rank-sort-active', x === th));
+        renderRankings();
+      });
+    });
+    document.querySelectorAll('[data-rank-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        rankFilter = btn.dataset.rankFilter;
+        document.querySelectorAll('[data-rank-filter]').forEach(x => x.classList.toggle('filter-pill-active', x === btn));
         renderRankings();
       });
     });
@@ -407,12 +458,18 @@
       const name = escapeHtml(inst.name || `Instance #${inst.id}`);
 
       // Compose status badges. Bootstrap and pending are mutually exclusive
-      // (bootstrap is hardcoded to READY).
+      // (bootstrap is hardcoded to READY). When the instance is READY and has
+      // a sale, also render the sale-phase badge so the lifecycle is visible
+      // at a glance.
       let badge = '';
       if (inst.bootstrap) {
         badge = '<span class="instance-chip-badge">bootstrap</span>';
       } else if (isPending) {
         badge = '<span class="instance-chip-badge instance-chip-badge-pending">pending part2</span>';
+      }
+      const ph = salePhaseBadge(inst.salePhase);
+      if (ph) {
+        badge += ` <span class="phase-badge ${ph.cls}">${ph.label}</span>`;
       }
 
       // "Complete deployment" button — only shown when this instance is in

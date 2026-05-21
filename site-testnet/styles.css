@@ -1272,3 +1272,47 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
   margin: 8px 0 0 0;
 }
+
+/* ─── Sale phase badges + filter pills ─────────────────────────── */
+.phase-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+.phase-badge.badge-initial { background: rgba(56, 161, 105, 0.18); color: #56e88f; }
+.phase-badge.badge-ended   { background: rgba(214, 158, 46, 0.22); color: #f6c560; }
+.phase-badge.badge-curve   { background: rgba(66, 153, 225, 0.22); color: #7cc0ff; }
+.phase-badge.badge-pending { background: rgba(160, 160, 160, 0.20); color: #aaaaaa; }
+.phase-badge.badge-unknown { background: rgba(160, 160, 160, 0.10); color: #888888; }
+
+.rank-filter-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.filter-pill {
+  appearance: none;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.filter-pill:hover {
+  color: var(--text);
+}
+.filter-pill.filter-pill-active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
