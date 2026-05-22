@@ -1,8 +1,8 @@
 /*
  * FAO audit dashboard — pure-client rendering of the rubric trend.
  *
- * Reads audit/evaluations/topic-{1..6}-evals.jsonl over fetch (served by a
- * local static http.server, parent path is `../evaluations/...`).
+ * Reads evaluations/topic-{1..6}-evals.jsonl over fetch from the Cloudflare
+ * Pages deploy tree at site-ops/fao/evaluations/.
  *
  * No build step. No backend. Refresh every 30s.
  */
@@ -18,7 +18,7 @@ const TOPICS = [
 const TARGET = 8.0;
 
 async function loadTopic(id) {
-  const r = await fetch(`../evaluations/topic-${id}-evals.jsonl`, { cache: 'no-cache' });
+  const r = await fetch(`evaluations/topic-${id}-evals.jsonl`, { cache: 'no-cache' });
   if (!r.ok) return [];
   const txt = await r.text();
   return txt.trim().split('\n').filter(Boolean).map((l) => {
