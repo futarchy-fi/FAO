@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://futarchy.fi/schemas/deployments.schema.json",
+  "title": "FAO deployment manifest",
+  "description": "Canonical schema for the Sepolia deployment manifest consumed by CI and site-testnet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "generated_by",
+    "generated_at",
+    "network",
+    "chain_id",
+    "shared",
+    "active",
+    "deprecated",
+    "etherscan_verified",
+    "verification_todo",
+    "notes"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "./deployments.schema.json"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v[0-9]+$"
+    },
+    "generated_by": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "network": {
+      "type": "string",
+      "const": "sepolia"
+    },
+    "chain_id": {
+      "type": "integer",
+      "const": 11155111
+    },
+    "shared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weth",
+        "ctf",
+        "w1155_factory",
+        "univ3_factory",
+        "univ3_npm",
+        "univ3_quoter",
+        "univ3_router"
+      ],
+      "properties": {
+        "weth": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "ctf": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "w1155_factory": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "univ3_factory": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "univ3_npm": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "univ3_quoter": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "univ3_router": {
+          "$ref": "#/definitions/fullAddress"
+        }
+      }
+    },
+    "active": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry",
+        "token_arb_deployer",
+        "futarchy_stack_deployer",
+        "proposal_impl_v5",
+        "uniswap_v3_liquidity_adapter",
+        "operator"
+      ],
+      "properties": {
+        "registry": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "token_arb_deployer": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "futarchy_stack_deployer": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "proposal_impl_v5": {
+          "$ref": "#/definitions/nullableAddress"
+        },
+        "uniswap_v3_liquidity_adapter": {
+          "$ref": "#/definitions/fullAddress"
+        },
+        "operator": {
+          "$ref": "#/definitions/fullAddress"
+        }
+      }
+    },
+    "deprecated": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/definitions/keyName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/deprecatedAddress"
+      }
+    },
+    "etherscan_verified": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/definitions/keyName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/fullAddress"
+      }
+    },
+    "verification_todo": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/nonEmptyString"
+      }
+    },
+    "notes": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "topic_5_dim_1_lift",
+        "topic_5_dim_5_lift"
+      ],
+      "propertyNames": {
+        "$ref": "#/definitions/keyName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/nonEmptyString"
+      }
+    }
+  },
+  "definitions": {
+    "fullAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "nullableAddress": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/fullAddress"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "deprecatedAddress": {
+      "type": "string",
+      "pattern": "^0x([a-fA-F0-9]{40}|[a-fA-F0-9]{4,40}\\.\\.\\.)$"
+    },
+    "keyName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]+$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

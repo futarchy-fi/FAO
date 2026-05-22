@@ -92,6 +92,16 @@ Every deprecation has a stable ID (`DEPR-<N>`), a status, and an explicit wind-d
 | **Status** | KEEP-FROZEN |
 | **Reason** | Phase-5 adversarial-run artefacts. Referenced from `docs/phase5-report-live.md`. Historic; not part of the active operator surface. |
 
+### DEPR-9 — unvalidated deployment manifests
+
+| | |
+|---|---|
+| **Status** | SUPERSEDED |
+| **Source** | `deployments.json`, `site-testnet/deployments.json` before `deployments.schema.json` validation. |
+| **Replaced by** | `deployments.schema.json` plus `scripts/validate-deployments.sh` in static analysis. |
+| **Reason** | A byte-for-byte sync check proved the site copy matched the root manifest, but did not prove either file had the expected deploy shape. |
+| **Rule** | Manifest changes MUST pass schema validation and root/site sync together. New deployment keys require a schema update in the same change. |
+
 ## Worker discipline
 
 Any CAO worker that proposes a change to `src/`, `script/`, or `site-testnet/` MUST verify against this file:
