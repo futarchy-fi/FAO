@@ -15,22 +15,32 @@
   /* ─── Color palette ─────────────────────────────────────────────────
    * Dark-mode default. Light mode adds an override block at the bottom.
    * Contrast targets meet WCAG AA (≥ 4.5:1) on backgrounds; the accent
-   * green meets AAA on `--bg`. */
+   * green meets AAA on `--bg`.
+   *
+   * Palette harmonized with what styles.css was previously redeclaring
+   * so this file IS the source of truth — styles.css now consumes from
+   * here instead of overriding. */
 
-  --bg:           #0a0a0e;          /* root background */
-  --bg-elevated:  #14141a;          /* cards, panels, modals */
-  --border:       #2a2a35;          /* card outlines + dividers */
+  --bg:           #0d0f14;          /* root background */
+  --bg-alt:       #111520;          /* alternating section / nav backdrop */
+  --bg-elevated:  #141720;          /* cards, panels, modals (alias: --card) */
+  --card:         #141720;          /* legacy alias of --bg-elevated */
+  --card-hover:   #1a1e2a;          /* card hover state */
+  --border:       #1e2230;          /* card outlines + dividers */
 
-  --text:         #e8e8ec;          /* primary text on --bg */
-  --text-muted:   #8a8a99;          /* secondary text, labels */
-  --text-dim:     #555566;          /* tertiary, hint text */
+  --text:         #e0e4ec;          /* primary text on --bg */
+  --text-muted:   #8892a4;          /* secondary text, labels */
+  --text-dim:     #5a6478;          /* tertiary, hint text */
 
-  --accent:       #56e88f;          /* primary CTA, success, positive trend */
-  --accent-hover: #6cf0a3;
-  --accent-fg:    #0a0a0e;          /* foreground on accent backgrounds */
+  --accent:       #3effb0;          /* primary CTA, success, positive trend */
+  --accent-hover: #5cffbc;
+  --accent-fg:    #0d0f14;          /* foreground on accent backgrounds */
+  --accent-dim:   rgba(62, 255, 176, 0.15);   /* subtle wash (e.g. badges) */
+  --accent-glow:  rgba(62, 255, 176, 0.25);   /* focus ring / hover halo */
 
-  --warning:      #f6c560;          /* amber for pending / advisory */
-  --danger:       #ff8080;          /* red for error / negative */
+  --warning:      #ffb347;          /* amber for pending / advisory */
+  --warn:         #ffb347;          /* legacy alias of --warning */
+  --danger:       #ff5c5c;          /* red for error / negative */
   --info:         #7cc0ff;          /* blue for informational */
 
   /* ─── Spacing scale ─────────────────────────────────────────────────
@@ -59,8 +69,13 @@
    * Major-third (1.25× ratio) discrete scale. Body 14px, two below + four
    * above. Tabular numerals enforced on numeric cells. */
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Legacy aliases used by older selectors in styles.css before token
+   * unification — keep these so existing rules continue to resolve. */
+  --sans:         var(--font-sans);
+  --mono:         var(--font-mono);
 
   --fs-xs:  11px;  /* labels, badges */
   --fs-sm:  12px;  /* metadata, footers */

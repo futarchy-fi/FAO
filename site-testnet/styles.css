@@ -1,22 +1,10 @@
-/* FAO — Futarchy Autonomous Optimizer */
-
-:root {
-  --bg: #0d0f14;
-  --bg-alt: #111520;
-  --card: #141720;
-  --card-hover: #1a1e2a;
-  --border: #1e2230;
-  --accent: #3effb0;
-  --accent-dim: rgba(62, 255, 176, 0.15);
-  --accent-glow: rgba(62, 255, 176, 0.25);
-  --text: #e0e4ec;
-  --text-muted: #8892a4;
-  --text-dim: #5a6478;
-  --danger: #ff5c5c;
-  --warn: #ffb347;
-  --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
-  --sans: 'Inter', system-ui, -apple-system, sans-serif;
-}
+/* FAO — Futarchy Arbitration Organization (testnet UI).
+ *
+ * Design tokens live in `tokens.css` (loaded BEFORE this file in every
+ * page). This file consumes them via `var(--name)`; do NOT re-declare
+ * `:root` here — that override was what kept tokens.css dead-letter
+ * before today. T1.D6 (visual hierarchy + minimalism) requires a single
+ * source of truth for color / spacing / type; this is the contract. */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -164,22 +152,39 @@ a:hover { text-decoration: underline; }
 
 .btn-primary {
   background: var(--accent);
-  color: #0d0f14;
+  color: var(--accent-fg);
   border-color: var(--accent);
 }
 
 .btn-primary:hover {
-  background: #2de8a0;
+  background: var(--accent-hover);
   text-decoration: none;
 }
 
 .btn-secondary {
   background: transparent;
   color: var(--text);
+  border-color: var(--border);
 }
 
 .btn-secondary:hover {
-  background: var(--card);
+  background: var(--card-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* Tertiary / ghost — used when a page has multiple call-outs but only one
+ * deserves visual primacy. Keeps T1.D1's "≤2 primary per visible viewport"
+ * rule enforceable. */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
   text-decoration: none;
 }
 
