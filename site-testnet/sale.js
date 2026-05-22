@@ -128,12 +128,26 @@
   function wireControls() {
     const buyAmt   = $$('#trade-buy-amount');
     const sellAmt  = $$('#trade-sell-amount');
-    if (buyAmt)   buyAmt.addEventListener('input', updateBuyCost);
-    if (sellAmt)  sellAmt.addEventListener('input', updateSellQuote);
+    setPrimaryTradeSide('buy');
+    if (buyAmt) {
+      buyAmt.addEventListener('focus', () => setPrimaryTradeSide('buy'));
+      buyAmt.addEventListener('input', () => {
+        setPrimaryTradeSide('buy');
+        updateBuyCost();
+      });
+    }
+    if (sellAmt) {
+      sellAmt.addEventListener('focus', () => setPrimaryTradeSide('sell'));
+      sellAmt.addEventListener('input', () => {
+        setPrimaryTradeSide('sell');
+        updateSellQuote();
+      });
+    }
 
     document.querySelectorAll('[data-qb-amt]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (!buyAmt) return;
+        setPrimaryTradeSide('buy');
         buyAmt.value = btn.dataset.qbAmt;
         updateBuyCost();
       });
@@ -141,6 +155,7 @@
     document.querySelectorAll('[data-qs-pct]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (!sellAmt) return;
+        setPrimaryTradeSide('sell');
         const pct = Number(btn.dataset.qsPct);
         // % of the user's token balance (whole-tokens).
         const wholeTokens = Number(ethers.formatUnits(ctx.userBalance, 18));
@@ -154,8 +169,8 @@
     const sellBtn = $$('#trade-sell-rq-btn');
     const uniBuyBtn  = $$('#trade-buy-uni-btn');
     const uniSellBtn = $$('#trade-sell-uni-btn');
-    if (buyBtn)     buyBtn.addEventListener('click', onBuyPreview);
-    if (sellBtn)    sellBtn.addEventListener('click', onRagequitPreview);
+    if (buyBtn)     buyBtn.addEventListener('click', () => { setPrimaryTradeSide('buy'); onBuyPreview(); });
+    if (sellBtn)    sellBtn.addEventListener('click', () => { setPrimaryTradeSide('sell'); onRagequitPreview(); });
     if (uniBuyBtn)  uniBuyBtn.addEventListener('click', onUniBuyPreview);
     if (uniSellBtn) uniSellBtn.addEventListener('click', onUniSellPreview);
 
@@ -163,6 +178,19 @@
     const goBtn = $$('#sale-confirm-go');
     if (cancelBtn) cancelBtn.addEventListener('click', closeConfirmCard);
     if (goBtn) goBtn.addEventListener('click', onConfirmExecute);
+  }
+
+  function setPrimaryTradeSide(side) {
+    const buyBtn = $$('#trade-buy-sale-btn');
+    const sellBtn = $$('#trade-sell-rq-btn');
+    if (!buyBtn || !sellBtn) return;
+    const buyPrimary = side !== 'sell';
+    buyBtn.classList.toggle('trade-btn-primary', buyPrimary);
+    buyBtn.classList.toggle('trade-btn-secondary', !buyPrimary);
+    buyBtn.setAttribute('aria-current', buyPrimary ? 'true' : 'false');
+    sellBtn.classList.toggle('trade-btn-primary', !buyPrimary);
+    sellBtn.classList.toggle('trade-btn-secondary', buyPrimary);
+    sellBtn.setAttribute('aria-current', buyPrimary ? 'false' : 'true');
   }
 
   function setStatus(text, kind) {
