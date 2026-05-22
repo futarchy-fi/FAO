@@ -22,7 +22,9 @@ normalizes only those compiler/deployment-specific regions:
 - embedded IPFS metadata hashes inside child creation bytecode literals.
 
 After that normalization, the checker compares the remaining runtime bytes with
-`cast keccak` and reads live bytecode with `cast code`.
+`cast keccak` and reads live bytecode with `cast code`. The checker aggregates
+all active contract results before exiting, so one drifted contract cannot hide
+later active contracts.
 
 Run the bytecode coupling check with:
 
@@ -53,6 +55,10 @@ argument and immutable. The checker reports:
   `0xf4e6a1f72c186d7cb2d3670a9d188ce124d78582754bdff36b2f9d3bb2ac241f`
 
 This is real source-vs-deploy drift, not a nondeterministic artifact issue.
+The same checker continues past this mismatch and currently proves
+`active.uniswap_v3_liquidity_adapter` at
+`0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A` with normalized hash
+`0xa1ebe396f634c5907766cccff674e3e341276591e49823311009e927ce095464`.
 Do not skip or bless this mismatch. To make the coupling gate green again,
 redeploy the active registry/deployer set from current source and update
 `deployments.json` + `site-testnet/deployments.json`, or revert the source

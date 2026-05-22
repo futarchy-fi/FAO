@@ -115,41 +115,72 @@ function keccak(bytes) {
   return execHex(CAST, ['keccak', hexFromBytes(bytes)]);
 }
 
+function checkActiveContract(manifest, item) {
+  const address = manifest.active[item.key];
+  if (address === null && item.optionalNull) {
+    console.error(`[skip] active.${item.key} is null by manifest contract`);
+    return null;
+  }
+  if (!address) throw new Error(`missing active.${item.key}`);
+
+  const artifact = JSON.parse(fs.readFileSync(path.join(ROOT, item.artifact), 'utf8'));
+  const localRuntime = artifact.deployedBytecode.object;
+  const onchainRuntime = execHex(CAST, ['code', address, '--rpc-url', RPC_URL]);
+  if (onchainRuntime === '0x') throw new Error(`active.${item.key} has no bytecode at ${address}`);
+
+  const immutableReferences = artifact.deployedBytecode.immutableReferences || {};
+  const localHash = keccak(normalizedRuntime(localRuntime, immutableReferences));
+  const onchainHash = keccak(normalizedRuntime(onchainRuntime, immutableReferences));
+
+  if (localHash !== onchainHash) {
+    return {
+      item,
+      address,
+      localHash,
+      onchainHash,
+    };
+  }
+
+  console.error(`[ok] active.${item.key} ${address} ${localHash}`);
+  return null;
+}
+
 function main() {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'deployments.json'), 'utf8'));
+  const failures = [];
 
   for (const item of ACTIVE_CONTRACTS) {
-    const address = manifest.active[item.key];
-    if (address === null && item.optionalNull) {
-      console.error(`[skip] active.${item.key} is null by manifest contract`);
-      continue;
+    try {
+      const failure = checkActiveContract(manifest, item);
+      if (failure) failures.push(failure);
+    } catch (error) {
+      failures.push({ item, error });
     }
-    if (!address) throw new Error(`missing active.${item.key}`);
-
-    const artifact = JSON.parse(fs.readFileSync(path.join(ROOT, item.artifact), 'utf8'));
-    const localRuntime = artifact.deployedBytecode.object;
-    const onchainRuntime = execHex(CAST, ['code', address, '--rpc-url', RPC_URL]);
-    if (onchainRuntime === '0x') throw new Error(`active.${item.key} has no bytecode at ${address}`);
-
-    const immutableReferences = artifact.deployedBytecode.immutableReferences || {};
-    const localHash = keccak(normalizedRuntime(localRuntime, immutableReferences));
-    const onchainHash = keccak(normalizedRuntime(onchainRuntime, immutableReferences));
-
-    if (localHash !== onchainHash) {
-      throw new Error(
-        [
-          `bytecode mismatch for active.${item.key} (${item.contract}) at ${address}`,
-          `local normalized hash:   ${localHash}`,
-          `on-chain normalized hash:${onchainHash}`,
-        ].join('\n')
-      );
-    }
-
-    console.error(`[ok] active.${item.key} ${address} ${localHash}`);
   }
 
   if (!manifest.active.operator) throw new Error('missing active.operator');
   console.error(`[skip] active.operator ${manifest.active.operator} is an EOA, not bytecode`);
+
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      if (failure.error) {
+        console.error(
+          `bytecode check error for active.${failure.item.key} (${failure.item.contract}): ${
+            failure.error && failure.error.message ? failure.error.message : failure.error
+          }`
+        );
+        continue;
+      }
+      console.error(
+        [
+          `bytecode mismatch for active.${failure.item.key} (${failure.item.contract}) at ${failure.address}`,
+          `local normalized hash:   ${failure.localHash}`,
+          `on-chain normalized hash:${failure.onchainHash}`,
+        ].join('\n')
+      );
+    }
+    throw new Error(`${failures.length} active contract bytecode check(s) failed`);
+  }
 
   process.stdout.write(`0x${'0'.repeat(63)}1`);
 }
