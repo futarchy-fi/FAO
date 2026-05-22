@@ -15,6 +15,8 @@ Standalone static site for the Sepolia v0 deployment.
 - `tokens.css` — design tokens (colors, spacing, type-scale, motion).
 - `styles.css` — component CSS. Consumes `tokens.css`; does NOT
   re-declare `:root`.
+- `minimalism-audit.md` — type, shadow, gradient, and literal-color
+  inventory for the testnet UI.
 - `deployments.json` — **copy** of `../deployments.json`. CI
   (`scripts/check-deployments-sync.sh`) rejects drift.
 - `CNAME` — `testnet.fao.futarchy.ai`.
