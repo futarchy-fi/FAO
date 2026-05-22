@@ -165,6 +165,10 @@ async function injectAnvilWallet(page) {
             emit('chainChanged', '0xaa36a7');
             return null;
           }
+          if (method === 'eth_estimateGas') {
+            const gas = BigInt(await rpc(method, params));
+            return `0x${((gas * 140n) / 100n + 100_000n).toString(16)}`;
+          }
           return await rpc(method, params);
         },
         enable: async () => [nextAccount],

@@ -68,3 +68,9 @@
 [2026-05-22T14:31:34-03:00] F3-ragequit happy path now passes against the persistent Anvil fork: the spec creates a fresh instance through the UI, buys 2 tokens, ragequits 1, and asserts token balance, totalSupply, and sale ETH deltas. Command: npm run e2e -- --project=wallet --grep "F3-ragequit happy path" -> 1 passed.
 
 [2026-05-22T14:31:46-03:00] Targeted Forge verification for F3 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
+
+[2026-05-22T14:32:04-03:00] Committed F3 ragequit wallet path as d1ecb53. Continuing to F6-create-proposal with the shared Anvil wallet fixture.
+
+[2026-05-22T14:38:52-03:00] F6-create-proposal happy path now passes against the persistent Anvil fork: the spec creates a fresh instance through the UI, submits a proposal through the proposals page, buffers Anvil gas estimates to avoid exact-estimate OOG, and asserts factory.marketsCount() plus proposals(index). Command: npm run e2e -- --project=wallet --grep "F6-create-proposal happy path" -> 1 passed.
+
+[2026-05-22T14:39:25-03:00] Targeted Forge verification for F6 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
