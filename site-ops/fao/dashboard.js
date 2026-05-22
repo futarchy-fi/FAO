@@ -18,7 +18,12 @@ const TOPICS = [
 const TARGET = 8.0;
 
 async function loadTopic(id) {
-  const r = await fetch(`../evaluations/topic-${id}-evals.jsonl`, { cache: 'no-cache' });
+  // Pages-relative path: the deployed dashboard lives at /fao/index.html
+  // with JSONL files at /fao/evaluations/. The dev-mode local dashboard at
+  // audit/dashboard/ also has evaluations at audit/evaluations/ — both
+  // resolve via this relative URL when served from /fao/ (or audit/).
+  const url = new URL(`evaluations/topic-${id}-evals.jsonl`, document.baseURI).toString();
+  const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) return [];
   const txt = await r.text();
   return txt.trim().split('\n').filter(Boolean).map((l) => {
