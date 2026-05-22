@@ -161,6 +161,17 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
 }
 
+.tx-confirm-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.tx-confirm-primary:hover {
+  background: var(--accent-hover);
+  text-decoration: none;
+}
+
 .btn-secondary {
   background: transparent;
   color: var(--text);
