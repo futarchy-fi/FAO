@@ -47,6 +47,24 @@ function shortAddr(value) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
+async function expectAddressLink(locator, expected) {
+  await expect(locator).toHaveCount(1);
+
+  const href = await locator.getAttribute('href');
+  const hrefAddress = href?.match(/0x[a-fA-F0-9]{40}/)?.[0];
+  expect(checksum(hrefAddress), `link href must point at ${expected}`).toBe(expected);
+
+  const text = (await locator.textContent())?.trim() || '';
+  if (/^0x[a-fA-F0-9]{40}$/.test(text)) {
+    expect(checksum(text), `visible full address must equal ${expected}`).toBe(expected);
+  } else {
+    expect(text, `visible compact address must equal ${shortAddr(expected)}`).toBe(shortAddr(expected));
+  }
+
+  const title = await locator.getAttribute('title');
+  if (title) expect(checksum(title), `title address must equal ${expected}`).toBe(expected);
+}
+
 function field(raw, name, index) {
   return raw?.[name] ?? raw?.[index];
 }
@@ -107,9 +125,7 @@ test.describe('deployment coupling - read-only live site', () => {
 
     const tokenLink = page.locator('#sale-addr-table-token a');
     const saleLink = page.locator('#sale-addr-table-sale a');
-    await expect(tokenLink).toContainText(shortAddr(expected.token));
-    await expect(tokenLink).toHaveAttribute('title', expected.token);
-    await expect(saleLink).toContainText(shortAddr(expected.sale));
-    await expect(saleLink).toHaveAttribute('title', expected.sale);
+    await expectAddressLink(tokenLink, expected.token);
+    await expectAddressLink(saleLink, expected.sale);
   });
 });
