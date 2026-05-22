@@ -21,10 +21,12 @@ import {IWrapped1155FactoryLike} from "./interfaces/IWrapped1155FactoryLike.sol"
 /// or a parameterized arbitration; in practice it's only invoked by the
 /// registry inside `createFutarchy`.
 contract TokenAndArbitrationDeployer {
-    function deployToken(string calldata name, string calldata symbol, address admin, uint256 initialSupply)
-        external
-        returns (address)
-    {
+    function deployToken(
+        string calldata name,
+        string calldata symbol,
+        address admin,
+        uint256 initialSupply
+    ) external returns (address) {
         return address(new GenericFutarchyToken(name, symbol, admin, initialSupply));
     }
 
@@ -78,10 +80,18 @@ contract TokenAndArbitrationDeployer {
 /// Returned addresses are wired together in the registry (it sets the
 /// orchestrator on the resolver).
 contract FutarchyStackDeployer {
+    bool public immutable ADAPTER_REPLACEABLE;
+
     struct Deployed {
         address resolver;
         address factory;
         address orchestrator;
+    }
+
+    /// @param adapterReplaceable true preserves Sepolia hot-swap behavior; false is the
+    /// mainnet Step A posture from audit/specs/SECURITY.md.
+    constructor(bool adapterReplaceable) {
+        ADAPTER_REPLACEABLE = adapterReplaceable;
     }
 
     function deployStack(
@@ -110,7 +120,8 @@ contract FutarchyStackDeployer {
             weth,
             feeTier,
             observationCardinality,
-            IFAOFutarchyTwapResolver(address(resolver))
+            IFAOFutarchyTwapResolver(address(resolver)),
+            ADAPTER_REPLACEABLE
         );
 
         out.resolver = address(resolver);

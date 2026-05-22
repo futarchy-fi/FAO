@@ -32,6 +32,8 @@ import {IWrapped1155FactoryLike} from "../src/interfaces/IWrapped1155FactoryLike
 ///   FEE_TIER               — UniV3 fee tier hundredths of bps (default: 500)
 ///   OBSERVATION_CARDINALITY — observation buffer warmup size (default: 100)
 ///   DEPLOY_PROPOSAL_IMPL   — if "1", deploy a new proposal impl too (default: 0)
+///   ADAPTER_REPLACEABLE    — "1" keeps Sepolia hot-swap mode; mainnet must set "0"
+///                            per audit/specs/SECURITY.md Step A (default: 1)
 ///
 /// Usage:
 ///   forge script script/DeployFutarchyRegistry.s.sol \
@@ -63,6 +65,7 @@ contract DeployFutarchyRegistry is Script {
         uint16 cardinality =
             uint16(vm.envOr("OBSERVATION_CARDINALITY", uint256(DEFAULT_OBSERVATION_CARDINALITY)));
         bool deployFreshImpl = vm.envOr("DEPLOY_PROPOSAL_IMPL", uint256(0)) == 1;
+        bool adapterReplaceable = vm.envOr("ADAPTER_REPLACEABLE", uint256(1)) == 1;
 
         console2.log("=== Deployer ===");
         console2.log("deployer:", deployer);
@@ -73,6 +76,7 @@ contract DeployFutarchyRegistry is Script {
         console2.log("UniV3 Factory:", uniFactoryAddr);
         console2.log("FeeTier:", feeTier);
         console2.log("ObservationCardinality:", cardinality);
+        console2.log("AdapterReplaceable:", adapterReplaceable);
 
         vm.startBroadcast(pk);
 
@@ -87,7 +91,7 @@ contract DeployFutarchyRegistry is Script {
         TokenAndArbitrationDeployer tokenArbDeployer = new TokenAndArbitrationDeployer();
         console2.log("TokenAndArbitrationDeployer:", address(tokenArbDeployer));
 
-        FutarchyStackDeployer stackDeployer = new FutarchyStackDeployer();
+        FutarchyStackDeployer stackDeployer = new FutarchyStackDeployer(adapterReplaceable);
         console2.log("FutarchyStackDeployer:", address(stackDeployer));
 
         FutarchyRegistry registry = new FutarchyRegistry(

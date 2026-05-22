@@ -5,7 +5,10 @@ import {Script, console2} from "forge-std/Script.sol";
 
 import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {FutarchyRegistry} from "../src/FutarchyRegistry.sol";
-import {TokenAndArbitrationDeployer, FutarchyStackDeployer} from "../src/FutarchyRegistryDeployers.sol";
+import {
+    TokenAndArbitrationDeployer,
+    FutarchyStackDeployer
+} from "../src/FutarchyRegistryDeployers.sol";
 import {IConditionalTokensLike} from "../src/interfaces/IConditionalTokensLike.sol";
 import {IWrapped1155FactoryLike} from "../src/interfaces/IWrapped1155FactoryLike.sol";
 import {IUniswapV3FactoryLike} from "../src/interfaces/IUniswapV3FactoryLike.sol";
@@ -17,8 +20,8 @@ contract DeployFutarchyRegistryV3 is Script {
     address internal constant W1155 = 0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
     address internal constant UNIV3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c;
 
-    uint24  internal constant FEE_TIER = 500;
-    uint16  internal constant OBS_CARDINALITY = 30;
+    uint24 internal constant FEE_TIER = 500;
+    uint16 internal constant OBS_CARDINALITY = 30;
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -30,7 +33,7 @@ contract DeployFutarchyRegistryV3 is Script {
         TokenAndArbitrationDeployer tokArb = new TokenAndArbitrationDeployer();
         console2.log("tokArbDeployer:", address(tokArb));
 
-        FutarchyStackDeployer stack = new FutarchyStackDeployer();
+        FutarchyStackDeployer stack = new FutarchyStackDeployer(true);
         console2.log("stackDeployer:", address(stack));
 
         FutarchyRegistry registry = new FutarchyRegistry(

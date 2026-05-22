@@ -29,9 +29,10 @@ In-flight redeployments captured in `audit/wiki/10-fao-repo/deployment-history.m
 
 ### 1.3 Replaceable adapter (exception)
 
-`FAOOfficialProposalOrchestrator.setAdapter(...)` is admin-replaceable (was one-shot until commit `d315e57`). This is a deliberate testnet hot-swap path for adapter bugs. **Mainnet must restore the one-shot guard** before launch.
-
-Tracked: PR-TODO #SEC-01 (mainnet hardening) — see §5.
+`FAOOfficialProposalOrchestrator.setAdapter(...)` is admin-replaceable only when the constructor's
+`ADAPTER_REPLACEABLE` flag is true. This is the deliberate Sepolia/testnet hot-swap path for
+adapter bugs. Mainnet deployments must pass `ADAPTER_REPLACEABLE = false`, which restores the
+one-shot `AdapterAlreadySet` guard.
 
 ### 1.4 Per-instance permissions table
 
@@ -85,9 +86,23 @@ Drift between these three is a known T5.D5 (maintainability) gap. Phase 6 plan: 
 
 Each step is a discrete PR; landing them in order moves T5.D2 from 2.0 toward 8.0.
 
+### Mainnet migration executable checklist
+
+| Step | Mainnet requirement | Executable artifact | Current operator action |
+|---|---|---|---|
+| A | Adapter wiring is one-shot before launch. | `src/FAOOfficialProposalOrchestrator.sol` (`ADAPTER_REPLACEABLE = false`) + `test/FAOOfficialProposalOrchestrator.t.sol::test_setAdapter_isOneShotWhenMainnetMode`. | Deploy registry/stack scripts with `ADAPTER_REPLACEABLE=0`. |
+| B | DEFAULT_ADMIN_ROLE moves from deployer EOA to Safe/multisig where the current surface supports AccessControl. | `script/MigrateToMultisig.s.sol` + `test/MigrateToMultisig.t.sol`. | Choose the Safe address and pass AccessControl targets; immutable-admin/Ownable surfaces require the next registry constructor revision. |
+| C | Privileged writes route through a one-day timelock. | `src/FAOTimelock.sol` + `test/FAOTimelock.t.sol`. | Deploy the timelock after Step B chooses the Safe and record it as `deployments.json::active.timelock`. |
+| D | Stale DEFAULT_ADMIN_ROLE holders can be revoked publicly after a grace period. | `src/FAORenewableAdmin.sol` + `test/FAORenewableAdmin.t.sol`. | Inherit this sketch in the next AccessControl admin-surface revision before mainnet. |
+| E | Every active contract address is Etherscan source-verified. | `scripts/check-etherscan-verified.sh` + `.github/workflows/static-analysis.yml`. | Verify current v5 active contracts, then remove their full-address entries from `deployments.json::verification_todo`. |
+
 ### Step A — Reapply one-shot `setAdapter` guard
 
-Reintroduce the `if (adapter != 0) revert AdapterAlreadySet();` check before mainnet. The testnet hot-swap escape is testnet-only.
+`FAOOfficialProposalOrchestrator` now has an explicit `ADAPTER_REPLACEABLE` constructor mode.
+When the flag is false, the second `setAdapter(...)` call reverts with `AdapterAlreadySet`; when
+the flag is true, Sepolia/testnet keeps the hot-swap escape. `script/DeployFutarchyRegistry.s.sol`
+exposes this as `ADAPTER_REPLACEABLE`, defaulting to `1` for current Sepolia ergonomics. Mainnet
+deployments must set `ADAPTER_REPLACEABLE=0`.
 
 **Lift:** T5.D2 +0.5.
 
@@ -118,7 +133,11 @@ Wrap each privileged write in a `TimelockController.schedule(...)` queue before 
 
 ### Step D — Renounce-by-default
 
-After a configurable grace period post-deploy, any creator who does NOT actively renew their admin can lose `DEFAULT_ADMIN_ROLE` automatically via a public `renounceIfStale()` function. Forces hot keys to either rotate or relinquish.
+`src/FAORenewableAdmin.sol` is the executable sketch for this rule. It tracks a renewal timestamp
+for each `DEFAULT_ADMIN_ROLE` holder; after `ADMIN_RENEWAL_GRACE_PERIOD`, anyone can call
+`renounceIfStale(account)` to revoke that stale default admin. Existing v5 immutable-admin
+contracts cannot be retrofitted safely, so this must be inherited by the next registry/admin-surface
+revision before mainnet.
 
 **Lift:** T5.D2 +0.5.
 
@@ -199,7 +218,7 @@ When (not if) we rotate the operator key on testnet:
 
 ## How this might be wrong
 
-- Step B's multisig integration is theoretical until a Safe is actually wired into the registry. Mainnet may need different ergonomics.
+- Step B's multisig integration is executable for AccessControl surfaces but still depends on a chosen Safe address. Immutable-admin and Ownable surfaces need the next constructor/registry revision.
 - Step C's one-day delay is an executable target, not an empirically validated governance parameter. The right value still depends on the off-chain governance loop, which doesn't exist yet.
 - The incident-response section assumes the operator notices the compromise. There's no automated detection — that's part of Topic 5 D4 (operator surface readiness).
 - The runbook for testnet rotation is currently destructive (redeploy registry). Future passes should add an `acceptAdmin` flow per contract to make rotation cheap.

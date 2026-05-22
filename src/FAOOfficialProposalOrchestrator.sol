@@ -54,6 +54,7 @@ contract FAOOfficialProposalOrchestrator {
     uint24 public immutable FEE_TIER;
     uint16 public immutable OBSERVATION_CARDINALITY;
     IFAOFutarchyTwapResolver public immutable RESOLVER;
+    bool public immutable ADAPTER_REPLACEABLE;
 
     /// @notice Optional liquidity migration adapter. If unset, no liquidity migration
     /// happens at promote time (useful for early testnet runs where pools start empty).
@@ -89,11 +90,14 @@ contract FAOOfficialProposalOrchestrator {
         address currencyToken,
         uint24 feeTier,
         uint16 observationCardinality,
-        IFAOFutarchyTwapResolver resolver
+        IFAOFutarchyTwapResolver resolver,
+        bool adapterReplaceable
     ) {
         if (admin == address(0)) revert NotAdmin();
         if (spotPool == address(0)) revert InvalidSpotPool();
-        if (companyToken == address(0) || currencyToken == address(0)) revert InvalidProposalTokens();
+        if (companyToken == address(0) || currencyToken == address(0)) {
+            revert InvalidProposalTokens();
+        }
         ADMIN = admin;
         FACTORY = factory;
         UNIV3_FACTORY = univ3Factory;
@@ -103,11 +107,16 @@ contract FAOOfficialProposalOrchestrator {
         FEE_TIER = feeTier;
         OBSERVATION_CARDINALITY = observationCardinality;
         RESOLVER = resolver;
+        ADAPTER_REPLACEABLE = adapterReplaceable;
     }
 
-    /// @notice Wire (or replace) the liquidity adapter. Admin-only; testnet v0 keeps
-    /// this swappable so we can patch adapter bugs without rebuilding the full stack.
+    /// @notice Wire the liquidity adapter. Mainnet deployments set `ADAPTER_REPLACEABLE`
+    /// false so this path is one-shot; testnet deployments may keep the hot-swap escape.
+    /// @custom:security Step A in audit/specs/SECURITY.md.
     function setAdapter(IFAOLiquidityAdapter newAdapter) external onlyAdmin {
+        if (!ADAPTER_REPLACEABLE && address(adapter) != address(0)) {
+            revert AdapterAlreadySet();
+        }
         adapter = newAdapter;
         emit AdapterSet(address(newAdapter));
     }
@@ -132,12 +141,13 @@ contract FAOOfficialProposalOrchestrator {
 
         // Phase 2: deterministic factory call. questionId derives from block.prevrandao.
         proposalId = FACTORY.marketsCount();
-        FAOFutarchyFactory.CreateProposalParams memory params = FAOFutarchyFactory.CreateProposalParams({
-            marketName: marketName,
-            description: description,
-            collateralToken1: COMPANY_TOKEN,
-            collateralToken2: CURRENCY_TOKEN
-        });
+        FAOFutarchyFactory.CreateProposalParams memory params =
+            FAOFutarchyFactory.CreateProposalParams({
+                marketName: marketName,
+                description: description,
+                collateralToken1: COMPANY_TOKEN,
+                collateralToken2: CURRENCY_TOKEN
+            });
         proposal = FACTORY.createProposal(params);
 
         // Phase 3: derive the 4 wrappers from the proposal.
@@ -153,14 +163,17 @@ contract FAOOfficialProposalOrchestrator {
         IUniswapV3PoolLike(noPool).increaseObservationCardinalityNext(OBSERVATION_CARDINALITY);
 
         // Phase 6: bind resolver (sets anchor for TWAP window).
-        RESOLVER.bindProposal(proposal, yesPool, noPool, COMPANY_TOKEN, CURRENCY_TOKEN, anchorTimestamp);
+        RESOLVER.bindProposal(
+            proposal, yesPool, noPool, COMPANY_TOKEN, CURRENCY_TOKEN, anchorTimestamp
+        );
 
         // Phase 7: optional liquidity migration via adapter.
         if (address(adapter) != address(0)) {
             adapter.migrate(proposal, yesPool, noPool, SPOT_POOL, sqrtPriceX96);
         }
 
-        // Phase 8: pay builder tip (conditional on full success — only opcode after this is emit).
+        // Phase 8: pay builder tip (conditional on full success — only opcode after this is
+        // emit).
         if (builderTip > 0) {
             // payable() cast is safe: block.coinbase is an EOA on Ethereum mainnet/Sepolia.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -178,7 +191,8 @@ contract FAOOfficialProposalOrchestrator {
         );
     }
 
-    // ─── views / helpers ────────────────────────────────────────────────────
+    // ─── views / helpers
+    // ────────────────────────────────────────────────────
 
     /// @notice Returns the spot pool's current sqrtPriceX96 in
     /// "currency per company" orientation.
@@ -210,7 +224,8 @@ contract FAOOfficialProposalOrchestrator {
         int24 /* spotTick */
     ) internal returns (address pool) {
         pool = UNIV3_FACTORY.getPool(companyWrap, currencyWrap, FEE_TIER);
-        uint160 sqrtToInit = _sqrtForOrderedPair(companyWrap, currencyWrap, sqrtCurrencyPerCompanyX96);
+        uint160 sqrtToInit =
+            _sqrtForOrderedPair(companyWrap, currencyWrap, sqrtCurrencyPerCompanyX96);
 
         if (pool == address(0)) {
             pool = UNIV3_FACTORY.createPool(companyWrap, currencyWrap, FEE_TIER);
@@ -232,11 +247,11 @@ contract FAOOfficialProposalOrchestrator {
     /// @dev Translate "currency per company" sqrt price into the pool's native orientation.
     /// Pool token0/token1 is determined by address ordering: token0 = min(a,b).
     /// Pool sqrt is sqrt(token1/token0).
-    function _sqrtForOrderedPair(address companyWrap, address currencyWrap, uint160 sqrtCurrencyPerCompanyX96)
-        internal
-        pure
-        returns (uint160)
-    {
+    function _sqrtForOrderedPair(
+        address companyWrap,
+        address currencyWrap,
+        uint160 sqrtCurrencyPerCompanyX96
+    ) internal pure returns (uint160) {
         // If company sorts first → token0 = company, token1 = currency
         //   → pool sqrt = sqrt(currency/company) = sqrtCurrencyPerCompanyX96.
         // Else → token0 = currency → pool sqrt = sqrt(company/currency) = 1/sqrtPriceX96.

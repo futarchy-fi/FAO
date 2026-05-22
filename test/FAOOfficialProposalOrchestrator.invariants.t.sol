@@ -512,7 +512,8 @@ contract FAOOfficialProposalOrchestratorInvariants is StdInvariant, Test {
             address(currency),
             FEE,
             OBSERVATION_CARDINALITY,
-            resolver
+            resolver,
+            true
         );
 
         OrchestratorInvariantNoopAdapter goodAdapter = new OrchestratorInvariantNoopAdapter();

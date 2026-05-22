@@ -7,13 +7,17 @@ import {console2} from "forge-std/console2.sol";
 import {FAOFutarchyFactory} from "../../src/FAOFutarchyFactory.sol";
 import {FAOFutarchyProposal} from "../../src/FAOFutarchyProposal.sol";
 import {FAOTwapResolver} from "../../src/FAOTwapResolver.sol";
-import {FAOOfficialProposalOrchestrator, IFAOLiquidityAdapter} from "../../src/FAOOfficialProposalOrchestrator.sol";
+import {
+    FAOOfficialProposalOrchestrator,
+    IFAOLiquidityAdapter
+} from "../../src/FAOOfficialProposalOrchestrator.sol";
 import {IConditionalTokensLike} from "../../src/interfaces/IConditionalTokensLike.sol";
 import {IWrapped1155FactoryLike} from "../../src/interfaces/IWrapped1155FactoryLike.sol";
 import {IUniswapV3FactoryLike} from "../../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../../src/interfaces/IUniswapV3PoolLike.sol";
 
-// ─── shared mocks (mirror the per-component test mocks) ────────────────────
+// ─── shared mocks (mirror the per-component test mocks)
+// ────────────────────
 
 contract MockCTF is IConditionalTokensLike {
     mapping(bytes32 => uint256) public slots;
@@ -25,7 +29,9 @@ contract MockCTF is IConditionalTokensLike {
         return payouts[cid][i];
     }
 
-    function payoutDenominator(bytes32 cid) external view returns (uint256) { return denom[cid]; }
+    function payoutDenominator(bytes32 cid) external view returns (uint256) {
+        return denom[cid];
+    }
 
     function prepareCondition(address oracle, bytes32 qId, uint256 n) external {
         bytes32 cid = getConditionId(oracle, qId, n);
@@ -36,7 +42,10 @@ contract MockCTF is IConditionalTokensLike {
     function reportPayouts(bytes32 qId, uint256[] calldata p) external {
         bytes32 cid = getConditionId(msg.sender, qId, p.length);
         require(denom[cid] == 0);
-        uint256 s; for (uint i; i < p.length; i++) s += p[i];
+        uint256 s;
+        for (uint256 i; i < p.length; i++) {
+            s += p[i];
+        }
         payouts[cid] = p;
         denom[cid] = s;
     }
@@ -44,18 +53,31 @@ contract MockCTF is IConditionalTokensLike {
     function getConditionId(address oracle, bytes32 qId, uint256 n) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(oracle, qId, n));
     }
-    function getCollectionId(bytes32 parent, bytes32 cid, uint256 idx) external pure returns (bytes32) {
+
+    function getCollectionId(bytes32 parent, bytes32 cid, uint256 idx)
+        external
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encodePacked(parent, cid, idx));
     }
+
     function getPositionId(address c, bytes32 col) external pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(c, col)));
     }
-    function getOutcomeSlotCount(bytes32 cid) external view returns (uint256) { return slots[cid]; }
+
+    function getOutcomeSlotCount(bytes32 cid) external view returns (uint256) {
+        return slots[cid];
+    }
 }
 
 contract MockW1155 is IWrapped1155FactoryLike {
     mapping(bytes32 => address) public wrapped;
-    function requireWrapped1155(address mt, uint256 id, bytes calldata data) external returns (address) {
+
+    function requireWrapped1155(address mt, uint256 id, bytes calldata data)
+        external
+        returns (address)
+    {
         bytes32 s = keccak256(abi.encodePacked(mt, id, data));
         if (wrapped[s] == address(0)) {
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -67,7 +89,10 @@ contract MockW1155 is IWrapped1155FactoryLike {
 
 contract MockERC20 {
     string public symbol;
-    constructor(string memory s) { symbol = s; }
+
+    constructor(string memory s) {
+        symbol = s;
+    }
 }
 
 contract MockUniV3Pool is IUniswapV3PoolLike {
@@ -78,21 +103,48 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
     int24 public twapTick;
     uint16 public cardinality;
 
-    constructor(address a, address b, uint24 f) { t0_ = a; t1_ = b; _fee = f; }
+    constructor(address a, address b, uint24 f) {
+        t0_ = a;
+        t1_ = b;
+        _fee = f;
+    }
 
-    function token0() external view returns (address) { return t0_; }
-    function token1() external view returns (address) { return t1_; }
-    function fee() external view returns (uint24) { return _fee; }
+    function token0() external view returns (address) {
+        return t0_;
+    }
+
+    function token1() external view returns (address) {
+        return t1_;
+    }
+
+    function fee() external view returns (uint24) {
+        return _fee;
+    }
+
     function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
         return (sqrtPriceX96, twapTick, 0, 1, cardinality, 0, true);
     }
-    function initialize(uint160 s) external { require(sqrtPriceX96 == 0); sqrtPriceX96 = s; }
-    function increaseObservationCardinalityNext(uint16 n) external { cardinality = n; }
-    function mint(address, int24, int24, uint128, bytes calldata) external pure returns (uint256, uint256) {
+
+    function initialize(uint160 s) external {
+        require(sqrtPriceX96 == 0);
+        sqrtPriceX96 = s;
+    }
+
+    function increaseObservationCardinalityNext(uint16 n) external {
+        cardinality = n;
+    }
+
+    function mint(address, int24, int24, uint128, bytes calldata)
+        external
+        pure
+        returns (uint256, uint256)
+    {
         return (0, 0);
     }
 
-    function setTwapTick(int24 t) external { twapTick = t; }
+    function setTwapTick(int24 t) external {
+        twapTick = t;
+    }
 
     function observe(uint32[] calldata secondsAgos)
         external
@@ -101,7 +153,7 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
     {
         tickCums = new int56[](secondsAgos.length);
         liqCums = new uint160[](secondsAgos.length);
-        for (uint i; i < secondsAgos.length; i++) {
+        for (uint256 i; i < secondsAgos.length; i++) {
             uint256 t = 1_000_000 - uint256(secondsAgos[i]);
             // forge-lint: disable-next-line(unsafe-typecast)
             tickCums[i] = int56(int256(twapTick) * int256(t));
@@ -111,17 +163,23 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
 
 contract MockUniV3Factory is IUniswapV3FactoryLike {
     mapping(address => mapping(address => mapping(uint24 => address))) public pools;
+
     function getPool(address a, address b, uint24 f) external view returns (address) {
         (address t0, address t1) = a < b ? (a, b) : (b, a);
         return pools[t0][t1][f];
     }
+
     function createPool(address a, address b, uint24 f) external returns (address pool) {
         (address t0, address t1) = a < b ? (a, b) : (b, a);
         require(pools[t0][t1][f] == address(0));
         pool = address(new MockUniV3Pool(t0, t1, f));
         pools[t0][t1][f] = pool;
     }
-    function preCreateInit(address a, address b, uint24 f, uint160 price) external returns (address pool) {
+
+    function preCreateInit(address a, address b, uint24 f, uint160 price)
+        external
+        returns (address pool)
+    {
         (address t0, address t1) = a < b ? (a, b) : (b, a);
         require(pools[t0][t1][f] == address(0));
         MockUniV3Pool p = new MockUniV3Pool(t0, t1, f);
@@ -131,7 +189,8 @@ contract MockUniV3Factory is IUniswapV3FactoryLike {
     }
 }
 
-// ─── Phase-5 simulation test ───────────────────────────────────────────────
+// ─── Phase-5 simulation test
+// ───────────────────────────────────────────────
 
 /// @title Phase5Simulation
 /// @notice In-tree simulation of the phase-5 adversarial validation run
@@ -164,7 +223,7 @@ contract Phase5SimulationTest is Test {
     address admin = address(0xA11CE);
     address coinbase = address(0xC01BAA5E);
     uint24 constant FEE = 500;
-    uint160 constant SQRT_1 = 79228162514264337593543950336;
+    uint160 constant SQRT_1 = 79_228_162_514_264_337_593_543_950_336;
     uint32 constant TIMEOUT = 2 hours;
     uint32 constant TWAP_WINDOW = 1 hours;
     uint256 constant TIP = 0.01 ether;
@@ -196,8 +255,16 @@ contract Phase5SimulationTest is Test {
         spotPool.initialize(SQRT_1);
 
         orch = new FAOOfficialProposalOrchestrator(
-            admin, factory, uniFactory, address(spotPool),
-            address(fao), address(weth), FEE, 1000, resolver
+            admin,
+            factory,
+            uniFactory,
+            address(spotPool),
+            address(fao),
+            address(weth),
+            FEE,
+            1000,
+            resolver,
+            true
         );
         resolver.setOrchestrator(address(orch));
 
@@ -206,7 +273,8 @@ contract Phase5SimulationTest is Test {
         vm.fee(0);
     }
 
-    // ─── helpers ───────────────────────────────────────────────────────────
+    // ─── helpers
+    // ───────────────────────────────────────────────────────────
 
     function _predictYesPair(string memory name, string memory desc, uint256 idx)
         internal
@@ -229,7 +297,8 @@ contract Phase5SimulationTest is Test {
         bytes32 collectionId = ctf.getCollectionId(bytes32(0), cId, indexSet);
         uint256 tokenId = ctf.getPositionId(collateral, collectionId);
         string memory sym = collateral == address(fao) ? "FAO" : "WETH";
-        string memory wname = j == 0 || j == 2 ? string.concat("YES_", sym) : string.concat("NO_", sym);
+        string memory wname =
+            j == 0 || j == 2 ? string.concat("YES_", sym) : string.concat("NO_", sym);
         bytes memory data = abi.encodePacked(_to31(wname), _to31(wname), uint8(18));
         bytes32 salt = keccak256(abi.encodePacked(address(ctf), tokenId, data));
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -245,10 +314,12 @@ contract Phase5SimulationTest is Test {
 
     /// @dev Attempts an A1 attack against the next cycle. Returns true if the orchestrator
     /// would now revert on its next promote. Updates A1 counters.
-    function _attemptA1(string memory name, string memory desc, uint256 idx, uint256 wrongPrevrandao)
-        internal
-        returns (bool willBlock)
-    {
+    function _attemptA1(
+        string memory name,
+        string memory desc,
+        uint256 idx,
+        uint256 wrongPrevrandao
+    ) internal returns (bool willBlock) {
         a1AttacksAttempted++;
         bytes32 attackerGuess = bytes32(wrongPrevrandao);
         vm.prevrandao(attackerGuess);
@@ -268,15 +339,16 @@ contract Phase5SimulationTest is Test {
         gasBefore;
     }
 
-    // ─── main simulation ──────────────────────────────────────────────────
+    // ─── main simulation
+    // ──────────────────────────────────────────────────
 
     function test_phase5_10hSimulationLegitAndA1() public {
         simStartTimestamp = block.timestamp;
         console2.log("[phase5] simulation start ts=", simStartTimestamp);
 
         for (uint256 cycle = 0; cycle < 10; cycle++) {
-            // Each cycle: A1 attempt with wrong prevrandao, then real promote with actual prevrandao,
-            // then warp 2h, then resolve.
+            // Each cycle: A1 attempt with wrong prevrandao, then real promote with actual
+            // prevrandao, then warp 2h, then resolve.
             string memory name = string.concat("prop", vm.toString(cycle));
             string memory desc = string.concat("phase5 cycle ", vm.toString(cycle));
             uint256 idx = factory.marketsCount();
@@ -291,9 +363,9 @@ contract Phase5SimulationTest is Test {
             uint256 balBefore = coinbase.balance;
             promotesAttempted++;
             vm.prank(admin);
-            try orch.createOfficialProposalAndMigrate{value: TIP}(name, desc, TIP)
-                returns (uint256, address proposal)
-            {
+            try orch.createOfficialProposalAndMigrate{value: TIP}(name, desc, TIP) returns (
+                uint256, address proposal
+            ) {
                 promotesSucceeded++;
                 totalDefenderCostWei += TIP;
                 assertEq(coinbase.balance - balBefore, TIP, "TIP must reach coinbase");
@@ -338,11 +410,16 @@ contract Phase5SimulationTest is Test {
             vm.roll(block.number + 1);
         }
 
-        // ─── assertions ──────────────────────────────────────────────────
+        // ─── assertions
+        // ──────────────────────────────────────────────────
         assertEq(promotesAttempted, 10, "10 promotion attempts");
-        assertEq(promotesSucceeded, 10, "all promotions should succeed (no real adversary blocked us)");
+        assertEq(
+            promotesSucceeded, 10, "all promotions should succeed (no real adversary blocked us)"
+        );
         assertEq(promotesRevertedByPreCreation, 0, "no successful pre-creation");
-        assertEq(a1AttacksThatPersistedBlock, 0, "A1 attacks must not pre-create the actual address");
+        assertEq(
+            a1AttacksThatPersistedBlock, 0, "A1 attacks must not pre-create the actual address"
+        );
         assertGe(yesWins + noWins, 1, "decisions made");
         assertGt(yesWins, 0, "alternating decisions: YES wins at least once");
         assertGt(noWins, 0, "alternating decisions: NO wins at least once");
@@ -370,16 +447,34 @@ contract Phase5SimulationTest is Test {
         vm.expectRevert();
         orch.createOfficialProposalAndMigrate{value: TIP}(name, desc, TIP);
 
-        assertEq(coinbase.balance, balBefore, "TIP must NOT be paid on revert (key economics property)");
+        assertEq(
+            coinbase.balance, balBefore, "TIP must NOT be paid on revert (key economics property)"
+        );
     }
 
-    function _readBinding(address proposal) internal view returns (FAOTwapResolver.Binding memory b) {
+    function _readBinding(address proposal)
+        internal
+        view
+        returns (FAOTwapResolver.Binding memory b)
+    {
         (
-            address yesPool, address noPool, address co, address cur,
-            bytes32 qId, uint48 anchor, bool resolved, bool accepted
+            address yesPool,
+            address noPool,
+            address co,
+            address cur,
+            bytes32 qId,
+            uint48 anchor,
+            bool resolved,
+            bool accepted
         ) = resolver.bindings(proposal);
-        b.yesPool = yesPool; b.noPool = noPool; b.companyToken = co; b.currencyToken = cur;
-        b.questionId = qId; b.anchorTimestamp = anchor; b.resolved = resolved; b.accepted = accepted;
+        b.yesPool = yesPool;
+        b.noPool = noPool;
+        b.companyToken = co;
+        b.currencyToken = cur;
+        b.questionId = qId;
+        b.anchorTimestamp = anchor;
+        b.resolved = resolved;
+        b.accepted = accepted;
     }
 
     function _emitReport(uint256 startTime) internal view {
@@ -398,6 +493,9 @@ contract Phase5SimulationTest is Test {
         console2.log("attacker total cost (wei, synthetic):", totalAttackerCostWei);
         console2.log("YES wins:", yesWins);
         console2.log("NO wins:", noWins);
-        console2.log("avg resolve latency (s):", promotesSucceeded == 0 ? 0 : resolveLatencySumSeconds / promotesSucceeded);
+        console2.log(
+            "avg resolve latency (s):",
+            promotesSucceeded == 0 ? 0 : resolveLatencySumSeconds / promotesSucceeded
+        );
     }
 }

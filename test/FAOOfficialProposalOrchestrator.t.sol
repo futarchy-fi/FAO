@@ -2,7 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {FAOOfficialProposalOrchestrator, IFAOLiquidityAdapter} from "../src/FAOOfficialProposalOrchestrator.sol";
+import {
+    FAOOfficialProposalOrchestrator,
+    IFAOLiquidityAdapter
+} from "../src/FAOOfficialProposalOrchestrator.sol";
 import {FAOFutarchyFactory} from "../src/FAOFutarchyFactory.sol";
 import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {IConditionalTokensLike} from "../src/interfaces/IConditionalTokensLike.sol";
@@ -18,33 +21,59 @@ import {IFAOFutarchyTwapResolver} from "../src/interfaces/IFAOFutarchyOracle.sol
 contract MockCTF is IConditionalTokensLike {
     mapping(bytes32 => uint256) public slots;
 
-    function payoutNumerators(bytes32, uint256) external pure returns (uint256) { return 0; }
-    function payoutDenominator(bytes32) external pure returns (uint256) { return 0; }
+    function payoutNumerators(bytes32, uint256) external pure returns (uint256) {
+        return 0;
+    }
 
-    function prepareCondition(address oracle, bytes32 questionId, uint256 outcomeSlotCount) external {
+    function payoutDenominator(bytes32) external pure returns (uint256) {
+        return 0;
+    }
+
+    function prepareCondition(address oracle, bytes32 questionId, uint256 outcomeSlotCount)
+        external
+    {
         bytes32 cid = getConditionId(oracle, questionId, outcomeSlotCount);
         require(slots[cid] == 0);
         slots[cid] = outcomeSlotCount;
     }
 
     function reportPayouts(bytes32, uint256[] calldata) external pure {}
+
     function getConditionId(address oracle, bytes32 questionId, uint256 outcomeSlotCount)
-        public pure returns (bytes32)
-    { return keccak256(abi.encodePacked(oracle, questionId, outcomeSlotCount)); }
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(oracle, questionId, outcomeSlotCount));
+    }
+
     function getCollectionId(bytes32 parent, bytes32 conditionId, uint256 indexSet)
-        external pure returns (bytes32)
-    { return keccak256(abi.encodePacked(parent, conditionId, indexSet)); }
-    function getPositionId(address collateral, bytes32 collectionId) external pure returns (uint256)
-    { return uint256(keccak256(abi.encodePacked(collateral, collectionId))); }
-    function getOutcomeSlotCount(bytes32 conditionId) external view returns (uint256)
-    { return slots[conditionId]; }
+        external
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(parent, conditionId, indexSet));
+    }
+
+    function getPositionId(address collateral, bytes32 collectionId)
+        external
+        pure
+        returns (uint256)
+    {
+        return uint256(keccak256(abi.encodePacked(collateral, collectionId)));
+    }
+
+    function getOutcomeSlotCount(bytes32 conditionId) external view returns (uint256) {
+        return slots[conditionId];
+    }
 }
 
 contract MockW1155 is IWrapped1155FactoryLike {
     mapping(bytes32 => address) public wrapped;
 
     function requireWrapped1155(address multiToken, uint256 tokenId, bytes calldata data)
-        external returns (address)
+        external
+        returns (address)
     {
         bytes32 salt = keccak256(abi.encodePacked(multiToken, tokenId, data));
         if (wrapped[salt] == address(0)) {
@@ -58,7 +87,10 @@ contract MockW1155 is IWrapped1155FactoryLike {
 
 contract MockERC20 {
     string public symbol;
-    constructor(string memory s) { symbol = s; }
+
+    constructor(string memory s) {
+        symbol = s;
+    }
 }
 
 contract MockUniV3Pool is IUniswapV3PoolLike {
@@ -69,17 +101,24 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
     uint16 public cardinality;
 
     constructor(address _t0, address _t1, uint24 fee_) {
-        token0_ = _t0; token1_ = _t1; _fee = fee_;
+        token0_ = _t0;
+        token1_ = _t1;
+        _fee = fee_;
     }
 
-    function fee() external view returns (uint24) { return _fee; }
+    function fee() external view returns (uint24) {
+        return _fee;
+    }
 
-    function token0() external view returns (address) { return token0_; }
-    function token1() external view returns (address) { return token1_; }
+    function token0() external view returns (address) {
+        return token0_;
+    }
 
-    function slot0() external view returns (
-        uint160, int24, uint16, uint16, uint16, uint8, bool
-    ) {
+    function token1() external view returns (address) {
+        return token1_;
+    }
+
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
         return (sqrtPriceX96, 0, 0, 1, cardinality, 0, true);
     }
 
@@ -88,10 +127,14 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
         sqrtPriceX96 = _sqrt;
     }
 
-    function increaseObservationCardinalityNext(uint16 next) external { cardinality = next; }
+    function increaseObservationCardinalityNext(uint16 next) external {
+        cardinality = next;
+    }
 
     function observe(uint32[] calldata secondsAgos)
-        external view returns (int56[] memory, uint160[] memory)
+        external
+        view
+        returns (int56[] memory, uint160[] memory)
     {
         int56[] memory tickCum = new int56[](secondsAgos.length);
         uint160[] memory liqCum = new uint160[](secondsAgos.length);
@@ -99,8 +142,12 @@ contract MockUniV3Pool is IUniswapV3PoolLike {
     }
 
     function mint(address, int24, int24, uint128, bytes calldata)
-        external pure returns (uint256, uint256)
-    { return (0, 0); }
+        external
+        pure
+        returns (uint256, uint256)
+    {
+        return (0, 0);
+    }
 }
 
 contract MockUniV3Factory is IUniswapV3FactoryLike {
@@ -119,7 +166,10 @@ contract MockUniV3Factory is IUniswapV3FactoryLike {
     }
 
     /// @dev Test helper: pre-create + initialize a pool at a hostile price.
-    function preCreateAndInitialize(address a, address b, uint24 fee, uint160 sqrtPriceX96) external returns (address) {
+    function preCreateAndInitialize(address a, address b, uint24 fee, uint160 sqrtPriceX96)
+        external
+        returns (address)
+    {
         (address t0, address t1) = a < b ? (a, b) : (b, a);
         require(pools[t0][t1][fee] == address(0), "pool exists");
         MockUniV3Pool pool = new MockUniV3Pool(t0, t1, fee);
@@ -156,6 +206,7 @@ contract MockResolver is IFAOFutarchyTwapResolver {
 
 contract NoopAdapter is IFAOLiquidityAdapter {
     bool public migrated;
+
     function migrate(address, address, address, address, uint160) external {
         migrated = true;
     }
@@ -180,7 +231,7 @@ contract FAOOrchestratorTest is Test {
     uint24 constant FEE = 500;
 
     // sqrt(1) in X96 = 2**96
-    uint160 constant SQRT_PRICE_1 = 79228162514264337593543950336;
+    uint160 constant SQRT_PRICE_1 = 79_228_162_514_264_337_593_543_950_336;
 
     function setUp() public {
         proposalImpl = new FAOFutarchyProposal();
@@ -197,7 +248,14 @@ contract FAOOrchestratorTest is Test {
         spotPool = MockUniV3Pool(uniFactory.createPool(address(fao), address(weth), FEE));
         spotPool.initialize(SQRT_PRICE_1);
 
-        orch = new FAOOfficialProposalOrchestrator(
+        orch = _deployOrchestrator(true);
+    }
+
+    function _deployOrchestrator(bool adapterReplaceable)
+        internal
+        returns (FAOOfficialProposalOrchestrator)
+    {
+        return new FAOOfficialProposalOrchestrator(
             admin,
             factory,
             uniFactory,
@@ -206,16 +264,19 @@ contract FAOOrchestratorTest is Test {
             address(weth),
             FEE,
             100, // observation cardinality
-            resolver
+            resolver,
+            adapterReplaceable
         );
     }
 
-    // ─── happy path ─────────────────────────────────────────────────────────
+    // ─── happy path
+    // ─────────────────────────────────────────────────────────
 
     function test_happyPath_createsCondtionPoolsAndBinds() public {
         vm.prevrandao(bytes32(uint256(0xCAFE)));
         vm.prank(admin);
-        (uint256 proposalId, address proposal) = orch.createOfficialProposalAndMigrate("test", "desc", 0);
+        (uint256 proposalId, address proposal) =
+            orch.createOfficialProposalAndMigrate("test", "desc", 0);
 
         assertEq(proposalId, 0);
         assertTrue(proposal != address(0));
@@ -245,7 +306,8 @@ contract FAOOrchestratorTest is Test {
         assertTrue(noSqrt != 0);
     }
 
-    // ─── A1: pool pre-creation defense ─────────────────────────────────────
+    // ─── A1: pool pre-creation defense
+    // ─────────────────────────────────────
 
     /// @notice If an adversary somehow guesses prevrandao AND pre-creates+initializes
     /// the conditional pool at the predicted address, the orchestrator detects the
@@ -265,7 +327,8 @@ contract FAOOrchestratorTest is Test {
         bytes32 cId = ctf.getConditionId(address(resolver), qId, 2);
 
         address yesCompany = _predictWrapper(cId, address(fao), 0); // index 0 = YES_company
-        address yesCurrency = _predictWrapper(cId, address(weth), 0); // index 2 = YES_currency same indexSet
+        address yesCurrency = _predictWrapper(cId, address(weth), 0); // index 2 = YES_currency same
+        // indexSet
 
         // Adversary pre-creates the YES pool at a manipulated price.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -294,9 +357,8 @@ contract FAOOrchestratorTest is Test {
         uint256 tokenId = ctf.getPositionId(collateral, collectionId);
         // Match mock W1155's wrapper-name encoding: name == symbol == YES_<sym> or NO_<sym>.
         string memory sym = collateral == address(fao) ? "FAO" : "WETH";
-        string memory wrapperName = j == 0 || j == 2
-            ? string.concat("YES_", sym)
-            : string.concat("NO_", sym);
+        string memory wrapperName =
+            j == 0 || j == 2 ? string.concat("YES_", sym) : string.concat("NO_", sym);
         bytes memory data = _encodeWrapperMetadata(wrapperName);
         bytes32 salt = keccak256(abi.encodePacked(address(ctf), tokenId, data));
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -317,7 +379,8 @@ contract FAOOrchestratorTest is Test {
         encodedString = encodedString | bytes32(length << 1);
     }
 
-    // ─── conditional TIP behavior ──────────────────────────────────────────
+    // ─── conditional TIP behavior
+    // ──────────────────────────────────────────
 
     function test_TIP_paidToCoinbaseOnSuccess() public {
         vm.fee(0);
@@ -359,7 +422,8 @@ contract FAOOrchestratorTest is Test {
         assertEq(coinbase.balance, before, "coinbase must NOT receive tip on revert");
     }
 
-    // ─── adapter wiring ─────────────────────────────────────────────────────
+    // ─── adapter wiring
+    // ─────────────────────────────────────────────────────
 
     function test_adapter_isInvokedWhenSet() public {
         NoopAdapter adapter = new NoopAdapter();
@@ -374,10 +438,8 @@ contract FAOOrchestratorTest is Test {
     }
 
     function test_adapter_isReplaceableByAdmin() public {
-        // setAdapter is intentionally admin-replaceable (testnet v0 keeps
-        // adapter bugs hot-swappable; see commit d315e57). The previous
-        // one-shot semantics + AdapterAlreadySet error are obsolete; the
-        // contract now overwrites the storage slot on each admin call.
+        assertTrue(orch.ADAPTER_REPLACEABLE(), "testnet mode");
+
         NoopAdapter a = new NoopAdapter();
         vm.prank(admin);
         orch.setAdapter(a);
@@ -387,6 +449,23 @@ contract FAOOrchestratorTest is Test {
         vm.prank(admin);
         orch.setAdapter(b);
         assertEq(address(orch.adapter()), address(b), "admin can swap adapter");
+    }
+
+    function test_setAdapter_isOneShotWhenMainnetMode() public {
+        FAOOfficialProposalOrchestrator mainnetOrch = _deployOrchestrator(false);
+        assertFalse(mainnetOrch.ADAPTER_REPLACEABLE(), "mainnet mode");
+
+        NoopAdapter a = new NoopAdapter();
+        vm.prank(admin);
+        mainnetOrch.setAdapter(a);
+        assertEq(address(mainnetOrch.adapter()), address(a));
+
+        NoopAdapter b = new NoopAdapter();
+        vm.prank(admin);
+        vm.expectRevert(FAOOfficialProposalOrchestrator.AdapterAlreadySet.selector);
+        mainnetOrch.setAdapter(b);
+
+        assertEq(address(mainnetOrch.adapter()), address(a), "adapter remains locked");
     }
 
     function test_setAdapter_revertsForNonAdmin() public {

@@ -56,7 +56,7 @@ contract Phase5ExtendedSimulationTest is Test {
     address admin = address(0xA11CE);
     address coinbase = address(0xC01BAA5E);
     uint24 constant FEE = 500;
-    uint160 constant SQRT_1 = 79228162514264337593543950336;
+    uint160 constant SQRT_1 = 79_228_162_514_264_337_593_543_950_336;
     uint32 constant TIMEOUT = 2 hours;
     uint32 constant TWAP_WINDOW = 1 hours;
     uint256 constant TIP = 0.01 ether;
@@ -88,8 +88,16 @@ contract Phase5ExtendedSimulationTest is Test {
         spotPool = MockUniV3Pool(uniFactory.createPool(address(fao), address(weth), FEE));
         spotPool.initialize(SQRT_1);
         orch = new FAOOfficialProposalOrchestrator(
-            admin, factory, uniFactory, address(spotPool),
-            address(fao), address(weth), FEE, 1000, resolver
+            admin,
+            factory,
+            uniFactory,
+            address(spotPool),
+            address(fao),
+            address(weth),
+            FEE,
+            1000,
+            resolver,
+            true
         );
         resolver.setOrchestrator(address(orch));
 
@@ -117,9 +125,9 @@ contract Phase5ExtendedSimulationTest is Test {
             uint256 cbBefore = coinbase.balance;
 
             vm.prank(admin);
-            try orch.createOfficialProposalAndMigrate{value: TIP}(name, desc, TIP)
-                returns (uint256, address proposal)
-            {
+            try orch.createOfficialProposalAndMigrate{value: TIP}(name, desc, TIP) returns (
+                uint256, address proposal
+            ) {
                 promotesSucceeded++;
                 totalDefenderCostWei += TIP;
                 assertEq(coinbase.balance - cbBefore, TIP, "tip");
@@ -147,15 +155,7 @@ contract Phase5ExtendedSimulationTest is Test {
     }
 
     function _programTwap(address proposal, bool yesShouldWin) internal {
-        (
-            address yesPool,
-            address noPool,
-            ,
-            ,
-            ,
-            ,
-            ,
-        ) = resolver.bindings(proposal);
+        (address yesPool, address noPool,,,,,,) = resolver.bindings(proposal);
 
         (address yesCo,) = FAOFutarchyProposal(proposal).wrappedOutcome(0);
         (address noCo,) = FAOFutarchyProposal(proposal).wrappedOutcome(1);

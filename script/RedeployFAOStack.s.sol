@@ -7,8 +7,11 @@ import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {FAOFutarchyFactory} from "../src/FAOFutarchyFactory.sol";
 import {FAOTwapResolver} from "../src/FAOTwapResolver.sol";
 import {FAOOfficialProposalOrchestrator} from "../src/FAOOfficialProposalOrchestrator.sol";
-import {UniswapV3LiquidityAdapter, IConditionalTokensLike as AdapterCTF, IWrapped1155FactoryLike as AdapterW1155}
-    from "../src/UniswapV3LiquidityAdapter.sol";
+import {
+    UniswapV3LiquidityAdapter,
+    IConditionalTokensLike as AdapterCTF,
+    IWrapped1155FactoryLike as AdapterW1155
+} from "../src/UniswapV3LiquidityAdapter.sol";
 import {IFAOLiquidityAdapter} from "../src/FAOOfficialProposalOrchestrator.sol";
 import {IConditionalTokensLike} from "../src/interfaces/IConditionalTokensLike.sol";
 import {IWrapped1155FactoryLike} from "../src/interfaces/IWrapped1155FactoryLike.sol";
@@ -27,8 +30,8 @@ contract RedeployFAOStack is Script {
 
     uint24 internal constant FEE_TIER = 500;
     uint16 internal constant OBS_CARDINALITY = 30;
-    uint32 internal constant TIMEOUT = 7200;       // 2h
-    uint32 internal constant TWAP_WINDOW = 3600;   // 1h
+    uint32 internal constant TIMEOUT = 7200; // 2h
+    uint32 internal constant TWAP_WINDOW = 3600; // 1h
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -61,18 +64,15 @@ contract RedeployFAOStack is Script {
             WETH,
             FEE_TIER,
             OBS_CARDINALITY,
-            resolver
+            resolver,
+            true
         );
         console2.log("orchestrator:", address(orchestrator));
 
         resolver.setOrchestrator(address(orchestrator));
 
         UniswapV3LiquidityAdapter adapter = new UniswapV3LiquidityAdapter(
-            AdapterCTF(CTF),
-            AdapterW1155(W1155),
-            address(orchestrator),
-            FAO,
-            WETH
+            AdapterCTF(CTF), AdapterW1155(W1155), address(orchestrator), FAO, WETH
         );
         console2.log("adapter:", address(adapter));
 

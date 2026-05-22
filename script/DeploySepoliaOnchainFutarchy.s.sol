@@ -41,7 +41,8 @@ contract DeploySepoliaOnchainFutarchy is Script {
     // Defaults for Sepolia (sourced from lib/seer-demo/contracts/deployments/sepolia/).
     address internal constant DEFAULT_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
     address internal constant DEFAULT_CTF = 0x8bdC504dC3A05310059c1c67E0A2667309D27B93;
-    address internal constant DEFAULT_WRAPPED_1155_FACTORY = 0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
+    address internal constant DEFAULT_WRAPPED_1155_FACTORY =
+        0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
     address internal constant DEFAULT_UNIV3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c;
     uint24 internal constant DEFAULT_FEE_TIER = 500;
     uint16 internal constant DEFAULT_OBSERVATION_CARDINALITY = 100;
@@ -62,7 +63,8 @@ contract DeploySepoliaOnchainFutarchy is Script {
         uint16 observationCardinality =
             uint16(vm.envOr("OBSERVATION_CARDINALITY", uint256(DEFAULT_OBSERVATION_CARDINALITY)));
         uint32 timeoutSecs = uint32(vm.envOr("TIMEOUT_SECONDS", uint256(DEFAULT_TIMEOUT)));
-        uint32 twapWindowSecs = uint32(vm.envOr("TWAP_WINDOW_SECONDS", uint256(DEFAULT_TWAP_WINDOW)));
+        uint32 twapWindowSecs =
+            uint32(vm.envOr("TWAP_WINDOW_SECONDS", uint256(DEFAULT_TWAP_WINDOW)));
 
         console2.log("=== Deployer ===");
         console2.log("admin:", admin);
@@ -108,7 +110,8 @@ contract DeploySepoliaOnchainFutarchy is Script {
             weth,
             feeTier,
             observationCardinality,
-            resolver
+            resolver,
+            true
         );
         console2.log("orchestrator:", address(orchestrator));
 
