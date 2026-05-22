@@ -1,0 +1,35 @@
+name: Deploy ops portal to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site-ops/**'
+      - 'audit/evaluations/**'
+      - 'scripts/sync-ops-dashboard.sh'
+      - '.github/workflows/deploy-ops.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages-ops
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-pages
+      url: https://ops.futarchy.ai
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync audit dashboard data
+        run: bash scripts/sync-ops-dashboard.sh
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site-ops --project-name=fao-ops --branch=main
