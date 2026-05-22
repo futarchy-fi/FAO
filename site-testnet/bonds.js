@@ -117,6 +117,45 @@
     try { return await fn(); } catch (_) { return fallback; }
   }
 
+  function fmtGas(gas) {
+    return gas == null ? 'Estimate unavailable' : `${gas.toString()} gas`;
+  }
+
+  function renderConfirmRows(container, rows) {
+    if (!container) return;
+    container.innerHTML = rows.map((row) => `
+      <div class="sale-confirm-row">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${escapeHtml(row.value)}</strong>
+      </div>
+    `).join('');
+  }
+
+  function showBondConfirm(rows, confirmLabel = 'Confirm bond') {
+    return new Promise((resolve) => {
+      const card = $$('#confirm-card-bond');
+      const rowsEl = $$('#confirm-card-bond-rows');
+      const confirm = $$('#confirm-card-bond-confirm');
+      const cancel = $$('#confirm-card-bond-cancel');
+      if (!card || !rowsEl || !confirm || !cancel) {
+        resolve(true);
+        return;
+      }
+      renderConfirmRows(rowsEl, rows);
+      confirm.textContent = confirmLabel;
+      card.hidden = false;
+      card.scrollIntoView({ block: 'nearest' });
+      const cleanup = (result) => {
+        confirm.onclick = null;
+        cancel.onclick = null;
+        card.hidden = true;
+        resolve(result);
+      };
+      confirm.onclick = () => cleanup(true);
+      cancel.onclick = () => cleanup(false);
+    });
+  }
+
   /**
    * Derive arbitration uint256 id from a proposal contract address.
    * STUB BRIDGE: see file header. Will be replaced by a real bridge contract.
@@ -436,10 +475,7 @@
   async function onPlaceYesBond(propAddr) {
     try {
       const sig = await ensureSigner();
-      await ensureProposalCreated(propAddr, sig);
-
-      // Recompute state after potential bootstrap.
-      const s = await loadProposalState(propAddr);
+      let s = await loadProposalState(propAddr);
       proposalState.set(propAddr.toLowerCase(), s);
 
       const minByActivation = s.minActivationBond || baseX;
@@ -474,12 +510,29 @@
         throw new Error(`Amount ${ethers.formatEther(amount)} below minimum ${ethers.formatEther(minAmount)} WETH.`);
       }
 
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
+      const gasEstimate = s.exists
+        ? await safe(() => writeArb.placeYesBond.estimateGas(s.arbId, amount), null)
+        : null;
+      const ok = await showBondConfirm([
+        { label: 'Action', value: 'Place YES bond' },
+        { label: 'Proposal', value: fmtAddr(propAddr) },
+        { label: 'Arbitration id', value: s.arbId.toString() },
+        { label: 'WETH amount', value: fmtWeth(amount) },
+        { label: 'Approval', value: 'WETH approval may be required' },
+        { label: 'Gas estimate', value: s.exists ? fmtGas(gasEstimate) : 'Bootstrap required before estimate' },
+      ], 'Confirm YES bond');
+      if (!ok) { setStatus(propAddr, 'Cancelled before wallet confirmation.', 'info'); return; }
+
+      await ensureProposalCreated(propAddr, sig);
+      s = await loadProposalState(propAddr);
+      proposalState.set(propAddr.toLowerCase(), s);
+
       const balOk = await ensureWethBalance(amount, sig, propAddr);
       if (!balOk) { setStatus(propAddr, 'Cancelled.', 'info'); return; }
       await ensureWethAllowance(amount, sig, propAddr);
 
       setStatus(propAddr, 'Submitting YES bond…', 'pending');
-      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.placeYesBond(s.arbId, amount);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();
@@ -501,12 +554,23 @@
       const amount = s.yesBond.amount;
       if (amount === 0n) throw new Error('Current YES bond is zero.');
 
+      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
+      const gasEstimate = await safe(() => writeArb.placeNoBond.estimateGas(s.arbId), null);
+      const ok = await showBondConfirm([
+        { label: 'Action', value: 'Place NO bond' },
+        { label: 'Proposal', value: fmtAddr(propAddr) },
+        { label: 'Arbitration id', value: s.arbId.toString() },
+        { label: 'WETH amount', value: fmtWeth(amount) },
+        { label: 'Approval', value: 'WETH approval may be required' },
+        { label: 'Gas estimate', value: fmtGas(gasEstimate) },
+      ], 'Confirm NO bond');
+      if (!ok) { setStatus(propAddr, 'Cancelled before wallet confirmation.', 'info'); return; }
+
       const balOk = await ensureWethBalance(amount, sig, propAddr);
       if (!balOk) { setStatus(propAddr, 'Cancelled.', 'info'); return; }
       await ensureWethAllowance(amount, sig, propAddr);
 
       setStatus(propAddr, `Matching YES bond (${fmtWeth(amount)})…`, 'pending');
-      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.placeNoBond(s.arbId);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();
@@ -524,8 +588,18 @@
       const s = proposalState.get(propAddr.toLowerCase());
       if (!s) throw new Error('Proposal state not loaded.');
 
-      setStatus(propAddr, 'Attempting graduation…', 'pending');
       const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
+      const gasEstimate = await safe(() => writeArb.tryGraduate.estimateGas(s.arbId), null);
+      const ok = await showBondConfirm([
+        { label: 'Action', value: 'Try graduate proposal' },
+        { label: 'Proposal', value: fmtAddr(propAddr) },
+        { label: 'Arbitration id', value: s.arbId.toString() },
+        { label: 'Current YES bond', value: fmtWeth(s.yesBond.amount) },
+        { label: 'Gas estimate', value: fmtGas(gasEstimate) },
+      ], 'Confirm graduate');
+      if (!ok) { setStatus(propAddr, 'Cancelled before wallet confirmation.', 'info'); return; }
+
+      setStatus(propAddr, 'Attempting graduation…', 'pending');
       const tx = await writeArb.tryGraduate(s.arbId);
       setStatus(propAddr, `Tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
       const rec = await tx.wait();

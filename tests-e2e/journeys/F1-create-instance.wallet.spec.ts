@@ -201,6 +201,8 @@ test('F1 — Founder creates a new futarchy instance end-to-end', async ({ page 
 
   const status = createStatus(page);
   await createSubmit(page).click();
+  await expect(page.getByTestId('confirm-card-create')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('confirm-card-create-confirm').click();
 
   await expect(status).toContainText(/Step 1\/2/i, { timeout: 15_000 });
 

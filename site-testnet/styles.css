@@ -1920,6 +1920,14 @@ body.has-topbar nav.nav { display: none; }
   letter-spacing: 0.05em;
   margin-bottom: 12px;
 }
+.tx-confirm-card {
+  scroll-margin-top: 96px;
+}
+.confirm-card-desc {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
 .sale-confirm-row {
   display: flex;
   justify-content: space-between;

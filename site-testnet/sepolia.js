@@ -294,6 +294,44 @@
     }[ch]));
   }
 
+  function fmtGas(gas) {
+    return gas == null ? 'Estimate unavailable' : `${gas.toString()} gas`;
+  }
+
+  function renderConfirmRows(container, rows) {
+    if (!container) return;
+    container.innerHTML = rows.map((row) => `
+      <div class="sale-confirm-row">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${escapeHtml(row.value)}</strong>
+      </div>
+    `).join('');
+  }
+
+  function showConfirmCard(action, rows) {
+    return new Promise((resolve) => {
+      const card = $$(`#confirm-card-${action}`);
+      const rowsEl = $$(`#confirm-card-${action}-rows`);
+      const confirm = $$(`#confirm-card-${action}-confirm`);
+      const cancel = $$(`#confirm-card-${action}-cancel`);
+      if (!card || !rowsEl || !confirm || !cancel) {
+        resolve(true);
+        return;
+      }
+      renderConfirmRows(rowsEl, rows);
+      card.hidden = false;
+      card.scrollIntoView({ block: 'nearest' });
+      const cleanup = (result) => {
+        confirm.onclick = null;
+        cancel.onclick = null;
+        card.hidden = true;
+        resolve(result);
+      };
+      confirm.onclick = () => cleanup(true);
+      cancel.onclick = () => cleanup(false);
+    });
+  }
+
   // ─── Create Proposal (browser wallet) ─────────────────────────────────
 
   const FACTORY_WRITE_ABI = [
@@ -358,9 +396,22 @@
     const inst = activeInstance();
     if (!inst || !inst.factory) { setStatus('No active futarchy instance selected.', 'error'); return; }
     const factory = new ethers.Contract(inst.factory, FACTORY_WRITE_ABI, signer);
-    setStatus('Submitting transaction…', 'pending');
     try {
       const params = [name, desc, instanceToken(), SHARED_ADDRS.weth];
+      const gasEstimate = await safe(() => factory.createProposal.estimateGas(params), null);
+      const ok = await showConfirmCard('proposal', [
+        { label: 'Action', value: 'Create proposal' },
+        { label: 'Title', value: name },
+        { label: 'Description', value: desc || '—' },
+        { label: 'Company token', value: fmtAddr(instanceToken()) },
+        { label: 'Bond currency', value: fmtAddr(SHARED_ADDRS.weth) },
+        { label: 'Gas estimate', value: fmtGas(gasEstimate) },
+      ]);
+      if (!ok) {
+        setStatus('Proposal cancelled before wallet confirmation.', 'info');
+        return;
+      }
+      setStatus('Submitting transaction…', 'pending');
       const tx = await factory.createProposal(params);
       setStatus(`Tx sent: <a href="https://sepolia.etherscan.io/tx/${tx.hash}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>. Waiting confirmation…`, 'pending');
       const rec = await tx.wait();
@@ -408,10 +459,21 @@
     }
     const resolver = new ethers.Contract(inst.resolver, RESOLVER_WRITE_ABI, signer);
     const origLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Resolving…';
-    setCardActionStatus(propAddr, 'Submitting resolve transaction…', 'pending');
     try {
+      const gasEstimate = await safe(() => resolver.resolve.estimateGas(propAddr), null);
+      const ok = await showConfirmCard('resolve', [
+        { label: 'Action', value: 'Resolve proposal' },
+        { label: 'Proposal', value: fmtAddr(propAddr) },
+        { label: 'Resolver', value: fmtAddr(inst.resolver) },
+        { label: 'Gas estimate', value: fmtGas(gasEstimate) },
+      ]);
+      if (!ok) {
+        setCardActionStatus(propAddr, 'Resolve cancelled before wallet confirmation.', 'info');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Resolving…';
+      setCardActionStatus(propAddr, 'Submitting resolve transaction…', 'pending');
       const tx = await resolver.resolve(propAddr);
       setCardActionStatus(
         propAddr,

@@ -39,6 +39,8 @@ These are the **required** testids the source must expose. The site is currently
 | `create-timeout` / `create-twap` / `create-bond` | Resolver/bond params |
 | `create-submit` | Submit button |
 | `create-status` | Inline status line |
+| `confirm-card-create` | Create-futarchy decoded transaction review card |
+| `confirm-card-create-confirm` / `confirm-card-create-cancel` | Create-futarchy review actions |
 
 ### Buy (`/sale`)
 
@@ -66,6 +68,12 @@ These are the **required** testids the source must expose. The site is currently
 | `sep-proposal-card-<id>` | Per-proposal card |
 | `bond-place-yes-<id>` / `bond-place-no-<id>` / `bond-graduate-<id>` | Bond actions |
 | `create-proposal-name` / `create-proposal-desc` / `create-proposal-submit` | Create-proposal form |
+| `confirm-card-proposal` | Create-proposal decoded transaction review card |
+| `confirm-card-resolve` | Resolve-proposal decoded transaction review card |
+| `confirm-card-bond` | YES/NO/graduate bond decoded transaction review card |
+| `confirm-card-proposal-confirm` / `confirm-card-proposal-cancel` | Create-proposal review actions |
+| `confirm-card-resolve-confirm` / `confirm-card-resolve-cancel` | Resolve-proposal review actions |
+| `confirm-card-bond-confirm` / `confirm-card-bond-cancel` | Bond review actions |
 
 ## Adding new testids
 

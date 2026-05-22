@@ -35,6 +35,55 @@
     el.className = `create-instance-status create-instance-status-${kind || 'info'}`;
   }
 
+  function renderConfirmRows(container, rows) {
+    if (!container) return;
+    container.innerHTML = rows.map((row) => `
+      <div class="sale-confirm-row">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${escapeHtml(row.value)}</strong>
+      </div>
+    `).join('');
+  }
+
+  function fmtGas(gas) {
+    return gas == null ? 'Estimate unavailable until wallet connect' : `${gas.toString()} gas`;
+  }
+
+  async function estimatePart1Gas(args) {
+    if (!window.activeSigner) return null;
+    try {
+      const registryAbi = await getRegistryAbi();
+      const reg = new ethers.Contract(REGISTRY_ADDR, registryAbi, window.activeSigner);
+      return await reg.createFutarchyPart1.estimateGas(...args);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function showCreateConfirm(rows) {
+    return new Promise((resolve) => {
+      const card = $$('#confirm-card-create');
+      const rowsEl = $$('#confirm-card-create-rows');
+      const confirm = $$('#confirm-card-create-confirm');
+      const cancel = $$('#confirm-card-create-cancel');
+      if (!card || !rowsEl || !confirm || !cancel) {
+        resolve(true);
+        return;
+      }
+      renderConfirmRows(rowsEl, rows);
+      card.hidden = false;
+      card.scrollIntoView({ block: 'nearest' });
+      const cleanup = (result) => {
+        confirm.onclick = null;
+        cancel.onclick = null;
+        card.hidden = true;
+        resolve(result);
+      };
+      confirm.onclick = () => cleanup(true);
+      cancel.onclick = () => cleanup(false);
+    });
+  }
+
   async function onSubmit(ev) {
     ev.preventDefault();
 
@@ -79,6 +128,27 @@
     const initialPhaseSec = Math.floor(saleDurMin * 60);
     const timeoutSec = Math.floor(timeoutMin * 60);
     const twapSec = Math.floor(twapMin * 60);
+    const part1Args = [
+      name, symbol, description,
+      initialPriceWei, minInitialSold, BigInt(initialPhaseSec),
+      timeoutSec, twapSec, bondWei,
+    ];
+
+    const gasEstimate = await estimatePart1Gas(part1Args);
+    const ok = await showCreateConfirm([
+      { label: 'Action', value: 'Create futarchy in two transactions' },
+      { label: 'Name / symbol', value: `${name} / ${symbol}` },
+      { label: 'Sale price', value: `${priceStr} ETH per token` },
+      { label: 'Min initial sold', value: minInitialSold.toString() },
+      { label: 'Initial phase', value: `${initialPhaseSec} seconds` },
+      { label: 'Timeout / TWAP', value: `${timeoutSec}s / ${twapSec}s` },
+      { label: 'Base bond', value: `${baseBondStr} WETH` },
+      { label: 'Part 1 gas estimate', value: fmtGas(gasEstimate) },
+    ]);
+    if (!ok) {
+      setStatus('Create cancelled before wallet confirmation.', 'info');
+      return;
+    }
 
     try {
       const signer = await window.connectWallet();
@@ -87,11 +157,7 @@
 
       // ─── Step 1/2 ──────────────────────────────────────────────────────
       setStatus('Step 1/2: deploying token + sale + arbitration…', 'pending');
-      const tx1 = await reg.createFutarchyPart1(
-        name, symbol, description,
-        initialPriceWei, minInitialSold, BigInt(initialPhaseSec),
-        timeoutSec, twapSec, bondWei,
-      );
+      const tx1 = await reg.createFutarchyPart1(...part1Args);
       setStatus(
         `Step 1/2: tx sent <a href="${explorerTx(tx1.hash)}" target="_blank" rel="noopener">${tx1.hash.slice(0, 10)}…</a>. Waiting confirmation…`,
         'pending',
