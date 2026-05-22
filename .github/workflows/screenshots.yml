@@ -40,44 +40,24 @@ jobs:
 
       - name: Capture screenshots
         run: |
-          mkdir -p audit/screenshots
-          node --input-type=module <<'NODE'
-          import { chromium } from '@playwright/test';
-          import fs from 'fs';
-          import crypto from 'crypto';
-          const URL_BASE = process.env.FAO_SITE_URL || 'https://fao-testnet.pages.dev';
-          const pages = [
-            { url: URL_BASE + '/',          label: 'home' },
-            { url: URL_BASE + '/sale',      label: 'sale' },
-            { url: URL_BASE + '/proposals', label: 'proposals' },
-            { url: URL_BASE + '/create',    label: 'create' },
-            { url: URL_BASE + '/contracts', label: 'contracts' },
-            { url: URL_BASE + '/docs',      label: 'docs' },
-          ];
-          const viewports = [
-            { name: 'desktop', width: 1280, height: 720 },
-            { name: 'mobile',  width: 390,  height: 844 },
-          ];
-          const manifest = { generatedAt: new Date().toISOString(), siteUrl: URL_BASE, screenshots: [] };
-          const browser = await chromium.launch({ headless: true });
-          for (const p of pages) {
-            for (const v of viewports) {
-              const ctx = await browser.newContext({ viewport: { width: v.width, height: v.height } });
-              const page = await ctx.newPage();
-              try { await page.goto(p.url, { waitUntil: 'networkidle', timeout: 30_000 }); }
-              catch (e) { console.log('[warn] slow goto', p.url, e.message); }
-              await page.waitForTimeout(1500);
-              const file = 'audit/screenshots/' + p.label + '-' + v.name + '.png';
-              await page.screenshot({ path: file, fullPage: true });
-              const sha = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-              manifest.screenshots.push({ label: p.label, viewport: v.name, url: p.url, file, sha, bytes: fs.statSync(file).size });
-              console.log('[ok]', p.label, v.name, sha.slice(0,12));
-              await ctx.close();
-            }
-          }
-          await browser.close();
-          fs.writeFileSync('audit/screenshots/manifest.json', JSON.stringify(manifest, null, 2));
-          NODE
+          set -euo pipefail
+          if FAO_SITE_URL=https://fao-testnet.pages.dev/ bash scripts/capture-screenshots.sh; then
+            exit 0
+          fi
+
+          echo "::warning::deployed capture failed; falling back to checked-out site-testnet/"
+          python3 -m http.server 8766 --directory site-testnet &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          for _ in {1..20}; do
+            if node -e "fetch('http://127.0.0.1:8766/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+              break
+            fi
+            sleep 0.5
+          done
+
+          FAO_SITE_URL=http://127.0.0.1:8766/ bash scripts/capture-screenshots.sh
 
       - name: Commit screenshots back
         run: |
