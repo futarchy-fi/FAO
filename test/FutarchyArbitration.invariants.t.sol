@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
-import "forge-std/StdInvariant.sol";
+import {Test} from "forge-std/Test.sol";
+import {StdInvariant} from "forge-std/StdInvariant.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 
-/// @dev Minimal ERC20 used for invariant testing.
-/// We etch this runtime code into the canonical WETH address used by FutarchyArbitration.
+/// @dev Minimal ERC20 installed at the canonical WETH address used by FutarchyArbitration.
 contract WETHMock is IERC20 {
     string public constant name = "WETH";
     string public constant symbol = "WETH";
@@ -42,9 +41,9 @@ contract WETHMock is IERC20 {
         override
         returns (bool)
     {
-        uint256 a = allowance[from][msg.sender];
-        require(a >= amount, "ALLOW");
-        allowance[from][msg.sender] = a - amount;
+        uint256 approved = allowance[from][msg.sender];
+        require(approved >= amount, "ALLOW");
+        allowance[from][msg.sender] = approved - amount;
         _transfer(from, to, amount);
         return true;
     }
@@ -60,125 +59,363 @@ contract WETHMock is IERC20 {
 }
 
     contract FutarchyArbitrationHandler is Test {
-        FutarchyArbitration public arb;
+        FutarchyArbitration public immutable ARB;
 
-        address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
+        uint256 internal constant MAX_INITIAL_BOND = 5e14;
+        uint256 internal constant MAX_BOND_EXTRA = 1e15;
+        uint256 internal constant TIMEOUT = 2 hours;
 
-        // bounded actor set for invariants
-        address[] public actors;
+        address[] internal actors;
+        uint256[] internal proposalIds;
+        uint256[] internal settledProposalIds;
 
-        constructor(FutarchyArbitration _arb, address[] memory _actors) {
-            arb = _arb;
-            for (uint256 i = 0; i < _actors.length; i++) {
-                actors.push(_actors[i]);
+        mapping(uint256 => bool) internal settledObserved;
+        mapping(uint256 => bool) public settledAccepted;
+
+        uint256 public maxObservedNextProposalId;
+        bool public sawNextProposalIdRegression;
+        bool public sawAutoCreateStepViolation;
+        bool public sawSettledRegression;
+
+        constructor(FutarchyArbitration arb_, address[] memory actors_) {
+            ARB = arb_;
+            maxObservedNextProposalId = arb_.nextProposalId();
+
+            for (uint256 i = 0; i < actors_.length; i++) {
+                actors.push(actors_[i]);
             }
+        }
+
+        function createProposal(uint256 minActivationBondSeed) external {
+            uint256 preNext = ARB.nextProposalId();
+            uint256 minActivationBond = bound(minActivationBondSeed, 1, MAX_INITIAL_BOND);
+
+            try ARB.createProposal(minActivationBond) returns (uint256 proposalId) {
+                proposalIds.push(proposalId);
+
+                uint256 postNext = ARB.nextProposalId();
+                if (proposalId != preNext || postNext != preNext + 1) {
+                    sawAutoCreateStepViolation = true;
+                }
+
+                _observeProposal(proposalId);
+            } catch {}
+
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function createExplicitProposal(uint256 proposalIdSeed, uint256 minActivationBondSeed)
+            external
+        {
+            uint256 explicitId = ARB.nextProposalId() + 1 + (proposalIdSeed % 64);
+            uint256 minActivationBond = bound(minActivationBondSeed, 1, MAX_INITIAL_BOND);
+
+            try ARB.createProposalWithId(explicitId, minActivationBond) returns (
+                uint256 proposalId
+            ) {
+                proposalIds.push(proposalId);
+                _observeProposal(proposalId);
+            } catch {}
+
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function placeYesBond(uint256 proposalSeed, uint256 actorSeed, uint256 amountSeed)
+            external
+        {
+            if (proposalIds.length == 0) return;
+
+            uint256 proposalId = _proposalId(proposalSeed);
+            FutarchyArbitration.Proposal memory p = _proposal(proposalId);
+
+            uint256 amount;
+            if (p.state == FutarchyArbitration.ProposalState.INACTIVE) {
+                amount = bound(
+                    amountSeed, p.minActivationBond, p.minActivationBond + MAX_BOND_EXTRA
+                );
+            } else if (p.state == FutarchyArbitration.ProposalState.NO) {
+                uint256 minFlip = p.noBond.amount * 2;
+                if (p.minActivationBond > minFlip) minFlip = p.minActivationBond;
+                amount = bound(amountSeed, minFlip, minFlip + MAX_BOND_EXTRA);
+            } else {
+                return;
+            }
+
+            address actor = _actor(actorSeed);
+            vm.prank(actor);
+            try ARB.placeYesBond(proposalId, amount) {} catch {}
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function placeNoBond(uint256 proposalSeed, uint256 actorSeed) external {
+            if (proposalIds.length == 0) return;
+
+            uint256 proposalId = _proposalId(proposalSeed);
+            address actor = _actor(actorSeed);
+
+            vm.prank(actor);
+            try ARB.placeNoBond(proposalId) {} catch {}
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function advanceTime(uint256 secondsSeed) external {
+            uint256 dt = bound(secondsSeed, 0, 4 hours);
+            vm.warp(block.timestamp + dt);
+
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function finalizeByTimeout(uint256 proposalSeed) external {
+            if (proposalIds.length == 0) return;
+
+            uint256 proposalId = _proposalId(proposalSeed);
+            try ARB.finalizeByTimeout(proposalId) {} catch {}
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function settleYesByTimeout(uint256 actorSeed, uint256 minActivationBondSeed) external {
+            if (ARB.safetyModeActive()) return;
+
+            uint256 minActivationBond = bound(minActivationBondSeed, 1, MAX_INITIAL_BOND);
+            uint256 proposalId;
+
+            try ARB.createProposal(minActivationBond) returns (uint256 createdId) {
+                proposalId = createdId;
+                proposalIds.push(proposalId);
+            } catch {
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            address actor = _actor(actorSeed);
+            vm.prank(actor);
+            try ARB.placeYesBond(proposalId, minActivationBond) {} catch {}
+
+            vm.warp(block.timestamp + TIMEOUT);
+            try ARB.finalizeByTimeout(proposalId) {} catch {}
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function settleNoByTimeout(
+            uint256 yesActorSeed,
+            uint256 noActorSeed,
+            uint256 minActivationBondSeed
+        ) external {
+            uint256 minActivationBond = bound(minActivationBondSeed, 1, MAX_INITIAL_BOND);
+            uint256 proposalId;
+
+            try ARB.createProposal(minActivationBond) returns (uint256 createdId) {
+                proposalId = createdId;
+                proposalIds.push(proposalId);
+            } catch {
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(yesActorSeed));
+            try ARB.placeYesBond(proposalId, minActivationBond) {} catch {}
+
+            vm.prank(_actor(noActorSeed));
+            try ARB.placeNoBond(proposalId) {} catch {}
+
+            vm.warp(block.timestamp + TIMEOUT);
+            try ARB.finalizeByTimeout(proposalId) {} catch {}
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function withdraw(uint256 actorSeed) external {
+            address actor = _actor(actorSeed);
+
+            vm.prank(actor);
+            try ARB.withdraw() {} catch {}
+
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
+        function proposalCount() external view returns (uint256) {
+            return proposalIds.length;
+        }
+
+        function proposalIdAt(uint256 index) external view returns (uint256) {
+            return proposalIds[index];
+        }
+
+        function settledCount() external view returns (uint256) {
+            return settledProposalIds.length;
+        }
+
+        function settledIdAt(uint256 index) external view returns (uint256) {
+            return settledProposalIds[index];
+        }
+
+        function actorCount() external view returns (uint256) {
+            return actors.length;
+        }
+
+        function actorAt(uint256 index) external view returns (address) {
+            return actors[index];
         }
 
         function _actor(uint256 seed) internal view returns (address) {
             return actors[seed % actors.length];
         }
 
-        function create(uint256 mRaw) external returns (uint256 proposalId) {
-            uint256 m = bound(mRaw, 1e6, 1e24);
-            // creator identity doesn't matter
-            proposalId = arb.createProposal(m);
+        function _proposalId(uint256 seed) internal view returns (uint256) {
+            return proposalIds[seed % proposalIds.length];
         }
 
-        function yes(uint256 proposalId, uint256 actorSeed, uint256 amtRaw) external {
-            address a = _actor(actorSeed);
-            uint256 amt = bound(amtRaw, 1, 1e27);
-
-            vm.startPrank(a);
-            IERC20(WETH).approve(address(arb), type(uint256).max);
-            // calls can revert depending on state; that's fine for fuzz/invariant harness
-            try arb.placeYesBond(proposalId, amt) {} catch {}
-            vm.stopPrank();
+        function _proposal(uint256 proposalId)
+            internal
+            view
+            returns (FutarchyArbitration.Proposal memory)
+        {
+            return ARB.getProposal(proposalId);
         }
 
-        function no(uint256 proposalId, uint256 actorSeed) external {
-            address a = _actor(actorSeed);
-
-            vm.startPrank(a);
-            IERC20(WETH).approve(address(arb), type(uint256).max);
-            try arb.placeNoBond(proposalId) {} catch {}
-            vm.stopPrank();
+        function _observeNextProposalId() internal {
+            uint256 current = ARB.nextProposalId();
+            if (current < maxObservedNextProposalId) {
+                sawNextProposalIdRegression = true;
+            } else {
+                maxObservedNextProposalId = current;
+            }
         }
 
-        function warp(uint256 dtRaw) external {
-            uint256 dt = bound(dtRaw, 0, 96 hours);
-            vm.warp(block.timestamp + dt);
+        function _observeProposal(uint256 proposalId) internal {
+            FutarchyArbitration.Proposal memory p = ARB.getProposal(proposalId);
+            if (p.settled && !settledObserved[proposalId]) {
+                settledObserved[proposalId] = true;
+                settledAccepted[proposalId] = p.accepted;
+                settledProposalIds.push(proposalId);
+            }
         }
 
-        function finalize(uint256 proposalId) external {
-            try arb.finalizeByTimeout(proposalId) {} catch {}
-        }
+        function _observeSettledProposals() internal {
+            for (uint256 i = 0; i < settledProposalIds.length; i++) {
+                uint256 proposalId = settledProposalIds[i];
+                FutarchyArbitration.Proposal memory p = ARB.getProposal(proposalId);
 
-        function withdraw(uint256 actorSeed) external {
-            address a = _actor(actorSeed);
-            vm.prank(a);
-            try arb.withdraw() {} catch {}
+                if (!p.settled || p.state != FutarchyArbitration.ProposalState.SETTLED) {
+                    sawSettledRegression = true;
+                }
+                if (p.accepted != settledAccepted[proposalId]) {
+                    sawSettledRegression = true;
+                }
+            }
         }
     }
 
+    /// @custom:spec INV-ARB-001 — see audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
-        FutarchyArbitration arb;
-
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
-        FutarchyArbitrationHandler handler;
-        address[] actors;
+        FutarchyArbitration internal arb;
+        FutarchyArbitrationHandler internal handler;
+        WETHMock internal weth;
 
-        uint256 initialSupply;
+        uint256 internal initialWethSupply;
 
         function setUp() public {
-            // Install a real ERC20 into the canonical immutable WETH address.
             WETHMock impl = new WETHMock();
             vm.etch(WETH, address(impl).code);
+            weth = WETHMock(WETH);
 
             arb = new FutarchyArbitration();
 
-            // Create a small actor set and fund them.
-            for (uint256 i = 0; i < 6; i++) {
-                actors.push(vm.addr(i + 1));
-            }
-
-            WETHMock token = WETHMock(WETH);
+            address[] memory actors = new address[](6);
             for (uint256 i = 0; i < actors.length; i++) {
-                token.mint(actors[i], 1_000_000e18);
+                actors[i] = address(uint160(uint256(keccak256(abi.encode("arb-actor", i)))));
+                weth.mint(actors[i], 1_000_000e18);
+
+                vm.prank(actors[i]);
+                weth.approve(address(arb), type(uint256).max);
             }
-            initialSupply = token.totalSupply();
+            initialWethSupply = weth.totalSupply();
 
             handler = new FutarchyArbitrationHandler(arb, actors);
+            handler.settleNoByTimeout(0, 1, 1);
+            handler.settleYesByTimeout(2, 1);
             targetContract(address(handler));
+
+            bytes4[] memory selectors = new bytes4[](9);
+            selectors[0] = FutarchyArbitrationHandler.createProposal.selector;
+            selectors[1] = FutarchyArbitrationHandler.createExplicitProposal.selector;
+            selectors[2] = FutarchyArbitrationHandler.placeYesBond.selector;
+            selectors[3] = FutarchyArbitrationHandler.placeNoBond.selector;
+            selectors[4] = FutarchyArbitrationHandler.advanceTime.selector;
+            selectors[5] = FutarchyArbitrationHandler.finalizeByTimeout.selector;
+            selectors[6] = FutarchyArbitrationHandler.settleYesByTimeout.selector;
+            selectors[7] = FutarchyArbitrationHandler.settleNoByTimeout.selector;
+            selectors[8] = FutarchyArbitrationHandler.withdraw.selector;
+            targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         }
 
-        /// @dev Conservation invariant: totalSupply is constant and all tokens remain within
-        /// our closed system: the actors + the arbitration contract.
+        /// @custom:spec INV-ARB-001 — nextProposalId is monotone and auto ids are contiguous.
+        function invariant_INV_ARB_001_nextProposalIdMonotonic() public view {
+            assertFalse(
+                handler.sawNextProposalIdRegression(),
+                "INV-ARB-001 violated: nextProposalId regressed"
+            );
+            assertFalse(
+                handler.sawAutoCreateStepViolation(),
+                "INV-ARB-001 violated: auto create did not advance exactly once"
+            );
+
+            uint256 nextProposalId = arb.nextProposalId();
+            assertEq(
+                nextProposalId,
+                handler.maxObservedNextProposalId(),
+                "INV-ARB-001 violated: handler observation stale"
+            );
+
+            for (uint256 proposalId = 1; proposalId < nextProposalId; proposalId++) {
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                assertTrue(p.exists, "INV-ARB-001 violated: auto id gap");
+            }
+        }
+
+        /// @dev Existing closed-system sanity check retained for the arbitration handler.
         function invariant_WETH_conserved_across_actors_and_contract() public view {
-            WETHMock token = WETHMock(WETH);
-            assertEq(token.totalSupply(), initialSupply);
+            assertEq(weth.totalSupply(), initialWethSupply);
 
-            uint256 sum = token.balanceOf(address(arb));
-            for (uint256 i = 0; i < actors.length; i++) {
-                sum += token.balanceOf(actors[i]);
+            uint256 sum = weth.balanceOf(address(arb));
+            uint256 actorCount = handler.actorCount();
+            for (uint256 i = 0; i < actorCount; i++) {
+                sum += weth.balanceOf(handler.actorAt(i));
             }
-            assertEq(sum, initialSupply);
+            assertEq(sum, initialWethSupply);
         }
 
-        /// @dev Accounting invariant: contract WETH balance equals active-escrowed bonds
-        /// + total withdrawable owed (since funds never leave except via withdraw).
+        /// @dev Existing weaker accounting check for INV-ARB-003 until the equality invariant
+        /// lands.
         function invariant_contract_balance_equals_escrow_plus_withdrawable() public view {
-            // Note: Phase 1 only, so proposals are small; but there is no public iterator.
-            // We can still assert the weaker property that contract balance is >= total
-            // withdrawable.
-            // (Escrowed bonds add extra balance.)
-            WETHMock token = WETHMock(WETH);
-
             uint256 totalWithdrawable;
-            for (uint256 i = 0; i < actors.length; i++) {
-                totalWithdrawable += arb.withdrawable(actors[i]);
+            uint256 actorCount = handler.actorCount();
+            for (uint256 i = 0; i < actorCount; i++) {
+                totalWithdrawable += arb.withdrawable(handler.actorAt(i));
             }
 
-            assertGe(token.balanceOf(address(arb)), totalWithdrawable);
+            assertGe(weth.balanceOf(address(arb)), totalWithdrawable);
         }
     }

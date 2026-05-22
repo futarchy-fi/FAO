@@ -130,7 +130,7 @@ write-set of `proposals[p].exists := true` ⊆ { _initProposal }
 
 **Cite.** `src/FutarchyArbitration.sol:88, 192-213, 497-507`.
 
-**Status:** STATED. Partial Foundry invariant exists; needs strengthening with a per-state predicate.
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_001_nextProposalIdMonotonic`).
 
 ---
 
@@ -321,7 +321,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-SALE-002 | ✓ | partial (ETH only — `test_ragequit_ETHOnly`) | — |
 | INV-SALE-003 | ✓ | ✓ (`test_ragequit_revertsOn*`) | — |
 | INV-SALE-004 | ✓ | partial | — |
-| INV-ARB-001 | ✓ | partial | — |
+| INV-ARB-001 | ✓ | ✓ (`invariant_INV_ARB_001_nextProposalIdMonotonic`) | — |
 | INV-ARB-002 | ✓ | — | — |
 | INV-ARB-003 | ✓ | ✓ (`test/FutarchyArbitration.invariants.t.sol`, currently as `>=`) | — |
 | INV-ARB-004 | ✓ | — | — |
