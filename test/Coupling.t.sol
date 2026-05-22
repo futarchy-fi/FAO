@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 interface IFutarchyRegistryManifestView {
     function CTF() external view returns (address);
+    function PROPOSAL_IMPL() external view returns (address);
     function STACK_DEPLOYER() external view returns (address);
     function TOKEN_ARB_DEPLOYER() external view returns (address);
     function UNIV3_FACTORY() external view returns (address);
@@ -22,6 +23,9 @@ contract CouplingTest is Test {
 
         _assertHasCode("active.registry", vm.parseJsonAddress(manifest, ".active.registry"));
         _assertHasCode(
+            "active.proposal_impl_v5", vm.parseJsonAddress(manifest, ".active.proposal_impl_v5")
+        );
+        _assertHasCode(
             "active.token_arb_deployer", vm.parseJsonAddress(manifest, ".active.token_arb_deployer")
         );
         _assertHasCode(
@@ -33,8 +37,8 @@ contract CouplingTest is Test {
             vm.parseJsonAddress(manifest, ".active.uniswap_v3_liquidity_adapter")
         );
 
-        // `proposal_impl_v5` is currently null and `operator` is an EOA in
-        // deployments.schema.json; both are still covered by manifest validation.
+        // `operator` is an EOA in deployments.schema.json and should not
+        // silently become a contract without a manifest/test update.
         address operator = vm.parseJsonAddress(manifest, ".active.operator");
         assertEq(operator.code.length, 0, "active.operator should remain an EOA");
     }
@@ -47,6 +51,11 @@ contract CouplingTest is Test {
             vm.parseJsonAddress(manifest, ".active.registry")
         );
 
+        assertEq(
+            registry.PROPOSAL_IMPL(),
+            vm.parseJsonAddress(manifest, ".active.proposal_impl_v5"),
+            "registry PROPOSAL_IMPL != manifest"
+        );
         assertEq(
             registry.TOKEN_ARB_DEPLOYER(),
             vm.parseJsonAddress(manifest, ".active.token_arb_deployer"),

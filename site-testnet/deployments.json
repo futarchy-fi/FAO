@@ -2,7 +2,7 @@
   "$schema": "./deployments.schema.json",
   "version": "v5",
   "generated_by": "manual — will become CI-generated when audit/wiki/10-fao-repo/deployment-history.md is wired",
-  "generated_at": "2026-05-22T11:30:00Z",
+  "generated_at": "2026-05-22T19:55:46Z",
   "network": "sepolia",
   "chain_id": 11155111,
   "shared": {
@@ -18,7 +18,7 @@
     "registry":                "0x18D1f4e57412b48436C7825B9018437C235bBC5C",
     "token_arb_deployer":      "0x475a9630CbC4e78d95e0C2C49D7df7437589132a",
     "futarchy_stack_deployer": "0xc5d7e4e0B73de05eda367Aa16D1cc58A2c3f4A46",
-    "proposal_impl_v5":        null,
+    "proposal_impl_v5":        "0xF9ed9a3ff5A2ab89C6E01A0D959D03Ce7a845cD0",
     "uniswap_v3_liquidity_adapter": "0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A",
     "operator":                "0x693E3FB46Bb36eE43C702FE94f9463df0691b43d"
   },
@@ -37,6 +37,7 @@
   },
   "verification_todo": [
     "active.registry FutarchyRegistry v5 0x18D1f4e57412b48436C7825B9018437C235bBC5C",
+    "active.proposal_impl_v5 FAOFutarchyProposal v5 0xF9ed9a3ff5A2ab89C6E01A0D959D03Ce7a845cD0",
     "active.token_arb_deployer TokenAndArbitrationDeployer v5 0x475a9630CbC4e78d95e0C2C49D7df7437589132a",
     "active.futarchy_stack_deployer FutarchyStackDeployer v5 0xc5d7e4e0B73de05eda367Aa16D1cc58A2c3f4A46",
     "active.uniswap_v3_liquidity_adapter UniswapV3LiquidityAdapter v5 0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A",

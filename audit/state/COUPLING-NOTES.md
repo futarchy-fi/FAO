@@ -4,12 +4,11 @@
 
 `test/Coupling.t.sol` checks active Sepolia deployment entries from `deployments.json`.
 The fork test asserts bytecode exists for the active contract entries:
-`registry`, `token_arb_deployer`, `futarchy_stack_deployer`, and
-`uniswap_v3_liquidity_adapter`.
+`registry`, `proposal_impl_v5`, `token_arb_deployer`,
+`futarchy_stack_deployer`, and `uniswap_v3_liquidity_adapter`.
 
-Two active fields are intentionally not contract bytecode:
+One active field is intentionally not contract bytecode:
 
-- `proposal_impl_v5` is `null` in the manifest.
 - `operator` is an EOA and is asserted to have no bytecode.
 
 Raw runtime hashes do not compare cleanly for this deployment because the live
@@ -58,3 +57,10 @@ Do not skip or bless this mismatch. To make the coupling gate green again,
 redeploy the active registry/deployer set from current source and update
 `deployments.json` + `site-testnet/deployments.json`, or revert the source
 change that made the local deployer bytecode differ from the active deployment.
+
+The older `broadcast/DeployFutarchyRegistry.s.sol/11155111/run-latest.json`
+registry (`0xd658a63384794a6bc7724b46cc35366bb8120cb2`) is not a safe manifest
+replacement: its instance tuple no longer decodes with the current
+`FutarchyRegistry` ABI, so adopting it would hide the bytecode mismatch by
+introducing a registry ABI mismatch. Keep the active V3 registry until a
+current-source redeploy is available.

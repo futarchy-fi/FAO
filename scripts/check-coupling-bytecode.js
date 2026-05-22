@@ -24,6 +24,12 @@ const ACTIVE_CONTRACTS = [
     artifact: 'out/FutarchyRegistry.sol/FutarchyRegistry.json',
   },
   {
+    key: 'proposal_impl_v5',
+    contract: 'FAOFutarchyProposal',
+    artifact: 'out/FAOFutarchyProposal.sol/FAOFutarchyProposal.json',
+    optionalNull: true,
+  },
+  {
     key: 'token_arb_deployer',
     contract: 'TokenAndArbitrationDeployer',
     artifact: 'out/FutarchyRegistryDeployers.sol/TokenAndArbitrationDeployer.json',
@@ -114,6 +120,10 @@ function main() {
 
   for (const item of ACTIVE_CONTRACTS) {
     const address = manifest.active[item.key];
+    if (address === null && item.optionalNull) {
+      console.error(`[skip] active.${item.key} is null by manifest contract`);
+      continue;
+    }
     if (!address) throw new Error(`missing active.${item.key}`);
 
     const artifact = JSON.parse(fs.readFileSync(path.join(ROOT, item.artifact), 'utf8'));
@@ -138,11 +148,7 @@ function main() {
     console.error(`[ok] active.${item.key} ${address} ${localHash}`);
   }
 
-  if (manifest.active.proposal_impl_v5 !== null) {
-    throw new Error('active.proposal_impl_v5 is no longer null; add it to ACTIVE_CONTRACTS');
-  }
   if (!manifest.active.operator) throw new Error('missing active.operator');
-  console.error(`[skip] active.proposal_impl_v5 is null by manifest contract`);
   console.error(`[skip] active.operator ${manifest.active.operator} is an EOA, not bytecode`);
 
   process.stdout.write(`0x${'0'.repeat(63)}1`);
