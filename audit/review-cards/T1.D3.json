@@ -1,0 +1,36 @@
+{
+  "topic": 1,
+  "dimension": "D3",
+  "generatedAt": "2026-05-22T18:30:00Z",
+  "evidence": [
+    {
+      "action": "create",
+      "selector": "[data-testid=\"confirm-card-create\"]",
+      "screenshot": "audit/screenshots/confirm-card-create.png",
+      "decodedRows": ["Action", "Token", "Base bond", "Gas estimate"],
+      "controls": ["confirm-card-create-confirm", "confirm-card-create-cancel"]
+    },
+    {
+      "action": "proposal",
+      "selector": "[data-testid=\"confirm-card-proposal\"]",
+      "screenshot": "audit/screenshots/confirm-card-proposal.png",
+      "decodedRows": ["Action", "Title", "Bond", "Gas estimate"],
+      "controls": ["confirm-card-proposal-confirm", "confirm-card-proposal-cancel"]
+    },
+    {
+      "action": "resolve",
+      "selector": "[data-testid=\"confirm-card-resolve\"]",
+      "screenshot": "audit/screenshots/confirm-card-resolve.png",
+      "decodedRows": ["Action", "Proposal", "Resolver", "Gas estimate"],
+      "controls": ["confirm-card-resolve-confirm", "confirm-card-resolve-cancel"]
+    },
+    {
+      "action": "bond",
+      "selector": "[data-testid=\"confirm-card-bond\"]",
+      "screenshot": "audit/screenshots/confirm-card-bond.png",
+      "decodedRows": ["Action", "Proposal", "WETH amount", "Gas estimate"],
+      "controls": ["confirm-card-bond-confirm", "confirm-card-bond-cancel"]
+    }
+  ],
+  "test": "tests-e2e/journeys/confirm-cards.read-only.spec.ts"
+}
