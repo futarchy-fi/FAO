@@ -54,6 +54,11 @@ const factoryAbi = parseAbi([
   'function proposals(uint256) view returns (address)',
 ]);
 
+const arbitrationAbi = parseAbi([
+  'function baseX() view returns (uint256)',
+  'function getProposal(uint256) view returns ((uint256 minActivationBond, (address bidder, uint256 amount) yesBond, (address bidder, uint256 amount) noBond, uint8 state, uint64 lastStateChangeAt, bool settled, bool accepted, uint32 queuePosition, bool exists))',
+]);
+
 const publicClient = createPublicClient({
   chain: sepoliaFork,
   transport: http(RPC_URL),
@@ -122,6 +127,54 @@ async function readTokenBalance(tokenAddress, account) {
     functionName: 'balanceOf',
     args: [account],
   });
+}
+
+async function readFactoryMarketsCount(factoryAddress) {
+  return await publicClient.readContract({
+    address: factoryAddress,
+    abi: factoryAbi,
+    functionName: 'marketsCount',
+  });
+}
+
+async function readFactoryProposal(factoryAddress, index) {
+  return await publicClient.readContract({
+    address: factoryAddress,
+    abi: factoryAbi,
+    functionName: 'proposals',
+    args: [index],
+  });
+}
+
+async function readArbitrationBaseX(arbitrationAddress) {
+  return await publicClient.readContract({
+    address: arbitrationAddress,
+    abi: arbitrationAbi,
+    functionName: 'baseX',
+  });
+}
+
+async function readArbitrationProposal(arbitrationAddress, proposalId) {
+  const p = await publicClient.readContract({
+    address: arbitrationAddress,
+    abi: arbitrationAbi,
+    functionName: 'getProposal',
+    args: [proposalId],
+  });
+
+  return {
+    minActivationBond: p.minActivationBond ?? p[0],
+    yesBond: {
+      bidder: p.yesBond?.bidder ?? p[1]?.bidder ?? p[1]?.[0],
+      amount: p.yesBond?.amount ?? p[1]?.amount ?? p[1]?.[1],
+    },
+    noBond: {
+      bidder: p.noBond?.bidder ?? p[2]?.bidder ?? p[2]?.[0],
+      amount: p.noBond?.amount ?? p[2]?.amount ?? p[2]?.[1],
+    },
+    state: Number(p.state ?? p[3]),
+    exists: p.exists ?? p[8],
+  };
 }
 
 async function canReadForkBlock() {
@@ -240,6 +293,51 @@ async function createPart1Instance({ name, symbol, description }) {
   }).toBe(id + 1n);
 
   return { id, inst: await readInstance(id) };
+}
+
+async function createReadyInstance({ name, symbol, description }) {
+  const created = await createPart1Instance({ name, symbol, description });
+
+  castSend(
+    REGISTRY,
+    'createFutarchyPart2(uint256)',
+    [created.id.toString()],
+    { gasLimit: '15000000' },
+  );
+
+  await expect.poll(async () => (await readInstance(created.id)).status, {
+    timeout: 60_000,
+    message: 'registry instance should become READY after cast createFutarchyPart2',
+  }).toBe(2);
+
+  return { id: created.id, inst: await readInstance(created.id) };
+}
+
+async function createFactoryProposal(inst, { name, description }) {
+  const index = await readFactoryMarketsCount(inst.factory);
+  const tupleArg = `(${name},${description},${inst.token},${WETH})`;
+
+  castSend(
+    inst.factory,
+    'createProposal((string,string,address,address))',
+    [tupleArg],
+    { gasLimit: '6000000' },
+  );
+
+  await expect.poll(() => readFactoryMarketsCount(inst.factory), {
+    timeout: 30_000,
+    message: 'factory.marketsCount() should increment after cast createProposal',
+  }).toBe(index + 1n);
+
+  return { index, proposal: await readFactoryProposal(inst.factory, index) };
+}
+
+function castDepositWeth(amount) {
+  castSend(WETH, 'deposit()', [], { value: amount.toString(), gasLimit: '100000' });
+}
+
+function castApproveWeth(spender, amount) {
+  castSend(WETH, 'approve(address,uint256)', [spender, amount.toString()], { gasLimit: '100000' });
 }
 
 async function routePublicRpcToFork(page) {
@@ -372,5 +470,67 @@ test.describe('fork state — read-only UI over cast mutations', () => {
       timeout: 30_000,
       message: 'sale balance should show cast buyer token balance',
     }).toContain(`3.00 ${symbol}`);
+  });
+
+  test('proposals page reflects cast-placed YES bond without wallet signing', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'fork', 'fork-state specs require the Playwright fork project');
+
+    const suffix = Date.now().toString(36).slice(-6).toUpperCase();
+    const symbol = `BND${suffix}`.slice(0, 10);
+    const { id, inst } = await createReadyInstance({
+      name: `Fork Bond ${suffix}`,
+      symbol,
+      description: 'Proposal and bond mutation target for fork-state.read-only.spec.ts.',
+    });
+    const proposalName = `Fork YES ${suffix}`;
+    const { proposal } = await createFactoryProposal(inst, {
+      name: proposalName,
+      description: 'Cast-created proposal for a read-only fork-state bond assertion.',
+    });
+    const arbitrationProposalId = BigInt(proposal);
+
+    await page.goto(`/proposals.html?inst=${id}`);
+    const proposalList = page.locator('#sep-proposals');
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    const card = proposalList.locator('.sep-card', { hasText: proposalName });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should render the initial arbitration chip',
+    }).toBe('INACTIVE');
+
+    const baseX = await readArbitrationBaseX(inst.arbitration);
+    castDepositWeth(baseX);
+    castApproveWeth(inst.arbitration, baseX);
+    castSend(
+      inst.arbitration,
+      'createProposalWithId(uint256,uint256)',
+      [proposal, baseX.toString()],
+      { gasLimit: '200000' },
+    );
+    castSend(
+      inst.arbitration,
+      'placeYesBond(uint256,uint256)',
+      [proposal, baseX.toString()],
+      { gasLimit: '250000' },
+    );
+
+    await expect.poll(async () => {
+      const p = await readArbitrationProposal(inst.arbitration, arbitrationProposalId);
+      return `${p.state}:${p.yesBond.amount}`;
+    }, {
+      timeout: 30_000,
+      message: 'arbitration proposal should move to YES with the cast bond amount',
+    }).toBe(`1:${baseX}`);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should show the cast-updated YES chip after reload',
+    }).toBe('YES');
+    await expect(card.locator('.bond-panel')).toContainText('YES bond');
+    await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
+    await expect(card.locator('.bond-panel')).toContainText(ANVIL_ADDRESS.slice(0, 6));
   });
 });
