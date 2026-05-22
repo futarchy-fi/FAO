@@ -1,5 +1,29 @@
 [
   {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "adapterReplaceable",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "ADAPTER_REPLACEABLE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "function",
     "name": "deployStack",
     "inputs": [
