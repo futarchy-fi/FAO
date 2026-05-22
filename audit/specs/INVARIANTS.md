@@ -233,7 +233,7 @@ else:
 
 **Cite.** `src/FAOOfficialProposalOrchestrator.sol:121-178`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FAOOfficialProposalOrchestrator.invariants.t.sol::invariant_INV_ORCH_001_atomicRollbackEnvelope`).
 
 ---
 
@@ -327,7 +327,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ARB-004 | ✓ | ✓ (`invariant_INV_ARB_004_strictNoBondMatching`) | — |
 | INV-ARB-005 | ✓ | — | — |
 | INV-ARB-006 | ✓ | ✓ (`invariant_INV_ARB_006_safetyModeThresholdGating`) | — |
-| INV-ORCH-001 | ✓ | — | — |
+| INV-ORCH-001 | ✓ | ✓ (`invariant_INV_ORCH_001_atomicRollbackEnvelope`) | — |
 | INV-ORCH-002 | ✓ | — | — |
 | INV-TWAP-001 | ✓ | — | — |
 | INV-TWAP-002 | ✓ | — | — |
