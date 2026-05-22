@@ -239,19 +239,19 @@ else:
 
 ## INV-ORCH-002 — Pre-init pool defense
 
-**Prose.** At the start of `_maybeCreatePoolAndInit`, if a pool already exists at the deterministic CREATE2 address and `slot0().sqrtPriceX96 != 0`, the call MUST revert (`SpotPoolAlreadyExists`). The orchestrator never operates on an attacker-initialized pool.
+**Prose.** At the start of `_maybeCreatePoolAndInit`, if a pool already exists at the deterministic CREATE2 address and `slot0().sqrtPriceX96 != 0`, the call MUST revert (`PreCreated(pool)`). The orchestrator never operates on an attacker-initialized pool.
 
 **Predicate.**
 ```
 ∀ proposal p:
   let pool = UNIV3_FACTORY.getPool(token, WETH, FEE_TIER)
   pool != 0 ∧ IUniswapV3Pool(pool).slot0().sqrtPriceX96 != 0
-    ⇒ _maybeCreatePoolAndInit(...) reverts with SpotPoolAlreadyExists
+    ⇒ _maybeCreatePoolAndInit(...) reverts with PreCreated(pool)
 ```
 
 **Cite.** `src/FAOOfficialProposalOrchestrator.sol:204-228`, `src/FutarchyRegistry.sol:_createAndInitSpotPool` (same predicate for the registry's spot pool).
 
-**Status:** STATED.
+**Status:** TESTED (`test/FAOOfficialProposalOrchestrator.invariants.t.sol::invariant_INV_ORCH_002_refusesPreInitializedPool`).
 
 ---
 
@@ -328,7 +328,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ARB-005 | ✓ | — | — |
 | INV-ARB-006 | ✓ | ✓ (`invariant_INV_ARB_006_safetyModeThresholdGating`) | — |
 | INV-ORCH-001 | ✓ | ✓ (`invariant_INV_ORCH_001_atomicRollbackEnvelope`) | — |
-| INV-ORCH-002 | ✓ | — | — |
+| INV-ORCH-002 | ✓ | ✓ (`invariant_INV_ORCH_002_refusesPreInitializedPool`) | — |
 | INV-TWAP-001 | ✓ | — | — |
 | INV-TWAP-002 | ✓ | — | — |
 

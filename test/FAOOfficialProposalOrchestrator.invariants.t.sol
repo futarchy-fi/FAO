@@ -172,6 +172,24 @@ contract OrchestratorInvariantUniV3Factory is IUniswapV3FactoryLike {
         poolCount += 1;
     }
 
+    function ensurePreInitialized(address tokenA, address tokenB, uint24 fee, uint160 sqrtPriceX96)
+        external
+        returns (address pool)
+    {
+        (address token0, address token1) = _sort(tokenA, tokenB);
+        pool = pools[token0][token1][fee];
+        if (pool == address(0)) {
+            pool = address(new OrchestratorInvariantUniV3Pool(token0, token1, fee));
+            pools[token0][token1][fee] = pool;
+            poolCount += 1;
+        }
+
+        (uint160 existing,,,,,,) = OrchestratorInvariantUniV3Pool(pool).slot0();
+        if (existing == 0) {
+            OrchestratorInvariantUniV3Pool(pool).initialize(sqrtPriceX96);
+        }
+    }
+
     function _sort(address tokenA, address tokenB)
         internal
         pure
@@ -240,11 +258,14 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
         uint256 prepareCount;
         uint256 wrapperCreateCount;
         uint256 bindCount;
-        uint256 adapterMigrateCount;
+        uint256 goodAdapterMigrateCount;
+        uint256 revertingAdapterMigrateCount;
         uint256 coinbaseBalance;
         uint256 adminBalance;
         address adapter;
     }
+
+    uint160 internal constant PREINIT_SQRT_PRICE_X96 = 79_228_162_514_264_337_593_543_950_336;
 
     FAOOfficialProposalOrchestrator public immutable ORCH;
     FAOFutarchyFactory public immutable FACTORY;
@@ -257,10 +278,15 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
 
     address public immutable ADMIN;
     address public immutable COINBASE;
+    address public immutable COMPANY_TOKEN;
+    address public immutable CURRENCY_TOKEN;
+    uint24 public immutable FEE_TIER;
 
     bool public sawRollbackViolation;
+    bool public sawPreInitViolation;
     uint256 public successfulPromotions;
     uint256 public rollbackAttempts;
+    uint256 public preInitAttempts;
 
     constructor(
         FAOOfficialProposalOrchestrator orch,
@@ -272,7 +298,10 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
         OrchestratorInvariantNoopAdapter goodAdapter,
         OrchestratorInvariantRevertingAdapter revertingAdapter,
         address admin,
-        address coinbase
+        address coinbase,
+        address companyToken,
+        address currencyToken,
+        uint24 feeTier
     ) {
         ORCH = orch;
         FACTORY = factory;
@@ -284,6 +313,9 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
         REVERTING_ADAPTER = revertingAdapter;
         ADMIN = admin;
         COINBASE = coinbase;
+        COMPANY_TOKEN = companyToken;
+        CURRENCY_TOKEN = currencyToken;
+        FEE_TIER = feeTier;
     }
 
     function promoteSuccess(uint256 randaoSeed) external {
@@ -310,8 +342,8 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
         vm.coinbase(COINBASE);
         vm.deal(ADMIN, 100 ether);
 
-        uint256 builderTip = bound(tipSeed, 0, 0.01 ether);
-        Snapshot memory beforeState = _snapshot(REVERTING_ADAPTER);
+        uint256 builderTip = _builderTip(tipSeed);
+        Snapshot memory beforeState = _snapshot();
         rollbackAttempts += 1;
 
         vm.prank(ADMIN);
@@ -323,8 +355,39 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
             sawRollbackViolation = true;
         } catch {}
 
-        if (!_sameSnapshot(beforeState, _snapshot(REVERTING_ADAPTER))) {
+        if (!_sameSnapshot(beforeState, _snapshot())) {
             sawRollbackViolation = true;
+        }
+    }
+
+    function preInitializeThenPromote(uint256 randaoSeed, uint256 tipSeed) external {
+        _setAdapter(GOOD_ADAPTER);
+        vm.prevrandao(bytes32(uint256(keccak256(abi.encode("preinit", randaoSeed)))));
+        vm.coinbase(COINBASE);
+        vm.deal(ADMIN, 100 ether);
+
+        (address yesCompany, address yesCurrency) = _predictYesPair("preinit", "desc");
+        UNI_FACTORY.ensurePreInitialized(yesCompany, yesCurrency, FEE_TIER, PREINIT_SQRT_PRICE_X96);
+
+        uint256 builderTip = _builderTip(tipSeed);
+        Snapshot memory beforeState = _snapshot();
+        preInitAttempts += 1;
+
+        vm.prank(ADMIN);
+        try ORCH.createOfficialProposalAndMigrate{value: builderTip}(
+            "preinit", "desc", builderTip
+        ) returns (
+            uint256, address
+        ) {
+            sawPreInitViolation = true;
+        } catch (bytes memory reason) {
+            if (_selector(reason) != FAOOfficialProposalOrchestrator.PreCreated.selector) {
+                sawPreInitViolation = true;
+            }
+        }
+
+        if (!_sameSnapshot(beforeState, _snapshot())) {
+            sawPreInitViolation = true;
         }
     }
 
@@ -334,18 +397,15 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
         ORCH.setAdapter(adapter);
     }
 
-    function _snapshot(OrchestratorInvariantRevertingAdapter adapter)
-        internal
-        view
-        returns (Snapshot memory)
-    {
+    function _snapshot() internal view returns (Snapshot memory) {
         return Snapshot({
             marketsCount: FACTORY.marketsCount(),
             poolCount: UNI_FACTORY.poolCount(),
             prepareCount: CTF.prepareCount(),
             wrapperCreateCount: WRAPPED_1155.createCount(),
             bindCount: RESOLVER.bindCount(),
-            adapterMigrateCount: adapter.migrateCount(),
+            goodAdapterMigrateCount: GOOD_ADAPTER.migrateCount(),
+            revertingAdapterMigrateCount: REVERTING_ADAPTER.migrateCount(),
             coinbaseBalance: COINBASE.balance,
             adminBalance: ADMIN.balance,
             adapter: address(ORCH.adapter())
@@ -355,13 +415,67 @@ contract FAOOfficialProposalOrchestratorHandler is Test {
     function _sameSnapshot(Snapshot memory a, Snapshot memory b) internal pure returns (bool) {
         return a.marketsCount == b.marketsCount && a.poolCount == b.poolCount
             && a.prepareCount == b.prepareCount && a.wrapperCreateCount == b.wrapperCreateCount
-            && a.bindCount == b.bindCount && a.adapterMigrateCount == b.adapterMigrateCount
+            && a.bindCount == b.bindCount && a.goodAdapterMigrateCount == b.goodAdapterMigrateCount
+            && a.revertingAdapterMigrateCount == b.revertingAdapterMigrateCount
             && a.coinbaseBalance == b.coinbaseBalance && a.adminBalance == b.adminBalance
             && a.adapter == b.adapter;
+    }
+
+    function _builderTip(uint256 seed) internal pure returns (uint256) {
+        return seed % (0.01 ether + 1);
+    }
+
+    function _predictYesPair(string memory marketName, string memory description)
+        internal
+        view
+        returns (address yesCompany, address yesCurrency)
+    {
+        uint256 proposalIndex = FACTORY.marketsCount();
+        bytes32 questionId = FACTORY.computeQuestionId(marketName, description, proposalIndex);
+        bytes32 conditionId = FACTORY.computeConditionId(questionId);
+        yesCompany = _predictedWrapper(COMPANY_TOKEN, conditionId, 1, "YES_FAO");
+        yesCurrency = _predictedWrapper(CURRENCY_TOKEN, conditionId, 1, "YES_WETH");
+    }
+
+    function _predictedWrapper(
+        address collateral,
+        bytes32 conditionId,
+        uint256 indexSet,
+        string memory tokenName
+    ) internal view returns (address) {
+        bytes32 collectionId = CTF.getCollectionId(bytes32(0), conditionId, indexSet);
+        uint256 tokenId = CTF.getPositionId(collateral, collectionId);
+        bytes memory tokenData = _encodeWrapperMetadata(tokenName);
+        bytes32 salt = keccak256(abi.encodePacked(address(CTF), tokenId, tokenData));
+        return address(uint160(uint256(salt)));
+    }
+
+    function _encodeWrapperMetadata(string memory name) internal pure returns (bytes memory) {
+        return abi.encodePacked(_toString31(name), _toString31(name), uint8(18));
+    }
+
+    function _toString31(string memory value) internal pure returns (bytes32 encodedString) {
+        uint256 length = bytes(value).length;
+        require(length < 32, "string too long");
+
+        assembly {
+            encodedString := mload(add(value, 0x20))
+        }
+        bytes32 mask = bytes32(type(uint256).max << ((32 - length) << 3));
+        encodedString = encodedString & mask;
+        encodedString = encodedString | bytes32(length << 1);
+    }
+
+    function _selector(bytes memory reason) internal pure returns (bytes4 selector) {
+        if (reason.length < 4) return bytes4(0);
+        assembly {
+            selector := mload(add(reason, 0x20))
+        }
     }
 }
 
 /// @custom:spec INV-ORCH-001 — see audit/specs/INVARIANTS.md.
+/// @custom:spec INV-ORCH-002 — see audit/specs/INVARIANTS.md.
 contract FAOOfficialProposalOrchestratorInvariants is StdInvariant, Test {
     uint24 internal constant FEE = 500;
     uint16 internal constant OBSERVATION_CARDINALITY = 100;
@@ -415,15 +529,20 @@ contract FAOOfficialProposalOrchestratorInvariants is StdInvariant, Test {
             goodAdapter,
             revertingAdapter,
             admin,
-            coinbase
+            coinbase,
+            address(company),
+            address(currency),
+            FEE
         );
 
         handler.forceAdapterRevert(1, 0.001 ether);
+        handler.preInitializeThenPromote(2, 0.002 ether);
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](2);
+        bytes4[] memory selectors = new bytes4[](3);
         selectors[0] = FAOOfficialProposalOrchestratorHandler.promoteSuccess.selector;
         selectors[1] = FAOOfficialProposalOrchestratorHandler.forceAdapterRevert.selector;
+        selectors[2] = FAOOfficialProposalOrchestratorHandler.preInitializeThenPromote.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -432,6 +551,15 @@ contract FAOOfficialProposalOrchestratorInvariants is StdInvariant, Test {
         assertGt(handler.rollbackAttempts(), 0, "INV-ORCH-001 not exercised");
         assertFalse(
             handler.sawRollbackViolation(), "INV-ORCH-001 violated: forced revert leaked state"
+        );
+    }
+
+    /// @custom:spec INV-ORCH-002 — pre-initialized conditional pools are refused.
+    function invariant_INV_ORCH_002_refusesPreInitializedPool() public view {
+        assertGt(handler.preInitAttempts(), 0, "INV-ORCH-002 not exercised");
+        assertFalse(
+            handler.sawPreInitViolation(),
+            "INV-ORCH-002 violated: pre-initialized pool was accepted or leaked state"
         );
     }
 }
