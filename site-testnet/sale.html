@@ -86,8 +86,9 @@
           <span class="trade-card-label">via Uniswap (spot pool)</span>
           <span class="trade-card-price" id="trade-buy-uni-price">—</span>
         </div>
-        <p class="trade-card-note" id="trade-buy-uni-note">Cross-check the spot price before swapping — slippage and pool depth matter.</p>
-        <a id="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" href="#" target="_blank" rel="noopener">Open Uniswap →</a>
+        <p class="trade-card-note" id="trade-buy-uni-note">QuoterV2 quote across the actual liquidity curve. Swaps stay in this page via SwapRouter02 — set your amount on the left, then click below.</p>
+        <button id="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Buy via Uniswap</button>
+        <a id="trade-buy-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>
 
@@ -124,8 +125,9 @@
           <span class="trade-card-label">via Uniswap (spot pool)</span>
           <span class="trade-card-price" id="trade-sell-uni-price">—</span>
         </div>
-        <p class="trade-card-note">Cross-check the spot price before swapping — slippage and pool depth matter.</p>
-        <a id="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" href="#" target="_blank" rel="noopener">Open Uniswap →</a>
+        <p class="trade-card-note">QuoterV2 quote across the actual liquidity curve. Swap unwraps WETH → ETH automatically.</p>
+        <button id="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Sell via Uniswap</button>
+        <a id="trade-sell-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>
 

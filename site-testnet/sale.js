@@ -19,7 +19,15 @@
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const REFRESH_INTERVAL = 30_000;
   const ZERO = '0x0000000000000000000000000000000000000000';
+  const WETH = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14';
   const UNI_SWAP_URL = 'https://app.uniswap.org/swap';
+
+  // Sepolia Uniswap V3 infra (verified on-chain by deploy script).
+  const UNI_SWAP_ROUTER  = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E'; // SwapRouter02
+  const UNI_QUOTER       = '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3'; // QuoterV2
+  const UNI_FEE_TIER     = 500; // matches the futarchy's spot pool
+  // Slippage tolerance for quoted amounts when sending the swap.
+  const UNI_SLIPPAGE_BPS = 50n; // 0.5%
 
   const SALE_ABI = [
     'function INITIAL_PRICE_WEI_PER_TOKEN() view returns (uint256)',
@@ -53,6 +61,27 @@
     'function liquidity() view returns (uint128)',
   ];
 
+  // Uniswap V3 QuoterV2 — same contract app.uniswap.org calls for quotes.
+  // `quoteExactInputSingle` is `payable` (non-view) so we always read it via
+  // staticCall — the contract internally calls swap on the pool then reverts,
+  // bubbling the simulated amountOut back through the revert reason.
+  const QUOTER_ABI = [
+    'function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96)) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)',
+  ];
+
+  // Uniswap V3 SwapRouter02 — single-hop exactInputSingle + multicall for
+  // unwrap on Token→ETH swaps.
+  const SWAP_ROUTER_ABI = [
+    'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)',
+    'function exactOutputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountOut,uint256 amountInMaximum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountIn)',
+    'function unwrapWETH9(uint256 amountMinimum,address recipient) payable',
+    'function refundETH() payable',
+    'function multicall(bytes[] calldata data) payable returns (bytes[] memory)',
+  ];
+
+  // (Router auto-wraps msg.value via WETH9.deposit and auto-unwraps via
+  // unwrapWETH9 inside multicall, so we don't need a direct WETH ABI.)
+
   const $$ = (sel) => document.querySelector(sel);
   const isZero = (a) => !a || a.toLowerCase() === ZERO;
   const fmtEth   = (wei) => `${(+ethers.formatEther(wei)).toFixed(6)} ETH`;
@@ -69,11 +98,12 @@
     inst: null,
     sym: 'TKN',
     salePriceWei: 0n,
-    uniPriceWei: 0n,       // 0n if pool has no liquidity
+    uniBuyPriceWei:  0n,   // ETH cost per 1 token via Uniswap
+    uniSellPriceWei: 0n,   // ETH received per 1 token via Uniswap
     poolHasLiquidity: false,
     seederAddr: null,      // first entry of sale.ragequitTokens, if any
     userBalance: 0n,       // token balance of connected wallet
-    confirmAction: null,   // 'buy' | 'ragequit'
+    confirmAction: null,   // 'buy' | 'ragequit' | 'uniBuy' | 'uniSell'
   };
 
   // ─── Boot ────────────────────────────────────────────────────────────
@@ -122,8 +152,12 @@
 
     const buyBtn  = $$('#trade-buy-sale-btn');
     const sellBtn = $$('#trade-sell-rq-btn');
-    if (buyBtn)  buyBtn.addEventListener('click', onBuyPreview);
-    if (sellBtn) sellBtn.addEventListener('click', onRagequitPreview);
+    const uniBuyBtn  = $$('#trade-buy-uni-btn');
+    const uniSellBtn = $$('#trade-sell-uni-btn');
+    if (buyBtn)     buyBtn.addEventListener('click', onBuyPreview);
+    if (sellBtn)    sellBtn.addEventListener('click', onRagequitPreview);
+    if (uniBuyBtn)  uniBuyBtn.addEventListener('click', onUniBuyPreview);
+    if (uniSellBtn) uniSellBtn.addEventListener('click', onUniSellPreview);
 
     const cancelBtn = $$('#sale-confirm-cancel');
     const goBtn = $$('#sale-confirm-go');
@@ -180,26 +214,65 @@
     return 'initial-sale';
   }
 
-  // ─── Uniswap spot price ──────────────────────────────────────────────
-  // Reads pool.slot0().sqrtPriceX96 and returns "wei of WETH per 1 whole token".
-  async function getUniSpotPriceWei(poolAddr, tokenAddr) {
-    if (!poolAddr || isZero(poolAddr)) return { priceWei: 0n, hasLiquidity: false };
+  // ─── Uniswap V3 quotes ──────────────────────────────────────────────
+  // Uses QuoterV2 — the same on-chain quote app.uniswap.org reads. Returns
+  // the WETH-out for selling 1 whole token AND the ETH-in for buying 1 whole
+  // token. Both quotes account for tick liquidity + the 0.05% fee (we
+  // already use fee=500). Pure-view by virtue of staticCall.
+  async function getUniSwapQuotes(poolAddr, tokenAddr) {
+    const result = {
+      priceBuyEthPerToken:  0n, // ETH needed to receive 1 whole token
+      priceSellEthPerToken: 0n, // ETH received when selling 1 whole token
+      hasLiquidity: false,
+    };
+    if (!poolAddr || isZero(poolAddr)) return result;
+
     const pool = new ethers.Contract(poolAddr, POOL_ABI, provider);
-    const [t0, slot0, liq] = await Promise.all([
-      safe(() => pool.token0(), null),
-      safe(() => pool.slot0(), null),
-      safe(() => pool.liquidity(), null),
-    ]);
-    if (t0 == null || slot0 == null) return { priceWei: 0n, hasLiquidity: false };
-    const sqrtBN = BigInt(slot0[0]);
-    if (sqrtBN === 0n) return { priceWei: 0n, hasLiquidity: false };
-    const Q192 = 1n << 192n;
-    const ratio = sqrtBN * sqrtBN; // Q192 fixed-point, token1/token0
-    const faoIsT0 = t0.toLowerCase() === tokenAddr.toLowerCase();
+    const liq = await safe(() => pool.liquidity(), 0n);
+    if (BigInt(liq) === 0n) return result;
+    result.hasLiquidity = true;
+
+    const quoter = new ethers.Contract(UNI_QUOTER, QUOTER_ABI, provider);
     const ONE = 10n ** 18n;
-    // wei of WETH per 1 whole token (1e18 units).
-    const priceWei = faoIsT0 ? (ratio * ONE) / Q192 : (Q192 * ONE) / ratio;
-    return { priceWei, hasLiquidity: liq != null && BigInt(liq) > 0n };
+
+    // Sell quote: tokenIn=TOKEN, tokenOut=WETH, amountIn=1e18 → WETH out.
+    const sellQuote = await safe(() =>
+      quoter.quoteExactInputSingle.staticCall({
+        tokenIn: tokenAddr,
+        tokenOut: WETH,
+        amountIn: ONE,
+        fee: UNI_FEE_TIER,
+        sqrtPriceLimitX96: 0n,
+      }), null);
+    if (sellQuote != null) result.priceSellEthPerToken = BigInt(sellQuote[0]);
+
+    // Buy quote: tokenIn=WETH, tokenOut=TOKEN, amountIn=1e18 → TOKEN out.
+    // Invert to get ETH-per-token: priceBuy = 1e18 * 1e18 / amountOut.
+    const buyQuote = await safe(() =>
+      quoter.quoteExactInputSingle.staticCall({
+        tokenIn: WETH,
+        tokenOut: tokenAddr,
+        amountIn: ONE,
+        fee: UNI_FEE_TIER,
+        sqrtPriceLimitX96: 0n,
+      }), null);
+    if (buyQuote != null && BigInt(buyQuote[0]) > 0n) {
+      result.priceBuyEthPerToken = (ONE * ONE) / BigInt(buyQuote[0]);
+    }
+    return result;
+  }
+
+  // Quote the exact amountOut for a specific size — used by the buy/sell
+  // confirm cards. Returns null if the pool can't fill it.
+  async function quoteUniswapExactIn(tokenIn, tokenOut, amountIn) {
+    if (amountIn === 0n) return null;
+    const quoter = new ethers.Contract(UNI_QUOTER, QUOTER_ABI, provider);
+    const r = await safe(() =>
+      quoter.quoteExactInputSingle.staticCall({
+        tokenIn, tokenOut, amountIn,
+        fee: UNI_FEE_TIER, sqrtPriceLimitX96: 0n,
+      }), null);
+    return r == null ? null : BigInt(r[0]);
   }
 
   // ─── Refresh + render ────────────────────────────────────────────────
@@ -253,10 +326,12 @@
       : null;
     ctx.seederAddr = seederAddr;
 
-    // Uniswap spot price.
-    const { priceWei: uniPriceWei, hasLiquidity } = await getUniSpotPriceWei(inst.spotPool, inst.token);
-    ctx.uniPriceWei = uniPriceWei;
-    ctx.poolHasLiquidity = hasLiquidity;
+    // Uniswap quotes: separate buy / sell quotes (they differ by 2× the
+    // fee + slippage). We display each on its respective column.
+    const uniQ = await getUniSwapQuotes(inst.spotPool, inst.token);
+    ctx.uniBuyPriceWei  = uniQ.priceBuyEthPerToken;
+    ctx.uniSellPriceWei = uniQ.priceSellEthPerToken;
+    ctx.poolHasLiquidity = uniQ.hasLiquidity;
 
     // Hero ───────────────────────────────────────────────────────────
     if ($$('#sale-hero-symbol')) $$('#sale-hero-symbol').textContent = sym;
@@ -299,19 +374,22 @@
     // Trade-grid prices + Uniswap links ─────────────────────────────
     if ($$('#trade-buy-sale-price')) $$('#trade-buy-sale-price').textContent = `${fmtEth(salePriceWei)}/${sym}`;
     if ($$('#trade-sell-rq-price'))  $$('#trade-sell-rq-price').textContent  = (await ragequitPerTokenLabel(sale, sym));
-    if (hasLiquidity) {
-      if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = `${fmtEth(uniPriceWei)}/${sym}`;
-      if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = `${fmtEth(uniPriceWei)}/${sym}`;
+    if (uniQ.hasLiquidity) {
+      if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = `${fmtEth(uniQ.priceBuyEthPerToken)}/${sym}`;
+      if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = `${fmtEth(uniQ.priceSellEthPerToken)}/${sym}`;
     } else {
       if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = 'no liquidity';
       if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = 'no liquidity';
     }
-    // Uniswap links: ETH ↔ token on Sepolia.
-    if ($$('#trade-buy-uni-btn'))  $$('#trade-buy-uni-btn').href  = `${UNI_SWAP_URL}?inputCurrency=ETH&outputCurrency=${inst.token}&chain=sepolia`;
-    if ($$('#trade-sell-uni-btn')) $$('#trade-sell-uni-btn').href = `${UNI_SWAP_URL}?inputCurrency=${inst.token}&outputCurrency=ETH&chain=sepolia`;
+    // Disable the inline-swap buttons when the pool has no liquidity.
+    if ($$('#trade-buy-uni-btn'))  $$('#trade-buy-uni-btn').disabled  = !uniQ.hasLiquidity;
+    if ($$('#trade-sell-uni-btn')) $$('#trade-sell-uni-btn').disabled = !uniQ.hasLiquidity;
+    // Provide the external Uniswap-UI escape hatch too.
+    if ($$('#trade-buy-uni-external'))  $$('#trade-buy-uni-external').href  = `${UNI_SWAP_URL}?inputCurrency=ETH&outputCurrency=${inst.token}&chain=sepolia`;
+    if ($$('#trade-sell-uni-external')) $$('#trade-sell-uni-external').href = `${UNI_SWAP_URL}?inputCurrency=${inst.token}&outputCurrency=ETH&chain=sepolia`;
 
     // Comparison banner ─────────────────────────────────────────────
-    renderCompareBanner(salePriceWei, uniPriceWei, hasLiquidity, sym);
+    renderCompareBanner(salePriceWei, uniQ.priceBuyEthPerToken, uniQ.priceSellEthPerToken, uniQ.hasLiquidity, sym);
 
     // Stats + addresses ─────────────────────────────────────────────
     if ($$('#sale-raised'))       $$('#sale-raised').textContent       = fmtEthShort(totalRaised);
@@ -364,23 +442,21 @@
     return q === 0n ? '— (treasury empty)' : `${fmtEth(q)}/${sym}`;
   }
 
-  function renderCompareBanner(salePrice, uniPrice, hasLiq, sym) {
+  function renderCompareBanner(salePrice, uniBuyPrice, uniSellPrice, hasLiq, sym) {
     const el = $$('#trade-compare-banner');
     if (!el) return;
-    if (!hasLiq || uniPrice === 0n || salePrice === 0n) { el.hidden = true; return; }
+    if (!hasLiq || salePrice === 0n || uniBuyPrice === 0n) { el.hidden = true; return; }
 
-    // Buy side: cheaper of (sale, uniswap) is better.
-    // Sell side: ragequit_per_token vs uniswap.
-    // Show both: which is cheaper to buy on, and which pays more to sell on.
-    const diff = uniPrice > salePrice ? uniPrice - salePrice : salePrice - uniPrice;
+    // Compare the buy side: sale price vs Uniswap buy price (ETH/token).
+    const diff = uniBuyPrice > salePrice ? uniBuyPrice - salePrice : salePrice - uniBuyPrice;
     const pct = Number((diff * 10000n) / salePrice) / 100;
     if (pct < 0.5) { el.hidden = true; return; }
 
-    const uniCheaper = uniPrice < salePrice;
-    const buyTip  = uniCheaper
-      ? `Buying via Uniswap looks <strong>${pct.toFixed(1)}% cheaper</strong> than the sale right now.`
-      : `Buying via the sale looks <strong>${pct.toFixed(1)}% cheaper</strong> than Uniswap right now.`;
-    el.innerHTML = `<span class="trade-compare-icon">⚠</span> ${buyTip} <span class="trade-compare-sub">(${sym} sale ${fmtEth(salePrice)} · Uniswap ${fmtEth(uniPrice)})</span>`;
+    const uniCheaper = uniBuyPrice < salePrice;
+    const buyTip = uniCheaper
+      ? `Buying via Uniswap looks <strong>${pct.toFixed(1)}% cheaper</strong> right now.`
+      : `Buying via the sale looks <strong>${pct.toFixed(1)}% cheaper</strong> right now.`;
+    el.innerHTML = `<span class="trade-compare-icon">⚠</span> ${buyTip} <span class="trade-compare-sub">(${sym} sale ${fmtEth(salePrice)} · Uniswap-buy ${fmtEth(uniBuyPrice)} · Uniswap-sell ${fmtEth(uniSellPrice)})</span>`;
     el.hidden = false;
   }
 
@@ -471,8 +547,10 @@
     if (cancelBtn) cancelBtn.disabled = true;
 
     try {
-      if (ctx.confirmAction === 'buy')           await executeBuy();
-      else if (ctx.confirmAction === 'ragequit') await executeRagequit();
+      if (ctx.confirmAction === 'buy')            await executeBuy();
+      else if (ctx.confirmAction === 'ragequit')  await executeRagequit();
+      else if (ctx.confirmAction === 'uniBuy')    await executeUniBuy();
+      else if (ctx.confirmAction === 'uniSell')   await executeUniSell();
     } catch (e) {
       console.error(e);
       setStatus(`Failed: ${e?.shortMessage || e?.message || e}`, 'error');
@@ -480,6 +558,151 @@
       if (goBtn) goBtn.disabled = false;
       if (cancelBtn) cancelBtn.disabled = false;
     }
+  }
+
+  // ─── Uniswap inline swap: Buy (ETH → token) ─────────────────────────
+  async function onUniBuyPreview() {
+    const inst = ctx.inst;
+    if (!ctx.poolHasLiquidity) { setStatus('Spot pool has no liquidity.', 'error'); return; }
+    const n = parseInt($$('#trade-buy-amount')?.value || '', 10);
+    if (!Number.isFinite(n) || n <= 0) { setStatus('Enter a positive whole number.', 'error'); return; }
+
+    try {
+      if (!window.activeSigner) { setStatus('Connecting wallet…', 'pending'); await window.connectWallet(); }
+      // Quote: how much ETH (= WETH input) do we need to receive n*1e18 tokens?
+      // Strategy: estimate `amountIn` via QuoterV2 on tokenOut=n*1e18; if the
+      // quoter only supports exactInput we use that and accept a tiny over-pay.
+      // Simpler: use the per-token quote scaled by n, with slippage margin.
+      const onePerOut = ctx.uniBuyPriceWei; // ETH per whole token
+      const expectedIn = onePerOut * BigInt(n);
+      const maxIn = (expectedIn * (10000n + UNI_SLIPPAGE_BPS)) / 10000n;
+
+      showConfirmCard('uniBuy', [
+        { label: 'Action',         value: 'Buy via Uniswap' },
+        { label: 'Buy (target)',   value: `${n} ${ctx.sym}` },
+        { label: 'Max ETH in',     value: fmtEth(maxIn) },
+        { label: 'Router',         value: UNI_SWAP_ROUTER },
+        { label: 'Receive at',     value: window.connectedWallet || '—' },
+        { label: 'Slippage',       value: `${Number(UNI_SLIPPAGE_BPS) / 100}%` },
+      ]);
+      setStatus('Review the summary, then confirm in your wallet.', 'pending');
+    } catch (e) {
+      console.error(e);
+      setStatus(`Uniswap buy preview failed: ${e?.shortMessage || e?.message || e}`, 'error');
+    }
+  }
+
+  async function executeUniBuy() {
+    const inst = ctx.inst;
+    const n = parseInt($$('#trade-buy-amount').value, 10);
+    const signer = window.activeSigner || (await window.connectWallet());
+    const wallet = window.connectedWallet;
+
+    const onePerOut = ctx.uniBuyPriceWei;
+    const expectedIn = onePerOut * BigInt(n);
+    const maxIn = (expectedIn * (10000n + UNI_SLIPPAGE_BPS)) / 10000n;
+    const exactOut = BigInt(n) * 10n ** 18n;
+
+    // SwapRouter02 pattern for "buy exactly N tokens with at most maxIn ETH":
+    //   multicall(exactOutputSingle{value: maxIn} + refundETH).
+    // The router auto-wraps msg.value to WETH, performs the swap, sends the
+    // tokens to `wallet`, and refundETH() returns the unused ETH balance.
+    const iface = new ethers.Interface(SWAP_ROUTER_ABI);
+    const callSwap = iface.encodeFunctionData('exactOutputSingle', [{
+      tokenIn: WETH,
+      tokenOut: inst.token,
+      fee: UNI_FEE_TIER,
+      recipient: wallet,
+      amountOut: exactOut,
+      amountInMaximum: maxIn,
+      sqrtPriceLimitX96: 0n,
+    }]);
+    const callRefund = iface.encodeFunctionData('refundETH', []);
+
+    setStatus(`Waiting for wallet approval · up to ${fmtEth(maxIn)} for exactly ${n} ${ctx.sym}…`, 'pending');
+    const router = new ethers.Contract(UNI_SWAP_ROUTER, SWAP_ROUTER_ABI, signer);
+    const tx = await router.multicall([callSwap, callRefund], { value: maxIn });
+    setStatus('Mining…', 'pending');
+    await tx.wait();
+    setStatus(`Bought ${n} ${ctx.sym} via Uniswap ✓ (unused ETH refunded)`, 'ok');
+    closeConfirmCard();
+    await refresh();
+  }
+
+  // ─── Uniswap inline swap: Sell (token → ETH via multicall + unwrap) ─
+  async function onUniSellPreview() {
+    const inst = ctx.inst;
+    if (!ctx.poolHasLiquidity) { setStatus('Spot pool has no liquidity.', 'error'); return; }
+    const n = parseInt($$('#trade-sell-amount')?.value || '', 10);
+    if (!Number.isFinite(n) || n <= 0) { setStatus('Enter a positive whole number.', 'error'); return; }
+
+    try {
+      if (!window.activeSigner) { setStatus('Connecting wallet…', 'pending'); await window.connectWallet(); }
+      const amountIn = BigInt(n) * 10n ** 18n;
+      const expectedOut = await quoteUniswapExactIn(inst.token, WETH, amountIn);
+      const minOut = expectedOut == null
+        ? 0n
+        : (expectedOut * (10000n - UNI_SLIPPAGE_BPS)) / 10000n;
+
+      showConfirmCard('uniSell', [
+        { label: 'Action',     value: 'Sell via Uniswap' },
+        { label: 'Sell',       value: `${n} ${ctx.sym}` },
+        { label: 'Expected',   value: expectedOut == null ? '—' : fmtEth(expectedOut) },
+        { label: 'Min ETH out',value: fmtEth(minOut) },
+        { label: 'Router',     value: UNI_SWAP_ROUTER },
+        { label: 'Receive at', value: window.connectedWallet || '—' },
+        { label: 'Slippage',   value: `${Number(UNI_SLIPPAGE_BPS) / 100}%` },
+      ]);
+      setStatus('Review the summary. We\'ll request token approval, then swap + unwrap.', 'pending');
+    } catch (e) {
+      console.error(e);
+      setStatus(`Uniswap sell preview failed: ${e?.shortMessage || e?.message || e}`, 'error');
+    }
+  }
+
+  async function executeUniSell() {
+    const inst = ctx.inst;
+    const n = parseInt($$('#trade-sell-amount').value, 10);
+    const signer = window.activeSigner || (await window.connectWallet());
+    const wallet = window.connectedWallet;
+
+    const amountIn = BigInt(n) * 10n ** 18n;
+
+    // Approve router to spend our tokens if needed.
+    const tokenR = new ethers.Contract(inst.token, ERC20_ABI, provider);
+    const allowance = BigInt(await tokenR.allowance(wallet, UNI_SWAP_ROUTER));
+    if (allowance < amountIn) {
+      setStatus('Approving token spend…', 'pending');
+      const tokenSigner = new ethers.Contract(inst.token, ERC20_ABI, signer);
+      const txA = await tokenSigner.approve(UNI_SWAP_ROUTER, amountIn);
+      await txA.wait();
+    }
+
+    const expectedOut = await quoteUniswapExactIn(inst.token, WETH, amountIn);
+    const minOut = expectedOut == null ? 0n : (expectedOut * (10000n - UNI_SLIPPAGE_BPS)) / 10000n;
+
+    // multicall: exactInputSingle(tokenIn=TOKEN, tokenOut=WETH, recipient=router)
+    //          + unwrapWETH9(minOut, recipient=wallet)
+    const router = new ethers.Contract(UNI_SWAP_ROUTER, SWAP_ROUTER_ABI, signer);
+    const iface = new ethers.Interface(SWAP_ROUTER_ABI);
+    const callSwap = iface.encodeFunctionData('exactInputSingle', [{
+      tokenIn: inst.token,
+      tokenOut: WETH,
+      fee: UNI_FEE_TIER,
+      recipient: UNI_SWAP_ROUTER, // router holds the WETH after swap
+      amountIn,
+      amountOutMinimum: minOut,
+      sqrtPriceLimitX96: 0n,
+    }]);
+    const callUnwrap = iface.encodeFunctionData('unwrapWETH9', [minOut, wallet]);
+
+    setStatus(`Waiting for wallet approval · expect ${expectedOut == null ? '—' : fmtEth(expectedOut)}…`, 'pending');
+    const tx = await router.multicall([callSwap, callUnwrap]);
+    setStatus('Mining…', 'pending');
+    await tx.wait();
+    setStatus(`Sold ${n} ${ctx.sym} via Uniswap ✓`, 'ok');
+    closeConfirmCard();
+    await refresh();
   }
 
   async function executeBuy() {
