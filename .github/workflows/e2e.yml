@@ -1,0 +1,161 @@
+name: E2E (Playwright)
+
+# Runs the read-only + fork Playwright projects in CI. The `wallet`
+# project (Synpress-driven MetaMask) is gated behind workflow_dispatch
+# because Synpress install + extension orchestration can be flaky and
+# we don't want to block every PR on it yet.
+#
+# T2.D6 (Performance & developer cycle / CI integration) lift —
+# previously CI had no e2e job at all.
+
+permissions: {}
+
+on:
+  push:
+    paths:
+      - "site-testnet/**"
+      - "tests-e2e/**"
+      - "playwright.config.ts"
+      - "package.json"
+      - "scripts/anvil-fork.sh"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      include-wallet:
+        description: "Also run wallet project (Synpress / MetaMask)"
+        type: boolean
+        default: false
+
+jobs:
+  read-only:
+    name: e2e (read-only)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --package-lock=false
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run read-only project
+        run: npm run e2e:read-only -- --reporter=github,html
+        env:
+          FAO_SITE_URL: https://fao-testnet.pages.dev
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-read-only
+          path: playwright-report/
+          retention-days: 14
+
+  fork:
+    name: e2e (fork — cast-driven, no wallet)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry (anvil, cast)
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --package-lock=false
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run fork project
+        # The fork-state spec self-starts anvil if not running.
+        run: npx playwright test --project=fork --reporter=github,html
+        env:
+          SEPOLIA_RPC: ${{ secrets.SEPOLIA_RPC || 'https://ethereum-sepolia.publicnode.com' }}
+          FAO_SITE_URL: https://fao-testnet.pages.dev
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-fork
+          path: playwright-report/
+          retention-days: 14
+
+  wallet:
+    name: e2e (wallet — Synpress)
+    if: github.event_name == 'workflow_dispatch' && inputs.include-wallet
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --package-lock=false
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Anvil in background
+        run: |
+          nohup anvil --fork-url ${{ secrets.SEPOLIA_RPC || 'https://ethereum-sepolia.publicnode.com' }} --port 8545 > /tmp/anvil.log 2>&1 &
+          sleep 5
+
+      - name: Run wallet project
+        run: npx playwright test --project=wallet --reporter=github,html
+        env:
+          SEPOLIA_RPC: ${{ secrets.SEPOLIA_RPC || 'https://ethereum-sepolia.publicnode.com' }}
+          FAO_SITE_URL: https://fao-testnet.pages.dev
+          FAO_RPC_URL: http://127.0.0.1:8545
+
+      - name: Upload Anvil log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anvil-log
+          path: /tmp/anvil.log
+          retention-days: 7
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-wallet
+          path: playwright-report/
+          retention-days: 14
