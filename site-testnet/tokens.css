@@ -43,6 +43,18 @@
   --danger:       #ff5c5c;          /* red for error / negative */
   --info:         #7cc0ff;          /* blue for informational */
 
+  /* ─── Semantic state colors ─────────────────────────────────────────
+   * Used by status pills, error toasts, and the create / sale / bond
+   * status nodes. Aliased to the base palette so a future palette swap
+   * propagates without grep-replacing every selector. */
+  --success:        #6fe9a8;        /* "ok" status text on dark bg */
+  --success-bg:     rgba(50, 200, 100, 0.15);
+  --danger-bright:  #ff8a8a;        /* high-contrast danger pill */
+  --danger-hover:   #ff6b6b;        /* danger text on hover / over-emphasis */
+  --danger-bg:      rgba(255, 92, 92, 0.18);
+  --accent-alt:     #56e88f;        /* legacy accent shade kept for badges */
+  --accent-alt-bg:  rgba(56, 161, 105, 0.18);
+
   /* ─── Spacing scale ─────────────────────────────────────────────────
    * 4-pixel base. Use these by name; no ad-hoc magic numbers in component
    * CSS. */

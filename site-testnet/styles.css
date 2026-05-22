@@ -538,7 +538,7 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.sep-status-live  { background: rgba(50, 200, 100, 0.15); color: #6fe9a8; }
+.sep-status-live  { background: var(--success-bg); color: var(--success); }
 .sep-status-ready { background: rgba(255, 200, 50, 0.18); color: #ffd76a; }
 .sep-status-done  { background: rgba(120, 140, 255, 0.18); color: #9bb0ff; }
 .sep-card-title { margin: 0; font-size: 15px; }
@@ -639,8 +639,8 @@ a:hover { text-decoration: underline; }
 .create-actions .btn { min-width: 160px; }
 .create-status { margin: 8px 0 0 0; font-size: 12px; }
 .create-status-info    { color: var(--muted); }
-.create-status-ok      { color: #6fe9a8; }
-.create-status-error   { color: #ff6b6b; }
+.create-status-ok      { color: var(--success); }
+.create-status-error   { color: var(--danger-hover); }
 .create-status-pending { color: #ffd76a; }
 .create-status a       { color: var(--accent); }
 
@@ -686,13 +686,13 @@ a:hover { text-decoration: underline; }
   border-color: var(--accent);
 }
 .bond-action-btn.resolve-btn:hover:not(:disabled) {
-  background: #2de8a0;
-  border-color: #2de8a0;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .sep-card-action-status { font-size: 11px; flex: 1; min-width: 0; }
 .sep-card-action-status-info    { color: var(--text-muted); }
-.sep-card-action-status-ok      { color: #6fe9a8; }
-.sep-card-action-status-error   { color: #ff6b6b; word-break: break-word; }
+.sep-card-action-status-ok      { color: var(--success); }
+.sep-card-action-status-error   { color: var(--danger-hover); word-break: break-word; }
 .sep-card-action-status-pending { color: #ffd76a; }
 .sep-card-action-status a       { color: var(--accent); }
 
@@ -746,8 +746,8 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.06em;
 }
 .bond-state-inactive   { background: rgba(140, 150, 170, 0.18); color: #a8b2c5; }
-.bond-state-yes        { background: rgba(50, 200, 100, 0.20); color: #6fe9a8; }
-.bond-state-no         { background: rgba(255, 92, 92, 0.18);  color: #ff8a8a; }
+.bond-state-yes        { background: var(--success-bg); color: var(--success); }
+.bond-state-no         { background: var(--danger-bg);  color: var(--danger-bright); }
 .bond-state-queued     { background: rgba(255, 200, 50, 0.20); color: #ffd76a; }
 .bond-state-evaluating { background: rgba(120, 140, 255, 0.20); color: #9bb0ff; }
 .bond-state-settled    { background: rgba(192, 132, 252, 0.20); color: #d6b9ff; }
@@ -774,11 +774,11 @@ a:hover { text-decoration: underline; }
 /* Tints layered on top of the existing .bond-action-btn base (defined above). */
 .bond-action-btn.bond-action-yes {
   border-color: rgba(50, 200, 100, 0.4);
-  color: #6fe9a8;
+  color: var(--success);
 }
 .bond-action-btn.bond-action-no {
   border-color: rgba(255, 92, 92, 0.4);
-  color: #ff8a8a;
+  color: var(--danger-bright);
 }
 .bond-action-btn.bond-action-grad {
   border-color: var(--accent);
@@ -805,8 +805,8 @@ a:hover { text-decoration: underline; }
   min-height: 14px;
 }
 .bond-status-info    { color: var(--text-muted); }
-.bond-status-ok      { color: #6fe9a8; }
-.bond-status-error   { color: #ff6b6b; word-break: break-word; }
+.bond-status-ok      { color: var(--success); }
+.bond-status-error   { color: var(--danger-hover); word-break: break-word; }
 .bond-status-pending { color: #ffd76a; }
 .bond-status a       { color: var(--accent); }
 
@@ -1119,8 +1119,8 @@ a:hover { text-decoration: underline; }
   min-height: 14px;
 }
 .create-instance-status-info    { color: var(--text-muted); }
-.create-instance-status-ok      { color: #6fe9a8; }
-.create-instance-status-error   { color: #ff6b6b; word-break: break-word; }
+.create-instance-status-ok      { color: var(--success); }
+.create-instance-status-error   { color: var(--danger-hover); word-break: break-word; }
 .create-instance-status-pending { color: #ffd76a; }
 .create-instance-status a       { color: var(--accent); }
 .create-instance-status code    {
@@ -1290,7 +1290,7 @@ a:hover { text-decoration: underline; }
   line-height: 1.4;
   vertical-align: middle;
 }
-.phase-badge.badge-initial { background: rgba(56, 161, 105, 0.18); color: #56e88f; }
+.phase-badge.badge-initial { background: var(--accent-alt-bg); color: var(--accent-alt); }
 .phase-badge.badge-ended   { background: rgba(214, 158, 46, 0.22); color: #f6c560; }
 .phase-badge.badge-curve   { background: rgba(66, 153, 225, 0.22); color: #7cc0ff; }
 .phase-badge.badge-pending { background: rgba(160, 160, 160, 0.20); color: #aaaaaa; }
@@ -1493,12 +1493,12 @@ body.has-topbar nav.nav { display: none; }
 }
 .rankings-table .rank-action-btn.rank-action-buy {
   color: var(--bg);
-  background: #56e88f;
-  border-color: #56e88f;
+  background: var(--accent-alt);
+  border-color: var(--accent-alt);
 }
 .rankings-table .rank-action-btn.rank-action-buy:hover {
-  background: #6cf0a3;
-  border-color: #6cf0a3;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* ─── Sale page (revamped) ────────────────────────────────────── */
@@ -1525,7 +1525,7 @@ body.has-topbar nav.nav { display: none; }
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #56e88f 0%, #4299e1 100%);
+  background: linear-gradient(135deg, var(--accent-alt) 0%, #4299e1 100%);
   color: var(--bg);
   display: grid;
   place-items: center;
@@ -1610,7 +1610,7 @@ body.has-topbar nav.nav { display: none; }
 }
 .sale-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #56e88f, #4299e1);
+  background: linear-gradient(90deg, var(--accent-alt), #4299e1);
   transition: width 0.4s ease;
 }
 .sale-progress-foot {
@@ -1738,7 +1738,7 @@ body.has-topbar nav.nav { display: none; }
   min-height: 18px;
 }
 .sale-buy-status-pending { color: #f6c560; }
-.sale-buy-status-ok      { color: #56e88f; }
+.sale-buy-status-ok      { color: var(--accent-alt); }
 .sale-buy-status-error   { color: #ff8080; }
 
 /* Stats */
@@ -1822,7 +1822,7 @@ body.has-topbar nav.nav { display: none; }
   margin-top: 12px;
   padding: 16px;
   background: var(--bg);
-  border: 1px solid #56e88f;
+  border: 1px solid var(--accent-alt);
   border-radius: 10px;
   font-size: 14px;
 }
@@ -2114,7 +2114,7 @@ body.has-topbar nav.nav { display: none; }
   text-align: center;
 }
 .topbar-status[data-kind="error"] { color: #ff8080; background: rgba(255,128,128,0.08); }
-.topbar-status[data-kind="ok"]    { color: #56e88f; background: rgba(86,232,143,0.08); }
+.topbar-status[data-kind="ok"]    { color: var(--accent-alt); background: rgba(86,232,143,0.08); }
 .topbar-status[data-kind="pending"] { color: #f6c560; background: rgba(246,197,96,0.08); }
 .topbar-status:empty { display: none; }
 
