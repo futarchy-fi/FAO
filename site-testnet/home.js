@@ -197,8 +197,8 @@
         $$('#sep-oracle-ok').textContent = '—';
       } else {
         $$('#sep-oracle-ok').innerHTML = resolverOrch.toLowerCase() === inst.orchestrator.toLowerCase()
-          ? '<span style="color:#56e88f">wired ✓</span>'
-          : `<span style="color:#f6c560">${fmtAddr(resolverOrch)}</span>`;
+          ? '<span class="dash-value-ok">wired ✓</span>'
+          : `<span class="dash-value-warn">${fmtAddr(resolverOrch)}</span>`;
       }
     }
     if ($$('#sep-updated'))       $$('#sep-updated').textContent = new Date().toLocaleTimeString();
