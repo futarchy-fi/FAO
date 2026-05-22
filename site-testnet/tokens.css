@@ -42,6 +42,13 @@
   --warn:         #ffb347;          /* legacy alias of --warning */
   --danger:       #ff5c5c;          /* red for error / negative */
   --info:         #7cc0ff;          /* blue for informational */
+  --info-bg:      rgba(124, 192, 255, 0.18);
+  --warning-bg:   rgba(255, 179, 71, 0.18);
+  --warning-soft: rgba(255, 179, 71, 0.08);
+  --warning-border: rgba(255, 179, 71, 0.32);
+  --neutral-bg:   rgba(136, 146, 164, 0.18);
+  --surface-wash: rgba(255, 255, 255, 0.03);
+  --overlay:      rgba(0, 0, 0, 0.65);
 
   /* ─── Semantic state colors ─────────────────────────────────────────
    * Used by status pills, error toasts, and the create / sale / bond
@@ -49,9 +56,11 @@
    * propagates without grep-replacing every selector. */
   --success:        #6fe9a8;        /* "ok" status text on dark bg */
   --success-bg:     rgba(50, 200, 100, 0.15);
+  --success-border: rgba(50, 200, 100, 0.4);
   --danger-bright:  #ff8a8a;        /* high-contrast danger pill */
   --danger-hover:   #ff6b6b;        /* danger text on hover / over-emphasis */
   --danger-bg:      rgba(255, 92, 92, 0.18);
+  --danger-border:  rgba(255, 92, 92, 0.4);
   --accent-alt:     #56e88f;        /* legacy accent shade kept for badges */
   --accent-alt-bg:  rgba(56, 161, 105, 0.18);
 
