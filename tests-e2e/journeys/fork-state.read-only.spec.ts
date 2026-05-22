@@ -622,4 +622,49 @@ test.describe('fork state — read-only UI over cast mutations', () => {
     await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
     await expect(card.locator('.bond-panel')).toContainText(ANVIL_ADDRESS.slice(0, 6));
   });
+
+  test('proposals page reflects cast try-graduate without wallet signing', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'fork', 'fork-state specs require the Playwright fork project');
+
+    const { id, inst, proposalName, proposal, proposalId, baseX } = await createProposalWithYesBond({
+      instanceLabel: 'Graduate',
+      symbolPrefix: 'GRD',
+      proposalLabel: 'GRAD',
+    });
+
+    await page.goto(`/proposals.html?inst=${id}`);
+    const proposalList = page.locator('#sep-proposals');
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    const card = proposalList.locator('.sep-card', { hasText: proposalName });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should render the setup YES chip before graduation',
+    }).toBe('YES');
+
+    castSend(
+      inst.arbitration,
+      'tryGraduate(uint256)',
+      [proposal],
+      { gasLimit: '250000' },
+    );
+
+    await expect.poll(async () => {
+      const p = await readArbitrationProposal(inst.arbitration, proposalId);
+      return `${p.state}:${p.yesBond.amount}`;
+    }, {
+      timeout: 30_000,
+      message: 'arbitration proposal should move to QUEUED after cast tryGraduate',
+    }).toBe(`3:${baseX}`);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should show the cast-updated QUEUED chip after reload',
+    }).toBe('QUEUED');
+    await expect(card.locator('.bond-panel')).toContainText('YES bond');
+    await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
+    await expect(card.locator('.bond-panel')).toContainText('Queued for evaluation');
+  });
 });
