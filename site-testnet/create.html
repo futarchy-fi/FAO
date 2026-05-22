@@ -27,27 +27,27 @@
 
   <form id="create-instance-form" class="create-instance-form create-page-form">
     <label class="form-label">Name
-      <input id="ci-name" type="text" placeholder="e.g. Acme Governance" maxlength="60" required />
+      <input id="ci-name" data-testid="create-name" type="text" placeholder="e.g. Acme Governance" maxlength="60" required />
     </label>
     <label class="form-label">Symbol
-      <input id="ci-symbol" type="text" placeholder="e.g. ACME" maxlength="10" required />
+      <input id="ci-symbol" data-testid="create-symbol" type="text" placeholder="e.g. ACME" maxlength="10" required />
     </label>
     <label class="form-label">Description
-      <textarea id="ci-description" placeholder="What is this futarchy for?" maxlength="400" rows="3"></textarea>
+      <textarea id="ci-description" data-testid="create-description" placeholder="What is this futarchy for?" maxlength="400" rows="3"></textarea>
     </label>
 
     <p class="modal-section-label">Token sale — all supply originates here</p>
     <div class="form-row">
       <label class="form-label">Sale price
-        <input id="ci-price" type="text" placeholder="0.0001" value="0.0001" required />
+        <input id="ci-price" data-testid="create-price" type="text" placeholder="0.0001" value="0.0001" required />
         <span class="form-hint">1 token = X ETH (initial phase)</span>
       </label>
       <label class="form-label">Min initial sold
-        <input id="ci-min-sold" type="text" value="100" required />
+        <input id="ci-min-sold" data-testid="create-min-sold" type="text" value="100" required />
         <span class="form-hint">tokens before phase 2</span>
       </label>
       <label class="form-label">Initial phase
-        <input id="ci-sale-duration" type="number" min="1" step="1" value="60" required />
+        <input id="ci-sale-duration" data-testid="create-sale-duration" type="number" min="1" step="1" value="60" required />
         <span class="form-hint">minutes</span>
       </label>
     </div>
@@ -55,24 +55,24 @@
     <p class="modal-section-label">Resolver + bonds</p>
     <div class="form-row">
       <label class="form-label">Timeout
-        <input id="ci-timeout" type="number" min="1" step="1" value="120" required />
+        <input id="ci-timeout" data-testid="create-timeout" type="number" min="1" step="1" value="120" required />
         <span class="form-hint">minutes</span>
       </label>
       <label class="form-label">TWAP window
-        <input id="ci-twap" type="number" min="1" step="1" value="60" required />
+        <input id="ci-twap" data-testid="create-twap" type="number" min="1" step="1" value="60" required />
         <span class="form-hint">minutes</span>
       </label>
       <label class="form-label">Base bond (baseX)
-        <input id="ci-bond" type="text" value="0.001" required />
+        <input id="ci-bond" data-testid="create-bond" type="text" value="0.001" required />
         <span class="form-hint">WETH</span>
       </label>
     </div>
 
     <div class="create-page-actions">
       <a href="./" class="btn btn-secondary">Cancel</a>
-      <button type="submit" class="btn btn-primary">Create futarchy</button>
+      <button type="submit" class="btn btn-primary" data-testid="create-submit">Create futarchy</button>
     </div>
-    <p id="create-instance-status" class="create-instance-status"></p>
+    <p id="create-instance-status" data-testid="create-status" class="create-instance-status"></p>
   </form>
 </section>
 

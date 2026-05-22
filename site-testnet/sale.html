@@ -71,14 +71,14 @@
         </div>
         <label class="trade-amount-wrap">
           <span class="trade-amount-label">Amount</span>
-          <input id="trade-buy-amount" type="number" min="1" step="1" value="1" />
+          <input id="trade-buy-amount" data-testid="trade-buy-amount" type="number" min="1" step="1" value="1" />
           <span class="trade-amount-sfx" id="trade-buy-suffix">tokens</span>
         </label>
         <div class="trade-cost-row">
           <span>Cost</span>
           <strong id="trade-buy-cost">—</strong>
         </div>
-        <button id="trade-buy-sale-btn" class="btn btn-primary trade-btn-primary" type="button">Buy via sale</button>
+        <button id="trade-buy-sale-btn" data-testid="trade-buy-sale-btn" class="btn btn-primary trade-btn-primary" type="button">Buy via sale</button>
       </div>
 
       <div class="trade-card trade-card-uni">
@@ -87,7 +87,7 @@
           <span class="trade-card-price" id="trade-buy-uni-price">—</span>
         </div>
         <p class="trade-card-note" id="trade-buy-uni-note">QuoterV2 quote across the actual liquidity curve. Swaps stay in this page via SwapRouter02 — set your amount on the left, then click below.</p>
-        <button id="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Buy via Uniswap</button>
+        <button id="trade-buy-uni-btn" data-testid="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Buy via Uniswap</button>
         <a id="trade-buy-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>
@@ -109,7 +109,7 @@
         </div>
         <label class="trade-amount-wrap">
           <span class="trade-amount-label">Amount</span>
-          <input id="trade-sell-amount" type="number" min="1" step="1" value="1" />
+          <input id="trade-sell-amount" data-testid="trade-sell-amount" type="number" min="1" step="1" value="1" />
           <span class="trade-amount-sfx" id="trade-sell-suffix">tokens</span>
         </label>
         <div class="trade-cost-row">
@@ -117,7 +117,7 @@
           <strong id="trade-sell-rq-out">—</strong>
         </div>
         <p class="trade-card-note">Plus pro-rata of each ragequit-listed treasury ERC20 (e.g. fLP).</p>
-        <button id="trade-sell-rq-btn" class="btn btn-primary trade-btn-primary" type="button">Ragequit</button>
+        <button id="trade-sell-rq-btn" data-testid="trade-sell-rq-btn" class="btn btn-primary trade-btn-primary" type="button">Ragequit</button>
       </div>
 
       <div class="trade-card trade-card-uni">
@@ -126,7 +126,7 @@
           <span class="trade-card-price" id="trade-sell-uni-price">—</span>
         </div>
         <p class="trade-card-note">QuoterV2 quote across the actual liquidity curve. Swap unwraps WETH → ETH automatically.</p>
-        <button id="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Sell via Uniswap</button>
+        <button id="trade-sell-uni-btn" data-testid="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Sell via Uniswap</button>
         <a id="trade-sell-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>
@@ -138,12 +138,12 @@
     <div class="sale-confirm-head" id="sale-confirm-head">You're about to:</div>
     <div class="sale-confirm-rows" id="sale-confirm-rows"></div>
     <div class="sale-confirm-actions">
-      <button id="sale-confirm-cancel" class="btn btn-secondary" type="button">Cancel</button>
-      <button id="sale-confirm-go" class="btn btn-primary" type="button">Confirm in wallet →</button>
+      <button id="sale-confirm-cancel" data-testid="sale-confirm-cancel" class="btn btn-secondary" type="button">Cancel</button>
+      <button id="sale-confirm-go" data-testid="sale-confirm-go" class="btn btn-primary" type="button">Confirm in wallet →</button>
     </div>
   </div>
 
-  <p id="sale-buy-status" class="sale-buy-status"></p>
+  <p id="sale-buy-status" data-testid="sale-buy-status" class="sale-buy-status"></p>
 
   <!-- Stats + contract addresses (collapsed). -->
   <details class="sale-contract-details">
