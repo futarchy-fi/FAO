@@ -1427,6 +1427,90 @@ a:hover { text-decoration: underline; }
 .topbar-connect {
   white-space: nowrap;
 }
+.wallet-identity-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 260px;
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.wallet-identity-chip[hidden] { display: none; }
+.wallet-identity-chip:hover { border-color: var(--text-muted); }
+.wallet-provider-icon,
+.wallet-provider-fallback {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+}
+.wallet-provider-icon { object-fit: cover; }
+.wallet-provider-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.wallet-provider-copy {
+  display: grid;
+  gap: var(--space-0);
+  min-width: 0;
+  text-align: left;
+}
+.wallet-provider-copy strong,
+.wallet-provider-copy span,
+.wallet-provider-address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallet-provider-copy strong {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+}
+.wallet-provider-copy span {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+.wallet-provider-address {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.wallet-provider-picker {
+  display: grid;
+  gap: var(--space-2);
+}
+.wallet-provider-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-3);
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.wallet-provider-option:hover {
+  background: var(--card-hover);
+  border-color: var(--text-muted);
+}
 
 /* The old fullscreen nav is hidden when the topbar takes over. */
 body.has-topbar nav.nav { display: none; }
@@ -2117,6 +2201,17 @@ body.has-topbar nav.nav { display: none; }
 .topbar-status[data-kind="ok"]    { color: var(--accent-alt); background: rgba(86,232,143,0.08); }
 .topbar-status[data-kind="pending"] { color: #f6c560; background: rgba(246,197,96,0.08); }
 .topbar-status:empty { display: none; }
+.topbar-status-action {
+  margin-left: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.topbar-status-action:hover { background: var(--card-hover); }
 
 /* ─── a11y: respect reduced motion ────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

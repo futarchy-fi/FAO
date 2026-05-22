@@ -42,10 +42,6 @@
       setStatus('FutarchyRegistry is not deployed.', 'error');
       return;
     }
-    if (!window.ethereum) {
-      setStatus('No injected wallet found.', 'error');
-      return;
-    }
 
     const name = ($$('#ci-name').value || '').trim();
     const symbol = ($$('#ci-symbol').value || '').trim();

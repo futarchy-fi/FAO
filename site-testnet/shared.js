@@ -9,8 +9,8 @@
  *   4. Publish `window.activeInstance` + `window.allInstances` and fire
  *      `fao:activeInstanceChanged` on every change. Per-page scripts
  *      (sale.js, sepolia.js, bonds.js) listen and re-render.
- *   5. Manage wallet connection. Stores the signer at `window.activeSigner`
- *      and the address at `window.connectedWallet`. Fires `fao:walletChanged`.
+ *   5. Discover injected wallets via EIP-6963, manage the selected provider,
+ *      store the signer at `window.activeSigner`, and fire `fao:walletChanged`.
  *
  * Page-specific scripts must `defer` AFTER shared.js so they can read window
  * state on their own DOMContentLoaded; alternatively, listen to the events.
@@ -29,8 +29,11 @@
   let REGISTRY_ADDR = FALLBACK_REGISTRY_ADDR;
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const STORAGE_KEY = 'faoActiveInstanceId';
+  const WALLET_PROVIDER_STORAGE_KEY = 'faoSelectedWalletProvider';
   const SEPOLIA_CHAIN_ID = 11155111n;
   const ZERO = '0x0000000000000000000000000000000000000000';
+  const EIP6963_ANNOUNCE = 'eip6963:announceProvider';
+  const EIP6963_REQUEST = 'eip6963:requestProvider';
   // Promise that resolves with the parsed deployments.json (or null on
   // failure — in which case FALLBACK_REGISTRY_ADDR keeps the page alive).
   let __deploymentsPromise = null;
@@ -73,8 +76,221 @@
   const isZero = (a) => !a || a.toLowerCase() === ZERO;
   const fmtAddr = (a) => (!a || isZero(a)) ? '—' : `${a.slice(0, 6)}…${a.slice(-4)}`;
   const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const escapeAttr = escapeHtml;
 
   async function safe(fn, fallback) { try { return await fn(); } catch (_) { return fallback; } }
+
+  function slugTestId(s) {
+    return String(s || 'wallet').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'wallet';
+  }
+
+  // ─── Wallet provider discovery (EIP-6963) ───────────────────────────
+  const walletProviders = new Map();
+  const hookedProviders = new WeakSet();
+  let selectedProviderRecord = null;
+
+  function normalizeProviderInfo(info = {}, provider) {
+    const inferredName = provider?.isMetaMask ? 'MetaMask'
+      : provider?.isRabby ? 'Rabby'
+      : provider?.isCoinbaseWallet ? 'Coinbase Wallet'
+      : provider?.isBraveWallet ? 'Brave Wallet'
+      : 'Injected wallet';
+    const name = String(info.name || inferredName);
+    const rdns = String(info.rdns || (provider?.isMetaMask ? 'io.metamask' : 'legacy.injected'));
+    const uuid = String(info.uuid || `legacy:${rdns}:${name}`);
+    return { uuid, rdns, name, icon: info.icon || '' };
+  }
+
+  function providerKey(info) {
+    return info.uuid || `${info.rdns}:${info.name}`;
+  }
+
+  function rememberWalletProvider(info) {
+    const stored = { uuid: info.uuid || '', rdns: info.rdns || '', name: info.name || '' };
+    try { localStorage.setItem(WALLET_PROVIDER_STORAGE_KEY, JSON.stringify(stored)); } catch (_) {}
+    window.faoSelectedWalletProviderInfo = stored;
+  }
+
+  function readStoredWalletProvider() {
+    try {
+      const raw = localStorage.getItem(WALLET_PROVIDER_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function addWalletProvider(info, provider) {
+    if (!provider || typeof provider.request !== 'function') return null;
+    for (const existing of walletProviders.values()) {
+      if (existing.provider === provider) return existing;
+    }
+    const normalized = normalizeProviderInfo(info, provider);
+    const key = providerKey(normalized);
+    const record = { key, info: normalized, provider };
+    walletProviders.set(key, record);
+    window.faoWalletProviders = Array.from(walletProviders.values()).map(({ info: i }) => ({
+      uuid: i.uuid,
+      rdns: i.rdns,
+      name: i.name,
+      icon: i.icon,
+    }));
+    return record;
+  }
+
+  function addLegacyProviders() {
+    const injected = globalThis.ethereum;
+    if (!injected) return;
+    const providers = Array.isArray(injected.providers) && injected.providers.length
+      ? injected.providers
+      : [injected];
+    for (const provider of providers) {
+      addWalletProvider({}, provider);
+    }
+  }
+
+  function requestWalletProviders() {
+    try { window.dispatchEvent(new Event(EIP6963_REQUEST)); } catch (_) {}
+    setTimeout(addLegacyProviders, 100);
+  }
+
+  function walletRecordMatches(record, stored) {
+    if (!record || !stored) return false;
+    const info = record.info || {};
+    if (stored.uuid && info.uuid === stored.uuid) return true;
+    if (stored.rdns && info.rdns === stored.rdns) return true;
+    return !!stored.name && info.name === stored.name;
+  }
+
+  function providerIdentityHTML(info) {
+    const icon = info.icon
+      ? `<img class="wallet-provider-icon" src="${escapeAttr(info.icon)}" alt="" />`
+      : `<span class="wallet-provider-fallback" aria-hidden="true">${escapeHtml((info.name || '?').slice(0, 1).toUpperCase())}</span>`;
+    return `
+      ${icon}
+      <span class="wallet-provider-copy">
+        <strong>${escapeHtml(info.name || 'Injected wallet')}</strong>
+        <span>${escapeHtml(info.rdns || 'unknown provider')}</span>
+      </span>
+    `;
+  }
+
+  async function discoverWalletProviders(waitMs = 180) {
+    requestWalletProviders();
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    addLegacyProviders();
+    return Array.from(walletProviders.values());
+  }
+
+  async function showWalletProviderPicker(records) {
+    if (!records.length) return null;
+    const bodyHTML = `
+      <div class="wallet-provider-picker" data-testid="wallet-provider-picker">
+        ${records.map((record) => `
+          <button class="wallet-provider-option"
+                  type="button"
+                  data-wallet-provider-key="${escapeAttr(record.key)}"
+                  data-testid="wallet-provider-option-${escapeAttr(slugTestId(record.info.rdns || record.info.uuid || record.info.name))}">
+            ${providerIdentityHTML(record.info)}
+          </button>
+        `).join('')}
+      </div>
+    `;
+    const footerHTML = `<button class="btn btn-secondary" data-action="cancel">Cancel</button>`;
+    return openModal({
+      title: 'Choose wallet',
+      bodyHTML,
+      footerHTML,
+      onMount: {
+        afterMount: (root, close) => {
+          for (const btn of root.querySelectorAll('[data-wallet-provider-key]')) {
+            btn.addEventListener('click', () => close(walletProviders.get(btn.dataset.walletProviderKey) || null));
+          }
+        },
+      },
+    });
+  }
+
+  async function resolveWalletProvider({ forcePicker = false } = {}) {
+    const records = await discoverWalletProviders();
+    if (!records.length) throw new Error('No injected wallet found. Install MetaMask, Rabby, or another EIP-1193 wallet.');
+
+    if (!forcePicker && selectedProviderRecord && walletProviders.has(selectedProviderRecord.key)) {
+      return selectedProviderRecord;
+    }
+
+    const stored = readStoredWalletProvider();
+    const storedRecord = records.find(record => walletRecordMatches(record, stored));
+    if (!forcePicker && storedRecord) {
+      selectedProviderRecord = storedRecord;
+      rememberWalletProvider(storedRecord.info);
+      return storedRecord;
+    }
+
+    if (!forcePicker && records.length === 1) {
+      selectedProviderRecord = records[0];
+      rememberWalletProvider(records[0].info);
+      return records[0];
+    }
+
+    const picked = await showWalletProviderPicker(records);
+    if (!picked) throw new Error('Wallet connection cancelled.');
+    selectedProviderRecord = picked;
+    rememberWalletProvider(picked.info);
+    return picked;
+  }
+
+  function resetWalletState() {
+    window.activeSigner = undefined;
+    window.connectedWallet = undefined;
+    const btn = $$('#topbar-connect');
+    if (btn) btn.textContent = 'Connect';
+    renderProviderChip();
+    window.dispatchEvent(new CustomEvent('fao:walletChanged', { detail: { wallet: null, signer: null, provider: selectedProviderRecord?.info || null } }));
+  }
+
+  function hookProviderReset(record) {
+    const provider = record?.provider;
+    if (!provider || hookedProviders.has(provider)) return;
+    hookedProviders.add(provider);
+    provider.on?.('chainChanged', resetWalletState);
+    provider.on?.('accountsChanged', resetWalletState);
+  }
+
+  function chainIdToBigInt(value) {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number') return BigInt(value);
+    if (typeof value === 'string') return BigInt(value);
+    throw new Error('Wallet returned an invalid chain id.');
+  }
+
+  async function switchToSepolia(provider) {
+    await provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: '0xaa36a7' }],
+    });
+  }
+
+  function renderChainMismatchAction(provider) {
+    setTopbarStatus('Wallet is not on Sepolia.', 'error', {
+      label: 'Switch to Sepolia',
+      testId: 'topbar-switch-sepolia',
+      onClick: async () => {
+        try {
+          await switchToSepolia(provider);
+          setTopbarStatus('Switched to Sepolia. Reconnect wallet.', 'ok');
+        } catch (err) {
+          setTopbarStatus(`Switch failed: ${err?.message || err}`, 'error');
+        }
+      },
+    });
+  }
+
+  window.addEventListener(EIP6963_ANNOUNCE, (event) => {
+    const detail = event.detail || {};
+    addWalletProvider(detail.info || {}, detail.provider);
+  });
+  requestWalletProviders();
 
   function getInstParam() {
     const m = new URLSearchParams(window.location.search).get('inst');
@@ -141,13 +357,14 @@
           </ul>
 
           <div class="topbar-tools">
-            <div class="active-inst-chip" id="active-inst-chip" role="button" tabindex="0" aria-haspopup="listbox">
+            <div class="active-inst-chip" id="active-inst-chip" data-testid="topbar-active-chip" role="button" tabindex="0" aria-haspopup="listbox">
               <span class="active-inst-label">Active:</span>
               <strong class="active-inst-symbol" id="active-inst-symbol">${escapeHtml(symbol)}</strong>
               <span class="active-inst-caret">▾</span>
               <div class="active-inst-menu" id="active-inst-menu" role="listbox" hidden></div>
             </div>
-            <button class="btn btn-secondary topbar-connect" id="topbar-connect" type="button">Connect</button>
+            <button class="wallet-identity-chip" id="wallet-provider-chip" data-testid="topbar-wallet-identity" type="button" hidden></button>
+            <button class="btn btn-secondary topbar-connect" id="topbar-connect" data-testid="topbar-connect" type="button">Connect</button>
           </div>
         </div>
       </nav>
@@ -202,24 +419,64 @@
       // Reflect current state if already connected.
       if (window.connectedWallet) connectBtn.textContent = fmtAddr(window.connectedWallet);
     }
+
+    const walletChip = $$('#wallet-provider-chip');
+    if (walletChip) {
+      walletChip.addEventListener('click', () => {
+        connectWallet({ forcePicker: true }).catch((e) => setTopbarStatus(`Connect failed: ${e?.message || e}`, 'error'));
+      });
+    }
+    renderProviderChip();
+  }
+
+  function renderProviderChip() {
+    const chip = $$('#wallet-provider-chip');
+    if (!chip) return;
+    const info = selectedProviderRecord?.info || window.faoSelectedWalletProviderInfo;
+    if (!window.connectedWallet || !info) {
+      chip.hidden = true;
+      chip.innerHTML = '';
+      return;
+    }
+    chip.hidden = false;
+    chip.title = `${info.name || 'Wallet'} (${info.rdns || 'unknown provider'})`;
+    chip.innerHTML = `
+      ${providerIdentityHTML(info)}
+      <span class="wallet-provider-address">${escapeHtml(fmtAddr(window.connectedWallet))}</span>
+    `;
   }
 
   /// Inline status panel in the topbar (replaces native `alert`). The
   /// `#topbar-status` slot is rendered on every page; updates are
   /// broadcast-announced via `aria-live="polite"` for screen readers.
-  function setTopbarStatus(text, kind) {
+  function setTopbarStatus(text, kind, action) {
     const root = document.getElementById('topbar-root');
     if (!root) return;
     let slot = root.querySelector('#topbar-status');
     if (!slot) {
       slot = document.createElement('div');
       slot.id = 'topbar-status';
+      slot.dataset.testid = 'topbar-status';
       slot.setAttribute('role', 'status');
       slot.setAttribute('aria-live', 'polite');
       slot.className = 'topbar-status';
       root.appendChild(slot);
     }
-    slot.textContent = text || '';
+    slot.textContent = '';
+    if (text) {
+      const message = document.createElement('span');
+      message.textContent = text;
+      slot.appendChild(message);
+    }
+    if (text && action) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'topbar-status-action';
+      btn.textContent = action.label || 'Resolve';
+      if (action.testId) btn.dataset.testid = action.testId;
+      btn.addEventListener('click', action.onClick);
+      slot.appendChild(btn);
+    }
     slot.dataset.kind = kind || '';
     if (text) {
       // Auto-clear after 6 s unless it's an error (errors persist until next status).
@@ -414,44 +671,41 @@
   window.setActiveInstance = setActiveInstance;
 
   // ─── Wallet ──────────────────────────────────────────────────────────
-  async function connectWallet() {
-    if (!window.ethereum) throw new Error('No injected wallet (MetaMask / Rabby).');
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    const cid = await window.ethereum.request({ method: 'eth_chainId' });
-    if (BigInt(cid) !== SEPOLIA_CHAIN_ID) {
+  async function connectWallet(options = {}) {
+    const record = await resolveWalletProvider(options);
+    const eip1193Provider = record.provider;
+    const accounts = await eip1193Provider.request({ method: 'eth_requestAccounts' });
+    const cid = await eip1193Provider.request({ method: 'eth_chainId' });
+    if (chainIdToBigInt(cid) !== SEPOLIA_CHAIN_ID) {
       try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0xaa36a7' }],
-        });
+        await switchToSepolia(eip1193Provider);
       } catch (_) {
+        renderChainMismatchAction(eip1193Provider);
         throw new Error('Switch to Sepolia (chainId 11155111).');
       }
     }
-    const browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
+    const browserProvider = new ethers.BrowserProvider(eip1193Provider, 'any');
     const signer = await browserProvider.getSigner();
-    window.connectedWallet = accounts[0];
+    window.connectedWallet = accounts[0] || await signer.getAddress();
     window.activeSigner = signer;
+    window.faoSelectedWalletProvider = eip1193Provider;
+    window.faoSelectedWalletProviderInfo = {
+      uuid: record.info.uuid,
+      rdns: record.info.rdns,
+      name: record.info.name,
+    };
+    rememberWalletProvider(record.info);
+    hookProviderReset(record);
     const connectBtn = $$('#topbar-connect');
     if (connectBtn) connectBtn.textContent = fmtAddr(window.connectedWallet);
-    window.dispatchEvent(new CustomEvent('fao:walletChanged', { detail: { wallet: accounts[0], signer } }));
+    renderProviderChip();
+    setTopbarStatus(`Connected with ${record.info.name}.`, 'ok');
+    window.dispatchEvent(new CustomEvent('fao:walletChanged', {
+      detail: { wallet: window.connectedWallet, signer, provider: record.info },
+    }));
     return signer;
   }
   window.connectWallet = connectWallet;
-
-  // Reset wallet state when the user switches chains or accounts.
-  if (window.ethereum && !window.__faoChainHookInstalled) {
-    window.__faoChainHookInstalled = true;
-    const reset = () => {
-      window.activeSigner = undefined;
-      window.connectedWallet = undefined;
-      const btn = $$('#topbar-connect');
-      if (btn) btn.textContent = 'Connect';
-      window.dispatchEvent(new CustomEvent('fao:walletChanged', { detail: { wallet: null, signer: null } }));
-    };
-    window.ethereum.on?.('chainChanged', reset);
-    window.ethereum.on?.('accountsChanged', reset);
-  }
 
   // ─── Boot ────────────────────────────────────────────────────────────
   async function boot() {

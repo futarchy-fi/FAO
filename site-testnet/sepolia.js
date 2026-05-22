@@ -304,42 +304,51 @@
   let signer = null;
 
   async function connectWallet() {
-    if (!window.ethereum) {
-      setStatus('No injected wallet found. Install MetaMask or use a wallet browser.', 'error');
-      return;
-    }
     try {
-      // Request accounts + chain via raw EIP-1193 first so we don't pin a
-      // BrowserProvider to the wrong chain (ethers v6 throws "network changed"
-      // on tx submission if the wallet moves after provider construction).
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const cid = await window.ethereum.request({ method: 'eth_chainId' });
-      if (BigInt(cid) !== 11155111n) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0xaa36a7' }],
-          });
-        } catch (switchErr) {
-          setStatus('Switch your wallet to Sepolia (chainId 11155111) and reconnect.', 'error');
-          return;
-        }
-      }
-      const browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
-      signer = await browserProvider.getSigner();
-      wallet = accounts[0];
+      signer = window.activeSigner || await window.connectWallet();
+      wallet = window.connectedWallet || await signer.getAddress();
       const btn = $$('#connect-wallet');
       const submit = $$('#create-submit');
-      btn.textContent = `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
-      btn.disabled = true;
-      submit.disabled = false;
-      submit.textContent = 'Submit proposal';
+      if (btn) {
+        btn.textContent = fmtAddr(wallet);
+        btn.disabled = true;
+      }
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = 'Submit proposal';
+      }
       setStatus('Wallet connected. Fill in the form and submit.', 'ok');
     } catch (err) {
       console.error('[sepolia] connectWallet failed', err);
       setStatus(`Connection failed: ${err.message || err}`, 'error');
     }
   }
+
+  window.addEventListener('fao:walletChanged', (ev) => {
+    signer = ev.detail?.signer || null;
+    wallet = ev.detail?.wallet || null;
+    const btn = $$('#connect-wallet');
+    const submit = $$('#create-submit');
+    if (wallet && signer) {
+      if (btn) {
+        btn.textContent = fmtAddr(wallet);
+        btn.disabled = true;
+      }
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = 'Submit proposal';
+      }
+    } else {
+      if (btn) {
+        btn.textContent = 'Connect wallet';
+        btn.disabled = false;
+      }
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = 'Submit (connect wallet first)';
+      }
+    }
+  });
 
   async function submitProposal() {
     const name = ($$('#create-name').value || '').trim();

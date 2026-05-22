@@ -19,7 +19,11 @@ These are the **required** testids the source must expose. The site is currently
 |---|---|
 | `topbar-connect` | "Connect" button in topbar |
 | `topbar-active-chip` | Active-instance chip in topbar |
+| `topbar-wallet-identity` | Selected wallet provider identity chip |
 | `topbar-status` | Inline status banner in topbar |
+| `topbar-switch-sepolia` | Chain-mismatch action button |
+| `wallet-provider-picker` | EIP-6963 provider picker dialog body |
+| `wallet-provider-option-<rdns-or-id>` | Provider option button in wallet picker |
 | `rankings-table` | The "Active futarchies" table |
 | `rankings-row-<id>` | Per-row clickable on the rankings table |
 | `rank-action-buy-<id>` | "Buy →" pill per row |

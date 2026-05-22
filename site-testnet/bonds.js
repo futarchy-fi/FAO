@@ -12,7 +12,8 @@
  *   - "Withdraw refund" banner at the top of proposals section
  *   - Inline ETH→WETH wrap helper when WETH balance is insufficient
  *
- * Wallet pattern (BrowserProvider + signer) mirrors sepolia.js's Create-Proposal flow.
+ * Wallet pattern delegates to shared.js so EIP-6963 provider selection and
+ * topbar wallet identity stay consistent across pages.
  * Polling for state lives here (separate from sepolia.js polling, but synchronized via
  * a MutationObserver on #sep-proposals so we re-inject panels whenever cards re-render).
  *
@@ -76,7 +77,6 @@
   // ─── Globals ─────────────────────────────────────────────────────────
 
   let provider;          // read-only RPC
-  let browserProvider;   // wallet
   let signer;            // wallet signer
   let connectedWallet;   // address
 
@@ -339,32 +339,16 @@
 
   async function ensureSigner() {
     if (signer && connectedWallet) return signer;
-    if (!window.ethereum) throw new Error('No injected wallet. Install MetaMask.');
-
-    // Switch chain BEFORE constructing the ethers provider so ethers v6
-    // doesn't throw "network changed: X => Y" on the next tx.
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    const cid = await window.ethereum.request({ method: 'eth_chainId' });
-    if (BigInt(cid) !== 11155111n) {
-      try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0xaa36a7' }],
-        });
-      } catch (_) {
-        throw new Error('Switch your wallet to Sepolia (chainId 11155111).');
-      }
-    }
-    browserProvider = new ethers.BrowserProvider(window.ethereum, 'any');
-    signer = await browserProvider.getSigner();
-    connectedWallet = accounts[0];
-
-    // Listen for account/chain changes — reset and re-render.
-    window.ethereum.on?.('accountsChanged', () => { signer = null; connectedWallet = null; refreshWithdrawBanner(); });
-    window.ethereum.on?.('chainChanged',    () => { signer = null; connectedWallet = null; refreshWithdrawBanner(); });
-
+    signer = window.activeSigner || await window.connectWallet();
+    connectedWallet = window.connectedWallet || await signer.getAddress();
     return signer;
   }
+
+  window.addEventListener('fao:walletChanged', (ev) => {
+    signer = ev.detail?.signer || null;
+    connectedWallet = ev.detail?.wallet || null;
+    if (provider) refreshWithdrawBanner().catch(console.error);
+  });
 
   async function refreshWithdrawBanner() {
     if (!connectedWallet) { renderWithdrawBanner(0n); return; }
