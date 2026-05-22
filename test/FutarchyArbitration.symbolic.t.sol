@@ -47,7 +47,7 @@ contract SymbolicWETH is IERC20 {
     }
 }
 
-/// @custom:spec INV-ARB-001, INV-ARB-002 — proposal id and settlement invariants.
+/// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-004 — arbitration invariants.
 /// Halmos-checkable symbolic tests for the invariants listed in
 /// `audit/specs/INVARIANTS.md`.
 contract FutarchyArbitrationSymbolic is Test {
@@ -185,5 +185,45 @@ contract FutarchyArbitrationSymbolic is Test {
         assertTrue(afterWrites.settled);
         assertEq(uint256(afterWrites.state), uint256(FutarchyArbitration.ProposalState.SETTLED));
         assertEq(afterWrites.accepted, acceptedAtSettlement);
+    }
+
+    /// @custom:spec INV-ARB-004 — See audit/specs/INVARIANTS.md.
+    /// Every successful NO bond exactly matches the previous YES bond amount.
+    function check_INV_ARB_004_matchedBondsCorrespond(uint16 yesUnits) public {
+        vm.assume(yesUnits >= 1 && yesUnits <= 100);
+
+        uint256 firstYes = uint256(yesUnits);
+        uint256 replacementYes = firstYes * 2;
+
+        vm.prank(CREATOR_ONE);
+        uint256 proposalId = arb.createProposal(firstYes);
+
+        vm.prank(YES_BIDDER);
+        arb.placeYesBond(proposalId, firstYes);
+
+        FutarchyArbitration.Proposal memory beforeFirstNo = arb.getProposal(proposalId);
+        assertEq(beforeFirstNo.yesBond.amount, firstYes);
+
+        vm.prank(NO_BIDDER);
+        arb.placeNoBond(proposalId);
+
+        FutarchyArbitration.Proposal memory afterFirstNo = arb.getProposal(proposalId);
+        assertEq(afterFirstNo.noBond.amount, beforeFirstNo.yesBond.amount);
+        assertEq(afterFirstNo.noBond.amount, firstYes);
+        assertEq(uint256(afterFirstNo.state), uint256(FutarchyArbitration.ProposalState.NO));
+
+        vm.prank(YES_BIDDER);
+        arb.placeYesBond(proposalId, replacementYes);
+
+        FutarchyArbitration.Proposal memory beforeSecondNo = arb.getProposal(proposalId);
+        assertEq(beforeSecondNo.yesBond.amount, replacementYes);
+
+        vm.prank(NO_BIDDER);
+        arb.placeNoBond(proposalId);
+
+        FutarchyArbitration.Proposal memory afterSecondNo = arb.getProposal(proposalId);
+        assertEq(afterSecondNo.noBond.amount, beforeSecondNo.yesBond.amount);
+        assertEq(afterSecondNo.noBond.amount, replacementYes);
+        assertEq(uint256(afterSecondNo.state), uint256(FutarchyArbitration.ProposalState.NO));
     }
 }
