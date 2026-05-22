@@ -12,6 +12,7 @@ Restored 2026-05-22 after the AWS Route53 → Cloudflare migration.
 | `testnet.fao.futarchy.ai` | `fao-testnet` | (separate deploy — see project) | Cloudflare Pages |
 | `ops.futarchy.ai` | `fao-ops` | `site-ops/` (incl. `/fao/` audit dashboard) | Cloudflare Pages |
 | `azzas.futarchy.ai` | `azzas-portal` | (separate project) | Cloudflare Pages |
+| `polsia.futarchy.ai` | — | (Render service `srv-d88cji57vvec738ktl90` — "futarchyos") | Render |
 | `api.bond.futarchy.ai` | — | — | GCP raw IP `34.88.170.88` |
 | `bond.futarchy.ai` | — | — | Netlify (`zippy-halva-280c00.netlify.app`) |
 | `dgx.futarchy.ai` | — | — | Cloudflare Tunnel |
@@ -26,6 +27,7 @@ www.futarchy.ai           CNAME → futarchy.ai
 fao.futarchy.ai           CNAME → fao-site.pages.dev
 testnet.fao.futarchy.ai   CNAME → fao-testnet.pages.dev
 ops.futarchy.ai           CNAME → fao-ops.pages.dev
+polsia.futarchy.ai        CNAME → futarchyos.onrender.com      (DNS-only — Render handles TLS)
 ```
 
 ## What was missing pre-restore
