@@ -1,67 +1,75 @@
 ---
-canonical: docs/onchain-futarchy-design.md@15279877e01f6dea50b96bf056302060e3ab6214
-scope: Authoritative consolidated invariant checklist for the first FAO wiki pass.
-not-scope: Full threat modeling is deferred to [Threat Model](../30-cross-cutting/threat-model.md).
-last-rebuilt: 2026-05-22T14:05:04Z
+canonical: audit/specs/INVARIANTS.md@768d2ab2bdaee37c156955b0fd08732e166ae94d
+scope: Authoritative wiki summary of the authored FAO invariant catalogue and its 15 stable INV-* IDs.
+not-scope: Attack-vector enumeration lives in [Threat Model](../30-cross-cutting/threat-model.md); security posture lives in [Security](../30-cross-cutting/security.md).
+last-rebuilt: 2026-05-22T14:31:28Z
 ---
 # Invariants
 
-This page collects the invariants a reviewer should keep in mind while reading the lifecycle pages. It matters because many properties are cross-contract: breaking one contract's assumption can invalidate a later step. The canonical mechanism is that registry deployment, sale accounting, pool promotion, TWAP resolution, and bond arbitration each expose specific one-way or bounded state transitions. `docs/onchain-futarchy-design.md:63-88`, `src/FutarchyRegistry.sol:205-326`, `src/InstanceSale.sol:147-279`, `src/FAOOfficialProposalOrchestrator.sol:121-178`, `src/FAOTwapResolver.sol:117-144`, `src/ParameterizedArbitration.sol:221-485`
+The authored invariant spec is now the source of truth for FAO's load-bearing safety properties. It matters because the wiki should point reviewers to stable spec IDs, not re-invent invariant names from code. The canonical mechanism is a 15-entry catalogue where each invariant has a stable `INV-*` ID, prose statement, machine-checkable predicate, implementation citation, and status. `audit/specs/INVARIANTS.md:8-18`
 
-## Registry
+## Spec Role
 
-- A Part1 instance can only be completed if its status is `PENDING_PART2`; Part2 rejects invalid IDs, `READY`, and non-pending states. `src/FutarchyRegistry.sol:264-269`
-- Part2 marks resolver, factory, orchestrator, spot pool, and status in storage only after the stack deployer returns and resolver is locked to the orchestrator. `src/FutarchyRegistry.sol:286-310`
-- Spot pool initialization price comes from `sale.INITIAL_PRICE_WEI_PER_TOKEN`, not user-supplied sqrt price. `src/FutarchyRegistry.sol:277-284`
-- A created spot pool has its observation cardinality increased to `OBSERVATION_CARDINALITY`. `src/FutarchyRegistry.sol:408-431`
+`audit/specs/INVARIANTS.md` defines the top-15 system invariants and states that pre/postcondition coverage lives under `audit/specs/preconditions/`. `audit/specs/INVARIANTS.md:1-5`, `audit/specs/INVARIANTS.md:8-18`
 
-## Token And Sale
+`audit/specs/preconditions/InstanceSale.md` is the function-level companion for `InstanceSale`; it defines preconditions, postconditions, frame conditions, and explicit revert modes for sale calls. `audit/specs/preconditions/InstanceSale.md:8-17`
 
-- Registry-created tokens start with zero supply when deployed with the sale, and the sale receives `MINTER_ROLE`; the deployer renounces its roles after granting admin to the creator. `src/FutarchyRegistryDeployers.sol:41-70`
-- `InstanceSale.buy` requires exact ETH for the current price and mints `numTokens * 1e18` to the buyer. `src/InstanceSale.sol:147-168`
-- Initial sale finalization freezes `initialNetSale` only when time has passed and minimum initial tokens were sold. `src/InstanceSale.sol:170-180`
-- Ragequit excludes the sale's own token balance from effective supply before computing ETH and ERC20 shares. `src/InstanceSale.sol:125-143`, `src/InstanceSale.sol:184-226`
-- The sale token cannot be added to `ragequitTokens`, preventing a direct distribution loop of the same token being burned. `src/InstanceSale.sol:230-237`
+The spec also defines the maintenance workflow: invariant updates are authored manually with code changes or proposed by a CAO drift-detection sweep, and implementation/tests/proofs should cite the invariant IDs. `audit/specs/INVARIANTS.md:305-313`, `audit/specs/INVARIANTS.md:339-345`
 
-## Proposal And Promotion
+## Token And Sale IDs
 
-- Proposal question IDs include market content, factory address, proposal index, and `block.prevrandao`. `src/FAOFutarchyFactory.sol:76-87`
-- Proposal creation prepares a two-slot CTF condition and deploys exactly four wrapped position entries for two collaterals and two outcomes. `src/FAOFutarchyFactory.sol:101-132`, `src/FAOFutarchyFactory.sol:152-204`
-- Promotion rejects an existing conditional pool if it is already initialized. `src/FAOOfficialProposalOrchestrator.sol:204-228`
-- Promotion binds resolver before optional adapter migration and before builder-tip transfer. `src/FAOOfficialProposalOrchestrator.sol:150-178`
-- The UniV3 adapter clears staged amounts after a successful migration, making each staging entry single-use. `src/UniswapV3LiquidityAdapter.sol:160-205`
+| ID | Summary | Status |
+|---|---|---|
+| `INV-TOKEN-001` | Token total supply changes only through mint and burn event paths for `FAOToken` and `GenericFutarchyToken`. `audit/specs/INVARIANTS.md:22-36` | Stated, with partial token unit-test coverage. `audit/specs/INVARIANTS.md:315-320` |
+| `INV-SALE-001` | `InstanceSale.effectiveSupply()` equals total token supply minus the sale contract's own token balance, floored at zero. `audit/specs/INVARIANTS.md:40-53` | Stated and tested for effective-supply cases. `audit/specs/INVARIANTS.md:315-321` |
+| `INV-SALE-002` | Successful `ragequit(n)` burns `n * 1e18`, decreases effective supply and total supply, and pays exact pro-rata ETH plus each active ragequit ERC20. `audit/specs/INVARIANTS.md:57-83` | Stated, with partial ETH-only ragequit coverage. `audit/specs/INVARIANTS.md:315-322` |
+| `INV-SALE-003` | `ragequit(n)` reverts for sale self-ragequit, zero effective supply, or burn amount greater than effective supply. `audit/specs/INVARIANTS.md:87-99` | Stated and tested for revert guards. `audit/specs/INVARIANTS.md:315-323` |
+| `INV-SALE-004` | `initialPhaseFinalized` is monotone, and `initialNetSale` freezes when the initial phase finalizes. `audit/specs/INVARIANTS.md:103-116` | Stated, with partial coverage. `audit/specs/INVARIANTS.md:315-324` |
 
-## Resolution
+`InstanceSale` preconditions refine these invariant summaries: `buy` requires positive whole-token amount and exact ETH after possible finalization, while `ragequit` requires positive amount, non-self caller, positive effective supply, in-range burn amount, and token approval. `audit/specs/preconditions/InstanceSale.md:32-52`
 
-- The resolver's orchestrator can be set only once. `src/FAOTwapResolver.sol:83-88`
-- A proposal can bind only once because nonzero `anchorTimestamp` causes `AlreadyBound`. `src/FAOTwapResolver.sol:91-115`
-- Resolution cannot run before `anchorTimestamp + TIMEOUT`, and a resolved proposal cannot resolve again. `src/FAOTwapResolver.sol:117-125`
-- The resolver writes exactly one winning payout numerator in a two-element array. `src/FAOTwapResolver.sol:130-143`
+## Arbitration IDs
 
-## Arbitration
+| ID | Summary | Status |
+|---|---|---|
+| `INV-ARB-001` | `nextProposalId` is monotonically increasing, and existing proposal IDs are initialized only through `_initProposal`. `audit/specs/INVARIANTS.md:120-133` | Stated with partial Foundry invariant coverage. `audit/specs/INVARIANTS.md:315-325` |
+| `INV-ARB-002` | A settled proposal remains settled, stays in `SETTLED`, and keeps its `accepted` value immutable. `audit/specs/INVARIANTS.md:137-152` | Stated only. `audit/specs/INVARIANTS.md:315-326` |
+| `INV-ARB-003` | Arbitration WETH balance should equal withdrawable refunds plus unsettled YES and NO bonds. `audit/specs/INVARIANTS.md:156-169` | Tested as a weaker `>=` property; spec strengthens it to equality. `audit/specs/INVARIANTS.md:156-169`, `audit/specs/INVARIANTS.md:315-327` |
+| `INV-ARB-004` | `placeNoBond` sets NO bond amount exactly to the previous YES bond amount. `audit/specs/INVARIANTS.md:173-185` | Stated only. `audit/specs/INVARIANTS.md:315-328` |
+| `INV-ARB-005` | A YES bond at least `baseX * 2^queuedCount` can graduate the proposal regardless of current NO state. `audit/specs/INVARIANTS.md:189-200` | Stated only. `audit/specs/INVARIANTS.md:315-329` |
+| `INV-ARB-006` | `safetyModeActive()` is equivalent to aggregate unsettled NO bonds at least `baseX`, and YES timeout finalization reverts while safety mode is active. `audit/specs/INVARIANTS.md:204-216` | Stated only. `audit/specs/INVARIANTS.md:315-330` |
 
-- YES activation requires at least `minActivationBond`; a NO-to-YES flip requires either the graduation threshold or the larger of twice the NO bond and the activation minimum. `src/ParameterizedArbitration.sol:221-239`
-- NO can only match an existing YES amount and cannot originate from inactive state. `src/ParameterizedArbitration.sol:261-285`
-- Timeout settlement pays through `withdrawable`, not by pushing WETH to the winner during finalization. `src/ParameterizedArbitration.sol:311-323`, `src/ParameterizedArbitration.sol:408-415`
-- Graduation threshold grows as `baseX * 2^queueLen`, and `_tryGraduate` enforces `MAX_QUEUE` across queued plus active evaluation. `src/ParameterizedArbitration.sol:330-333`, `src/ParameterizedArbitration.sol:467-485`
-- Evaluator configuration checks that the evaluator reports this arbitration address. `src/ParameterizedArbitration.sol:394-402`
+## Orchestrator And TWAP IDs
+
+| ID | Summary | Status |
+|---|---|---|
+| `INV-ORCH-001` | `createOfficialProposalAndMigrate` is atomic across proposal creation, condition prep, wrapper deploy, pool init, observation warmup, adapter migration, and builder tip. `audit/specs/INVARIANTS.md:220-236` | Stated only. `audit/specs/INVARIANTS.md:315-331` |
+| `INV-ORCH-002` | A deterministic pool that already exists and has nonzero `slot0().sqrtPriceX96` must make the orchestrator's pool init path revert. `audit/specs/INVARIANTS.md:240-254` | Stated only. `audit/specs/INVARIANTS.md:315-332` |
+| `INV-TWAP-001` | Resolver binding anchor timestamp is written at most once, and resolution always measures `[anchor + TIMEOUT - TWAP_WINDOW, anchor + TIMEOUT]`. `audit/specs/INVARIANTS.md:258-271` | Stated only. `audit/specs/INVARIANTS.md:315-333` |
+| `INV-TWAP-002` | `resolve(p)` flips `resolved` exactly once, sets `accepted` in the same resolution, freezes both fields, and rejects re-resolution. `audit/specs/INVARIANTS.md:275-288` | Stated only. `audit/specs/INVARIANTS.md:315-333` |
+
+## Stretch IDs And Traceability
+
+The spec lists stretch invariants for adapter staging, adapter callback authorization, TWAP normalization, CTF conservation, Wrapped1155 1:1 wrapping, and UniV3 tick cumulative monotonicity. They are explicitly post-top-15 stubs, not blocking top-15 entries. `audit/specs/INVARIANTS.md:292-301`
+
+The pass-status table says no top-15 invariant is proved yet, several are only stated, and Phase 6 should finish partial tested entries before adding missing tests. `audit/specs/INVARIANTS.md:315-335`
 
 ## How This Might Be Wrong
 
-- If any invariant becomes a test-only assumption rather than production code, this page should move the claim to a test reference or remove it. `audit/rubrics/topic-6-llm-wiki.md:36-56`
-- If `InstanceSale` is superseded by `FAOSale` for registry-created instances, sale invariants should be split. `src/InstanceSale.sol:21-30`, `src/FAOSale.sol:12-25`
-- If a future adapter does not use staged amounts, the single-use migration invariant should be adapter-specific. `src/UniswapV3LiquidityAdapter.sol:94-97`, `src/UniswapV3LiquidityAdapter.sol:201-205`
-- If CTF payout semantics change, resolver and evaluator invariants must be re-audited together. `src/FAOTwapResolver.sol:135-143`, `src/FutarchyEvaluator.sol:86-101`
+- If the authored spec renames an `INV-*` ID, this page should preserve old links only if redirects or aliases are added in the spec. `audit/specs/INVARIANTS.md:10-18`
+- If precondition files are added for more contracts, this page should link them from the relevant module sections instead of only naming `InstanceSale`. `audit/specs/preconditions/InstanceSale.md:124-129`
+- If a stated invariant becomes tested or proved, the status summaries here must track the pass-status table. `audit/specs/INVARIANTS.md:315-335`
+- If line-range citations in the authored spec drift, the wiki should re-pin to the new source commit and line ranges. `audit/specs/INVARIANTS.md:352-357`
 
 ## See Also
 
+- [Threat Model](../30-cross-cutting/threat-model.md)
+- [Security](../30-cross-cutting/security.md)
 - [Architecture](architecture.md)
-- [Create Instance](lifecycle/00-create-instance.md)
-- [Promote](lifecycle/40-promote.md)
 - [Arbitration](lifecycle/60-arbitration.md)
 
 ## Provenance
 - Built by: cao-wiki-builder (codex)
 - Source commits read:
-  - 15279877e01f6dea50b96bf056302060e3ab6214
-- Build pass: 0 (first pass)
+  - 768d2ab2bdaee37c156955b0fd08732e166ae94d
+- Build pass: 1 (authored spec refresh)
