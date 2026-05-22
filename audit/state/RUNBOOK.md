@@ -83,6 +83,27 @@ echo "PID: $!"
 ls -la data/cron-heartbeats/auto_promote 2>/dev/null
 ```
 
+### Mainnet migration
+
+Use `script/MigrateToMultisig.s.sol` only after the Safe/multisig address is chosen and reviewed.
+The script migrates AccessControl `DEFAULT_ADMIN_ROLE` surfaces by granting the multisig first,
+then renouncing the deployer role.
+
+```bash
+export MULTISIG=0x...
+export PER_INSTANCE_ACCESS_CONTROL_CONTRACTS=0xTokenA,0xTokenB
+
+# Dry-run against forked state first. Do not broadcast from this command.
+forge script script/MigrateToMultisig.s.sol --fork-url $RPC -vvvv
+
+# Broadcast only after the trace shows grantRole before renounceRole for every target.
+forge script script/MigrateToMultisig.s.sol --rpc-url $RPC --broadcast -vvvv
+```
+
+Contracts that still use immutable admin fields or Ownable transfer flows are Step B follow-up
+work in `audit/specs/SECURITY.md`; do not invent a fake multisig constant or assume this script
+migrates those surfaces.
+
 ### Deploy a new contract version
 
 1. Author the change. Update INVARIANTS.md / preconditions/ if invariants shift.

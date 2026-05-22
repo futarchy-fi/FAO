@@ -98,6 +98,13 @@ Add an optional `IMultisigLike admin` arg to `createFutarchyPart1`. When supplie
 - A reasonable default is Safe (`@safe-global/safe-contracts`).
 - Existing testnet behavior preserved when arg is `address(0)`.
 
+For existing AccessControl-admin surfaces, `script/MigrateToMultisig.s.sol` is the executable
+migration path. It takes `PRIVATE_KEY`, `MULTISIG`, and
+`PER_INSTANCE_ACCESS_CONTROL_CONTRACTS`, then calls `grantRole(DEFAULT_ADMIN_ROLE, multisig)`
+followed by `renounceRole(DEFAULT_ADMIN_ROLE, deployer)` for each supplied target. Current
+immutable-admin and Ownable per-instance contracts are not safely mutable by this script; they
+remain Step B work for the next registry/constructor revision.
+
 **Lift:** T5.D2 +1.5 (path exists; mainnet creators can opt in).
 
 ### Step C — Timelock on `seedLiquidityManager` + `addRagequitToken` + `setAdapter`
