@@ -36,9 +36,10 @@
     "FAOSale_bootstrap":      "0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678"
   },
   "verification_todo": [
-    "v5 registry 0x18D1f4e5…BC5C",
-    "v5 TokenAndArbitrationDeployer 0x475a9630…132a",
-    "v5 FutarchyStackDeployer 0xc5d7e4e0…4A46",
+    "active.registry FutarchyRegistry v5 0x18D1f4e57412b48436C7825B9018437C235bBC5C",
+    "active.token_arb_deployer TokenAndArbitrationDeployer v5 0x475a9630CbC4e78d95e0C2C49D7df7437589132a",
+    "active.futarchy_stack_deployer FutarchyStackDeployer v5 0xc5d7e4e0B73de05eda367Aa16D1cc58A2c3f4A46",
+    "active.uniswap_v3_liquidity_adapter UniswapV3LiquidityAdapter v5 0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A",
     "every v5-deployed per-instance contract once instances are created"
   ],
   "notes": {

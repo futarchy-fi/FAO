@@ -21,6 +21,7 @@ on:
       - "site-ops/**"
       - "audit/evaluations/**"
       - "scripts/check-deployments-sync.sh"
+      - "scripts/check-etherscan-verified.sh"
       - "scripts/check-ops-sync.sh"
       - "scripts/sync-abis.sh"
       - "scripts/sync-ops-dashboard.sh"
@@ -60,6 +61,24 @@ jobs:
           persist-credentials: false
       - name: Assert ops dashboard data copy matches audit source
         run: bash scripts/check-ops-sync.sh
+
+  etherscan-verified:
+    name: Etherscan verification gate (T5.D2)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install etherscan-api
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund etherscan-api@10.3.0
+
+      - name: Assert active contracts are verified
+        env:
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: bash scripts/check-etherscan-verified.sh
 
   slither:
     name: Slither

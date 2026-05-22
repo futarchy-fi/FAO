@@ -66,6 +66,7 @@ As of 2026-05-22:
 - v5 registry `0x18D1f4e5…BC5C`
 - v5 `TokenAndArbitrationDeployer` `0x475a9630…132a`
 - v5 `FutarchyStackDeployer` `0xc5d7e4e0…4A46`
+- v5 `UniswapV3LiquidityAdapter` `0x8Ccc8d0E…64B5A`
 - v5 per-instance contracts (auto-deployed by sub-factories)
 
 Verifying v5 contracts is a Phase 6 lift (T5.D6 supply-chain risk + dovetails into T1 wallet UX — verified contracts get decoded method names in MetaMask).
@@ -123,7 +124,26 @@ After a configurable grace period post-deploy, any creator who does NOT actively
 
 ### Step E — Etherscan verification CI gate
 
-Verify v5 contracts on Etherscan in CI for every deploy. Already authored in commit history; just needs the workflow.
+`scripts/check-etherscan-verified.sh` is the executable gate for this step. The script reads
+`deployments.json::active`, skips null entries and the known operator EOA, then calls Etherscan
+`contract.getsourcecode` for every active contract address. A contract only passes when Etherscan
+returns non-empty `SourceCode` and `ContractName`; an empty source response or
+`Contract source code not verified` ABI response keeps the gate red.
+
+The gate also treats `deployments.json::verification_todo` as the active remediation queue:
+
+- If an active contract is unverified but absent from `verification_todo`, CI fails because the
+  manifest is stale.
+- If an active contract is verified but still listed in `verification_todo`, CI fails because the
+  queue is stale.
+- If any `verification_todo` item still references an active address, CI fails until that address is
+  verified and removed from the queue.
+
+`.github/workflows/static-analysis.yml` installs `etherscan-api@10.3.0` and runs the gate with
+`ETHERSCAN_API_KEY`. The current active queue is the v5 registry, both v5 deployers, and the v5
+Uniswap V3 liquidity adapter. Future `deployments.json::active.timelock` and per-instance contract
+addresses must be added to the manifest and removed from `verification_todo` only after Etherscan
+source verification is live.
 
 **Lift:** T5.D6 +1.0 (supply chain), T1.D2 +0.3 (decoded methods in wallet).
 
