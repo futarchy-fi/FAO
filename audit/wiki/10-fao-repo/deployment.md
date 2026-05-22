@@ -28,6 +28,8 @@ The manifest's own note says it "replaces the historical pattern of hardcoded co
 
 `shared.js` fetches `./deployments.json` with `cache: 'no-cache'`, writes `window.faoDeployments` when the JSON has `active.registry`, and catches failures by returning `null`. `site-testnet/shared.js@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::loadDeployments`
 
+`shared.js` also exposes `window.loadFaoAbi(contractName)`, which fetches generated JSON from `site-testnet/abis/<Contract>.json`. The registry read path now uses `abis/FutarchyRegistry.json` instead of a hand-maintained `REGISTRY_ABI` literal, so the browser ABI comes from the same `forge inspect` output CI checks.
+
 `loadInstances()` awaits `loadDeployments()` before constructing the `ethers.JsonRpcProvider` and `FutarchyRegistry` contract, so the JSON address wins before the first registry read. `site-testnet/shared.js@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::loadInstances`
 
 The read path tries `reg.allInstances()` first and falls back to `instancesCount()` plus indexed `instances(i)` reads if the bulk call fails. `site-testnet/shared.js@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::loadInstances`
@@ -40,7 +42,9 @@ The read path tries `reg.allInstances()` first and falls back to `instancesCount
 
 The sync script diffs the root and site copy and emits `::error::deployments.json (root) and site-testnet/deployments.json diverged.` before exiting nonzero on drift. `scripts/check-deployments-sync.sh@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::deployments.json sync OK`
 
-The static-analysis workflow runs the sync job when `deployments.json`, `deployments.schema.json`, the site copy, either deployment check script, or the workflow itself changes. `.github/workflows/static-analysis.yml@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::deployments-sync`
+`scripts/sync-abis.sh` regenerates `site-testnet/abis/*.json` from `forge inspect <Contract> abi --json`. CI runs it with `--check`, which diffs freshly generated ABI JSON against the committed site bindings and fails on drift.
+
+The static-analysis workflow runs the sync job when `deployments.json`, `deployments.schema.json`, the site copy, `site-testnet/abis/**`, either deployment check script, the ABI sync script, or the workflow itself changes. `.github/workflows/static-analysis.yml@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::deployments-sync`
 
 ## Boundary With History
 
@@ -51,6 +55,7 @@ The manifest also records deprecated addresses, but deprecation policy lives in 
 ## How This Might Be Wrong
 
 - If the schema stops matching deployment reality, CI will block manifest updates until `deployments.schema.json` is revised in the same change.
+- If `forge inspect` output changes because a contract interface changes, `scripts/sync-abis.sh --check` will force the browser ABI JSON to update in the same commit.
 - If the site stops copying the root manifest into `site-testnet/`, the sync model and Cloudflare static-file assumption must change. `scripts/check-deployments-sync.sh@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::deployments.json sync OK`
 - If `shared.js` moves to multiple RPCs or multiple registries, this page should split runtime reads from deployment inventory. `site-testnet/shared.js@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::loadInstances`
 - If active contract verification becomes enforced in CI, the deployment page should link to [Supply Chain](../30-cross-cutting/supply-chain.md) as the verification gate owner. `audit/specs/SUPPLY-CHAIN.md@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::#etherscan-verification`

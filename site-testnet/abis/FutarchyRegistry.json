@@ -1,0 +1,670 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "proposalImpl",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "ctf",
+        "type": "address",
+        "internalType": "contract IConditionalTokensLike"
+      },
+      {
+        "name": "w1155",
+        "type": "address",
+        "internalType": "contract IWrapped1155FactoryLike"
+      },
+      {
+        "name": "univ3Factory",
+        "type": "address",
+        "internalType": "contract IUniswapV3FactoryLike"
+      },
+      {
+        "name": "weth",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "feeTier",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "observationCardinality",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "tokenArbDeployer",
+        "type": "address",
+        "internalType": "contract TokenAndArbitrationDeployer"
+      },
+      {
+        "name": "stackDeployer",
+        "type": "address",
+        "internalType": "contract FutarchyStackDeployer"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "CTF",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IConditionalTokensLike"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FEE_TIER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "OBSERVATION_CARDINALITY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PROPOSAL_IMPL",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "STACK_DEPLOYER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract FutarchyStackDeployer"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "TOKEN_ARB_DEPLOYER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract TokenAndArbitrationDeployer"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "UNIV3_FACTORY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IUniswapV3FactoryLike"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "W1155",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IWrapped1155FactoryLike"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "WETH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "allInstances",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct FutarchyRegistry.FutarchyInstance[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "creator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "token",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "sale",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "arbitration",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "resolver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "factory",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "orchestrator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "spotPool",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8",
+            "internalType": "enum FutarchyRegistry.InstanceStatus"
+          },
+          {
+            "name": "timeout",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "twapWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createFutarchyPart1",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "initialPriceWeiPerToken",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minInitialPhaseSold",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "initialPhaseDuration",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "timeout",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "twapWindow",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "baseBondX",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createFutarchyPart2",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "instances",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct FutarchyRegistry.FutarchyInstance",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "creator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "token",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "sale",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "arbitration",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "resolver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "factory",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "orchestrator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "spotPool",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8",
+            "internalType": "enum FutarchyRegistry.InstanceStatus"
+          },
+          {
+            "name": "timeout",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "twapWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "instancesCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isPendingPart2",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "FutarchyCreated",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "sale",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "arbitration",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "resolver",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "factory",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "orchestrator",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "spotPool",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FutarchyPart1Created",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "sale",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "arbitration",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FutarchyPart2Created",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "resolver",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "factory",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "orchestrator",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "spotPool",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyReady",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyName",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptySymbol",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidBaseBond",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidConstructor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInstanceId",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidResolverConfig",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInPendingPart2",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SpotPoolAlreadyExists",
+    "inputs": []
+  }
+]

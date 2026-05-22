@@ -1,0 +1,45 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "router",
+        "type": "address",
+        "internalType": "contract IFutarchyConditionalRouter"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "ROUTER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IFutarchyConditionalRouter"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isSettled",
+    "inputs": [
+      {
+        "name": "proposal",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]

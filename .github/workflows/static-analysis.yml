@@ -17,7 +17,9 @@ on:
       - "deployments.json"
       - "deployments.schema.json"
       - "site-testnet/deployments.json"
+      - "site-testnet/abis/**"
       - "scripts/check-deployments-sync.sh"
+      - "scripts/sync-abis.sh"
       - "scripts/validate-deployments.sh"
       - ".github/workflows/static-analysis.yml"
   pull_request:
@@ -33,10 +35,15 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
       - name: Validate deployments schema
         run: bash scripts/validate-deployments.sh
       - name: Assert root and site copy match
         run: bash scripts/check-deployments-sync.sh
+      - name: Assert ABI bindings match forge output
+        run: bash scripts/sync-abis.sh --check
 
   slither:
     name: Slither

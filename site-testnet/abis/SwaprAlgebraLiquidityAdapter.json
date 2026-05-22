@@ -1,0 +1,341 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "positionManager",
+        "type": "address",
+        "internalType": "contract ISwaprAlgebraPositionManager"
+      },
+      {
+        "name": "defaultTickLower",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "defaultTickUpper",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "DEFAULT_TICK_LOWER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "DEFAULT_TICK_UPPER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "POSITION_MANAGER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISwaprAlgebraPositionManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "addFullRangeLiquidity",
+    "inputs": [
+      {
+        "name": "token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token1",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount0Desired",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Desired",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "liquidityMinted",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "amount0Used",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Used",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "compoundPosition",
+    "inputs": [
+      {
+        "name": "token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token1",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "liquidityAdded",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getPositionTokenId",
+    "inputs": [
+      {
+        "name": "token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token1",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "positionTokenId",
+    "inputs": [
+      {
+        "name": "pairKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeLiquidity",
+    "inputs": [
+      {
+        "name": "token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token1",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount0Out",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1Out",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "LiquidityIncreased",
+    "inputs": [
+      {
+        "name": "pairKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LiquidityRemoved",
+    "inputs": [
+      {
+        "name": "pairKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionBurned",
+    "inputs": [
+      {
+        "name": "pairKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionMinted",
+    "inputs": [
+      {
+        "name": "pairKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InsufficientPositionLiquidity",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTickRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTokenOrder",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PositionNotFound",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  }
+]

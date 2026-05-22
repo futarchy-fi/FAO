@@ -17,18 +17,16 @@
   const REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C'; // v5
   const ZERO = '0x0000000000000000000000000000000000000000';
 
-  const REGISTRY_ABI = [
-    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialPriceWeiPerToken, uint256 minInitialPhaseSold, uint256 initialPhaseDuration, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
-    'function createFutarchyPart2(uint256 id)',
-    'function instancesCount() view returns (uint256)',
-    'event FutarchyPart1Created(uint256 indexed id, address indexed creator, string name, string symbol, address token, address sale, address arbitration)',
-  ];
-
   const $$ = (sel) => document.querySelector(sel);
   const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const explorerTx = (h) => `https://sepolia.etherscan.io/tx/${h}`;
 
   function isZeroAddress(a) { return !a || a.toLowerCase() === ZERO; }
+
+  async function getRegistryAbi() {
+    if (!window.loadFaoAbi) throw new Error('ABI loader unavailable.');
+    return window.loadFaoAbi('FutarchyRegistry');
+  }
 
   function setStatus(html, kind) {
     const el = $$('#create-instance-status');
@@ -88,7 +86,8 @@
 
     try {
       const signer = await window.connectWallet();
-      const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, signer);
+      const registryAbi = await getRegistryAbi();
+      const reg = new ethers.Contract(REGISTRY_ADDR, registryAbi, signer);
 
       // ─── Step 1/2 ──────────────────────────────────────────────────────
       setStatus('Step 1/2: deploying token + sale + arbitration…', 'pending');

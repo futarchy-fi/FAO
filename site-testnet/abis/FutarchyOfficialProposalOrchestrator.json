@@ -1,0 +1,366 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "futarchyFactory",
+        "type": "address",
+        "internalType": "contract IFutarchyFactoryLike"
+      },
+      {
+        "name": "algebraFactory",
+        "type": "address",
+        "internalType": "contract IAlgebraFactoryLike"
+      },
+      {
+        "name": "positionManager",
+        "type": "address",
+        "internalType": "contract ISwaprAlgebraPositionManager"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "ADMIN",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ALGEBRA_FACTORY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IAlgebraFactoryLike"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FUTARCHY_FACTORY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IFutarchyFactoryLike"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_INIT_TICK_DELTA",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "POSITION_MANAGER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISwaprAlgebraPositionManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createCandidateProposal",
+    "inputs": [
+      {
+        "name": "marketName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "category",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "lang",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "minBond",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "openingTime",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposal",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createOfficialProposalAndMigrate",
+    "inputs": [
+      {
+        "name": "marketName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "category",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "lang",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "minBond",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "openingTime",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposal",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "manager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract FutarchyLiquidityManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "promoteToOfficialAndMigrate",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "proposal",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "proposalSource",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract FutarchyOfficialProposalSource"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setWiring",
+    "inputs": [
+      {
+        "name": "newManager",
+        "type": "address",
+        "internalType": "contract FutarchyLiquidityManager"
+      },
+      {
+        "name": "newSource",
+        "type": "address",
+        "internalType": "contract FutarchyOfficialProposalSource"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "wired",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "CandidateProposalCreated",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposal",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OfficialProposalPromotedAndMigrated",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposal",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "promoter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Wired",
+    "inputs": [
+      {
+        "name": "manager",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "proposalSource",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyWired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidProposalTokens",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSpotPool",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSqrtPrice",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotWired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PriceInitMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SyncDidNotMigrate",
+    "inputs": []
+  }
+]

@@ -34,6 +34,7 @@
   // Promise that resolves with the parsed deployments.json (or null on
   // failure — in which case FALLBACK_REGISTRY_ADDR keeps the page alive).
   let __deploymentsPromise = null;
+  const __abiPromises = new Map();
 
   function loadDeployments() {
     if (__deploymentsPromise) return __deploymentsPromise;
@@ -50,15 +51,21 @@
     return __deploymentsPromise;
   }
 
+  function loadAbi(contractName) {
+    if (__abiPromises.has(contractName)) return __abiPromises.get(contractName);
+    const promise = fetch(`./abis/${encodeURIComponent(contractName)}.json`, { cache: 'no-cache' })
+      .then(r => {
+        if (!r.ok) throw new Error(`Could not load ABI for ${contractName}`);
+        return r.json();
+      });
+    __abiPromises.set(contractName, promise);
+    return promise;
+  }
+  window.loadFaoAbi = loadAbi;
+
   // v4 is a clean break: no hardcoded FAO bootstrap, no backwards-compat
   // fallback. Picker reads directly from the registry. If the registry has
   // zero ready instances, the UI shows an empty state.
-
-  const REGISTRY_ABI = [
-    'function instancesCount() view returns (uint256)',
-    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint32 timeout, uint32 twapWindow))',
-    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint32 timeout, uint32 twapWindow)[])',
-  ];
 
   // ─── Utilities ───────────────────────────────────────────────────────
   const $$ = (sel, root = document) => root.querySelector(sel);
@@ -348,8 +355,9 @@
     // in the JSON wins over the fallback. Always succeeds (either the
     // JSON loads, or the fallback constant stays in effect).
     await loadDeployments();
+    const registryAbi = await loadAbi('FutarchyRegistry');
     const provider = new ethers.JsonRpcProvider(RPC);
-    const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, provider);
+    const reg = new ethers.Contract(REGISTRY_ADDR, registryAbi, provider);
     let list = [];
     try {
       const all = await reg.allInstances();

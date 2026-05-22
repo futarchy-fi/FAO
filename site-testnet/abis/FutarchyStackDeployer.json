@@ -1,0 +1,93 @@
+[
+  {
+    "type": "function",
+    "name": "deployStack",
+    "inputs": [
+      {
+        "name": "proposalImpl",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "ctf",
+        "type": "address",
+        "internalType": "contract IConditionalTokensLike"
+      },
+      {
+        "name": "w1155",
+        "type": "address",
+        "internalType": "contract IWrapped1155FactoryLike"
+      },
+      {
+        "name": "univ3Factory",
+        "type": "address",
+        "internalType": "contract IUniswapV3FactoryLike"
+      },
+      {
+        "name": "admin",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "weth",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "spotPool",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "feeTier",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "observationCardinality",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "timeout",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "twapWindow",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "tuple",
+        "internalType": "struct FutarchyStackDeployer.Deployed",
+        "components": [
+          {
+            "name": "resolver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "factory",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "orchestrator",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "nonpayable"
+  }
+]
