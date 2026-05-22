@@ -203,17 +203,17 @@ _queuedCount() == k ∧ yesBond[p].amount >= baseX * (2 ^ k) ⇒ canGraduate(p) 
 
 ## INV-ARB-006 — Safety-mode equivalence
 
-**Prose.** `safetyModeActive()` returns true iff the sum of all unsettled NO-bond amounts is at least `baseX`. When safety mode is active, `finalizeByTimeout` MUST revert for any YES-state proposal.
+**Prose.** `safetyModeActive()` returns true iff the sum of active NO-state bond amounts is at least `baseX`. When safety mode is active, `finalizeByTimeout` MUST revert for any timed-out YES-state proposal.
 
 **Predicate.**
 ```
-safetyModeActive() == ( Σ_{p unsettled} noBond[p].amount >= baseX )
-safetyModeActive() ∧ state(p) == YES ⇒ finalizeByTimeout(p) reverts
+safetyModeActive() == ( Σ_{p.state == NO} noBond[p].amount >= baseX )
+safetyModeActive() ∧ state(p) == YES ∧ timedOut(p) ⇒ finalizeByTimeout(p) reverts
 ```
 
 **Cite.** `src/FutarchyArbitration.sol:312-346, 481-491`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_006_safetyModeThresholdGating`).
 
 ---
 
@@ -326,7 +326,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ARB-003 | ✓ | ✓ (`invariant_INV_ARB_003_bondTreasuryConserved`) | — |
 | INV-ARB-004 | ✓ | ✓ (`invariant_INV_ARB_004_strictNoBondMatching`) | — |
 | INV-ARB-005 | ✓ | — | — |
-| INV-ARB-006 | ✓ | — | — |
+| INV-ARB-006 | ✓ | ✓ (`invariant_INV_ARB_006_safetyModeThresholdGating`) | — |
 | INV-ORCH-001 | ✓ | — | — |
 | INV-ORCH-002 | ✓ | — | — |
 | INV-TWAP-001 | ✓ | — | — |

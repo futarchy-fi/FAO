@@ -250,6 +250,49 @@ contract WETHMock is IERC20 {
             _observeSettledProposals();
         }
 
+        function activateSafetyModeWithMatureYes(uint256 yesActorSeed, uint256 noActorSeed)
+            external
+        {
+            uint256 safetyBond = ARB.safetyNoBondThreshold();
+
+            uint256 noProposalId;
+            try ARB.createProposal(1) returns (uint256 createdId) {
+                noProposalId = createdId;
+                proposalIds.push(noProposalId);
+            } catch {
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(yesActorSeed));
+            try ARB.placeYesBond(noProposalId, safetyBond) {} catch {}
+
+            vm.prank(_actor(noActorSeed));
+            try ARB.placeNoBond(noProposalId) {} catch {}
+
+            uint256 yesProposalId;
+            try ARB.createProposal(1) returns (uint256 createdId) {
+                yesProposalId = createdId;
+                proposalIds.push(yesProposalId);
+            } catch {
+                _observeProposal(noProposalId);
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(yesActorSeed));
+            try ARB.placeYesBond(yesProposalId, 1) {} catch {}
+
+            vm.warp(block.timestamp + TIMEOUT);
+
+            _observeProposal(noProposalId);
+            _observeProposal(yesProposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
         function withdraw(uint256 actorSeed) external {
             address actor = _actor(actorSeed);
 
@@ -333,8 +376,8 @@ contract WETHMock is IERC20 {
         }
     }
 
-    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003, INV-ARB-004 — see
-    /// audit/specs/INVARIANTS.md.
+    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003, INV-ARB-004, INV-ARB-006
+    /// — see audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
@@ -366,7 +409,7 @@ contract WETHMock is IERC20 {
             handler.settleYesByTimeout(2, 1);
             targetContract(address(handler));
 
-            bytes4[] memory selectors = new bytes4[](9);
+            bytes4[] memory selectors = new bytes4[](10);
             selectors[0] = FutarchyArbitrationHandler.createProposal.selector;
             selectors[1] = FutarchyArbitrationHandler.createExplicitProposal.selector;
             selectors[2] = FutarchyArbitrationHandler.placeYesBond.selector;
@@ -376,6 +419,7 @@ contract WETHMock is IERC20 {
             selectors[6] = FutarchyArbitrationHandler.settleYesByTimeout.selector;
             selectors[7] = FutarchyArbitrationHandler.settleNoByTimeout.selector;
             selectors[8] = FutarchyArbitrationHandler.withdraw.selector;
+            selectors[9] = FutarchyArbitrationHandler.activateSafetyModeWithMatureYes.selector;
             targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         }
 
@@ -492,6 +536,43 @@ contract WETHMock is IERC20 {
                         p.yesBond.amount,
                         "INV-ARB-004 violated: NO-state bond mismatch"
                     );
+                }
+            }
+        }
+
+        /// @custom:spec INV-ARB-006 — safety mode follows active NO threshold and gates
+        /// YES timeout.
+        function invariant_INV_ARB_006_safetyModeThresholdGating() public {
+            uint256 activeNoBondSum;
+            uint256 proposalCount = handler.proposalCount();
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                if (p.state == FutarchyArbitration.ProposalState.NO && !p.settled) {
+                    activeNoBondSum += p.noBond.amount;
+                }
+            }
+
+            assertEq(
+                arb.totalActiveNoBonds(),
+                activeNoBondSum,
+                "INV-ARB-006 violated: active NO accounting mismatch"
+            );
+            assertEq(
+                arb.safetyModeActive(),
+                activeNoBondSum >= arb.safetyNoBondThreshold(),
+                "INV-ARB-006 violated: safety threshold mismatch"
+            );
+
+            if (!arb.safetyModeActive()) return;
+
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                bool timedOut = block.timestamp >= uint256(p.lastStateChangeAt) + 2 hours;
+                if (p.state == FutarchyArbitration.ProposalState.YES && !p.settled && timedOut) {
+                    vm.expectRevert(FutarchyArbitration.SafetyModeActive.selector);
+                    arb.finalizeByTimeout(proposalId);
                 }
             }
         }
