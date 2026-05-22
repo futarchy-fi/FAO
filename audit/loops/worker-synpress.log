@@ -1,0 +1,14 @@
+2026-05-22T15:32:55Z worker-synpress: started from HEAD 6e5360f8d4f430eec86f4d06986768bebb729c5e; read assigned profiles, playwright config, F1 scaffold, selectors, and package scripts. Wallet project is declared but still plain Playwright; F1 remains fixme.
+2026-05-22T15:38:34Z worker-synpress: installed npm dev dependencies locally with package-lock disabled so Synpress v4.1.2 APIs could be inspected. Found Synpress requires a cached wallet setup (`defineWalletSetup` + `metaMaskFixtures`); current checkout also has unrelated tracked edits in config/site/audit files, so commits must stage only synpress work.
+2026-05-22T15:46:15Z worker-synpress: implemented first pass of wallet wiring: wallet project seeds fork storage/headless env, `tests-e2e/wallet.setup.ts` defines/caches MetaMask, and F1 now connects, submits, confirms both txs, and asserts `instancesCount`. Regression check `forge test --no-match-path 'test/fork/*'` passed: 252 tests, 0 failed.
+2026-05-22T15:52:01Z worker-synpress: E2E attempts exposed environment gaps before reaching the dapp: Synpress needed top-level `typescript`, Playwright browser build 1140, and Chromium runtime libraries. Added `typescript`, installed browser build 1140, staged missing Debian libs under local `.pw-libs`, and taught Playwright config to prepend those libs when present.
+
+[2026-05-22T13:12:36-03:00] Continuing from Synpress cache/hash fix; rerunning F1 to capture wallet_addEthereumChain provider error before next patch.
+
+[2026-05-22T13:13:17-03:00] Captured MetaMask provider error for Sepolia add-network (symbol mismatch); patched F1 request to use MetaMask Sepolia native currency metadata. Running forge regression next.
+
+[2026-05-22T13:16:37-03:00] Status check: Synpress cache/install is healthy. F1 advanced to MetaMask Sepolia add-network metadata handling; patched native currency symbol. Required forge regression still running and emitting passing suites, not stuck.
+
+[2026-05-22T13:18:58-03:00] Forge regression completed after Sepolia metadata patch: 25 suites / 256 tests passed. Rerunning F1 wallet grep now.
+
+[2026-05-22T13:19:53-03:00] F1 rerun after Sepolia metadata patch still failed in wallet_addEthereumChain: MetaMask requires built-in Sepolia symbol but also enforces a 1-6 char symbol limit. Synpress cache/install and forge regression are healthy; next attempt will avoid nativeCurrency on the existing-chain update path.

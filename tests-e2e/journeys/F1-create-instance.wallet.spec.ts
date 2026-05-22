@@ -1,58 +1,159 @@
 /**
  * F1 — Create a new futarchy instance.
  *
- * Persona: protocol founder, brand-new wallet with 0.05 ETH on Sepolia.
- *
- * Happy path:
- *   1. Land on /create
- *   2. Fill the form (name, symbol, sale price, sale phase, timeout, twap, bond)
- *   3. Click Submit
- *   4. Approve Part 1 in MetaMask
- *   5. Wait for Part 1 confirmation
- *   6. Approve Part 2 in MetaMask
- *   7. Wait for Part 2 confirmation
- *   8. Redirected to /?inst=<id>
- *   9. Assert: rankings table now contains a row for the new instance with
- *      raised=0, mcap=0, phase="initial sale".
- *  10. Assert (on-chain via viem): registry.instancesCount() incremented by 1
- *      and registry.instances(id).sale != 0x0.
- *
- * Failure-mode coverage in sibling tests (later passes):
- *   - User rejects the wallet popup mid-Part-1 → status shows the failure;
- *     no instance is registered.
- *   - User on wrong chain → site triggers a chain switch via
- *     wallet_switchEthereumChain before Part 1 dispatch.
- *   - Anvil RPC returns 500 on tx submit → status shows a retryable error.
- *   - Part 2 fails (e.g. spot pool address collision) → instance is left
- *     PENDING_PART2, "Complete deployment" appears on the chip.
- *   - Reorg post-Part-1 → site detects the missing inclusion and reverts.
- *
- * This file is the F1 scaffold. It will run only once:
- *   - `data-testid` selectors are added to the site (see SELECTORS.md);
- *   - Synpress is wired into the project (see playwright.config.ts:wallet);
- *   - the Anvil fork is provisioned with the funded test wallet.
- *
- * Until then, the test is `test.fixme()` to avoid masking the
- * "no E2E tests" baseline with a passing-via-skip cheat.
+ * Persona: protocol founder using a funded MetaMask account on an Anvil
+ * Sepolia fork.
  */
 
 // @ts-nocheck — runs only after `npm install`; type-check is opt-in via CI.
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { testWithSynpress } from '@synthetixio/synpress';
+import { metaMaskFixtures } from '@synthetixio/synpress/playwright';
+import { createPublicClient, defineChain, http, parseAbi } from 'viem';
+import walletSetup, { ensureWalletCache, WALLET_NETWORK_NAME } from '../wallet.setup';
 
-test.fixme('F1 — Founder creates a new futarchy instance end-to-end', async ({ page }) => {
-  // Pre: funded wallet, Sepolia chain.
-  // const synpress = await Synpress.connect();
-  // await synpress.importAccount(process.env.TEST_PRIVATE_KEY!);
-  // await synpress.switchNetwork('Sepolia');
+const RPC_URL = process.env.FAO_RPC_URL || 'http://127.0.0.1:8545';
+const REGISTRY = '0x18D1f4e57412b48436C7825B9018437C235bBC5C';
+const ZERO = '0x0000000000000000000000000000000000000000';
 
-  // 1. Land on /create
+const sepoliaFork = defineChain({
+  id: 11155111,
+  name: 'Sepolia Anvil',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [RPC_URL] } },
+});
+
+const registryAbi = parseAbi([
+  'function instancesCount() view returns (uint256)',
+  'function instances(uint256 id) view returns ((string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint32 timeout, uint32 twapWindow))',
+]);
+
+const publicClient = createPublicClient({
+  chain: sepoliaFork,
+  transport: http(RPC_URL),
+});
+
+async function readInstancesCount() {
+  return await publicClient.readContract({
+    address: REGISTRY,
+    abi: registryAbi,
+    functionName: 'instancesCount',
+  });
+}
+
+async function readInstance(id) {
+  return await publicClient.readContract({
+    address: REGISTRY,
+    abi: registryAbi,
+    functionName: 'instances',
+    args: [BigInt(id)],
+  });
+}
+
+async function routeSepoliaRpcToFork(route) {
+  const request = route.request();
+  const response = await route.fetch({
+    url: RPC_URL,
+    method: request.method(),
+    headers: { 'content-type': request.headers()['content-type'] || 'application/json' },
+    postData: request.postData() || undefined,
+  });
+  await route.fulfill({ response });
+}
+
+async function addLocalSepoliaNetwork(page, metamask) {
+  const addNetwork = page.evaluate(
+    async ({ rpcUrl, chainName }) => {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: '0xaa36a7',
+            chainName,
+            nativeCurrency: { name: 'SepoliaETH', symbol: 'SepoliaETH', decimals: 18 },
+            rpcUrls: [rpcUrl],
+            blockExplorerUrls: ['https://sepolia.etherscan.io/'],
+          }],
+        });
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          code: err?.code,
+          message: err?.message || String(err),
+          data: err?.data,
+        };
+      }
+    },
+    { rpcUrl: RPC_URL, chainName: WALLET_NETWORK_NAME },
+  );
+
+  const early = await Promise.race([
+    addNetwork,
+    new Promise((resolve) => setTimeout(() => resolve(null), 2_000)),
+  ]);
+  if (early?.ok === false) {
+    throw new Error(`wallet_addEthereumChain failed: ${JSON.stringify(early)}`);
+  }
+
+  const addResult = await Promise.all([
+    metamask.approveNewNetwork().catch(() => metamask.approveNewEthereumRPC()),
+    addNetwork,
+  ]).then(([, result]) => result);
+  if (!addResult.ok) {
+    throw new Error(`wallet_addEthereumChain failed: ${JSON.stringify(addResult)}`);
+  }
+
+  const chainId = await page.evaluate(() => window.ethereum.request({ method: 'eth_chainId' }));
+  if (chainId !== '0xaa36a7') {
+    await Promise.all([
+      metamask.approveSwitchNetwork(),
+      page.evaluate(() => window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0xaa36a7' }],
+      })),
+    ]);
+  }
+}
+
+const base = testWithSynpress(metaMaskFixtures(walletSetup));
+const test = base.extend({
+  page: async ({ context }, use) => {
+    await context.route(/^https:\/\/ethereum-sepolia\.publicnode\.com\/?.*/, routeSepoliaRpcToFork);
+
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      localStorage.setItem('faoForkMode', '1');
+    });
+
+    await use(page);
+    await page.close();
+  },
+});
+
+test.setTimeout(240_000);
+
+test.beforeAll(async () => {
+  await ensureWalletCache();
+});
+
+test('F1 — Founder creates a new futarchy instance end-to-end', async ({ page, metamask }) => {
+  const beforeCount = await readInstancesCount();
+  const suffix = Date.now().toString(36).slice(-6).toUpperCase();
+  const symbol = `E2E${suffix}`.slice(0, 10);
+
   await page.goto('/create');
   await expect(page).toHaveURL(/\/create/);
+  await addLocalSepoliaNetwork(page, metamask);
 
-  // 2. Fill the form.
-  await page.getByTestId('create-name').fill('Acme E2E');
-  await page.getByTestId('create-symbol').fill('ACME-E2E');
-  await page.getByTestId('create-description').fill('E2E test instance.');
+  await Promise.all([
+    metamask.connectToDapp(),
+    page.getByRole('button', { name: /^connect$/i }).click(),
+  ]);
+
+  await page.getByTestId('create-name').fill(`Acme E2E ${suffix}`);
+  await page.getByTestId('create-symbol').fill(symbol);
+  await page.getByTestId('create-description').fill('E2E test instance created by Synpress.');
   await page.getByTestId('create-price').fill('0.0001');
   await page.getByTestId('create-min-sold').fill('10');
   await page.getByTestId('create-sale-duration').fill('60');
@@ -60,24 +161,34 @@ test.fixme('F1 — Founder creates a new futarchy instance end-to-end', async ({
   await page.getByTestId('create-twap').fill('60');
   await page.getByTestId('create-bond').fill('0.001');
 
-  // 3. Submit. Synpress confirms the MetaMask popup for each tx.
+  const status = page.getByTestId('create-status');
   await page.getByTestId('create-submit').click();
-  // await synpress.confirmTransaction(); // Part 1
-  await expect(page.getByTestId('create-status')).toContainText(/Step 1\/2/, { timeout: 60_000 });
-  // await synpress.confirmTransaction(); // Part 2
-  await expect(page.getByTestId('create-status')).toContainText(/Done/, { timeout: 120_000 });
 
-  // 4. Redirect to home, instance visible.
-  await page.waitForURL(/\/\?inst=\d+/);
+  await expect(status).toContainText(/Step 1\/2/i, { timeout: 15_000 });
+  await metamask.confirmTransaction({ gasSetting: 'site' });
+
+  await expect(status).toContainText(/Step 2\/2/i, { timeout: 120_000 });
+  await metamask.confirmTransaction({ gasSetting: 'site' });
+
+  await expect(status).toContainText(/Done/i, { timeout: 180_000 });
+  await page.waitForURL(/\/\?inst=\d+/, { timeout: 30_000 });
+
   const url = new URL(page.url());
   const newId = Number(url.searchParams.get('inst'));
-  await expect(page.getByTestId(`rankings-row-${newId}`)).toBeVisible();
-  await expect(page.getByTestId(`rankings-row-${newId}`)).toContainText(/initial sale/i);
+  expect(Number.isFinite(newId)).toBe(true);
+  expect(BigInt(newId)).toBe(beforeCount);
 
-  // 5. On-chain assertion via viem. (Imported in test util once Synpress lands.)
-  // const client = createPublicClient({ chain: sepolia, transport: http(process.env.FAO_RPC_URL) });
-  // const count = await client.readContract({ address: REGISTRY, abi, functionName: 'instancesCount' });
-  // expect(Number(count)).toBeGreaterThan(newId);
-  // const inst = await client.readContract({ address: REGISTRY, abi, functionName: 'instances', args: [newId] });
-  // expect(inst.sale).not.toBe('0x0000000000000000000000000000000000000000');
+  await expect.poll(readInstancesCount, {
+    timeout: 30_000,
+    message: 'registry.instancesCount() should increment after F1 create',
+  }).toBe(beforeCount + 1n);
+
+  const instance = await readInstance(newId);
+  const sale = (Array.isArray(instance) ? instance[5] : instance.sale).toLowerCase();
+  expect(sale).not.toBe(ZERO);
+
+  const row = page.getByTestId(`rankings-row-${newId}`).or(page.locator(`[data-rank-instance-id="${newId}"]`));
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row).toContainText(symbol);
+  await expect(row).toContainText(/initial sale/i);
 });

@@ -15,10 +15,29 @@
  */
 
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 const SITE_URL = process.env.FAO_SITE_URL || 'https://fao-testnet.pages.dev';
 const RPC_URL  = process.env.FAO_RPC_URL  || 'http://127.0.0.1:8545';   // Anvil fork
 const HEADED   = process.env.HEADED === '1';
+if (!process.env.FAO_RPC_URL) process.env.FAO_RPC_URL = RPC_URL;
+if (!HEADED && !process.env.HEADLESS) process.env.HEADLESS = 'true';
+const LOCAL_BROWSER_LIBS = [
+  path.join(process.cwd(), '.pw-libs', 'usr', 'lib', 'x86_64-linux-gnu'),
+  path.join(process.cwd(), '.pw-libs', 'lib', 'x86_64-linux-gnu'),
+].filter(existsSync);
+if (LOCAL_BROWSER_LIBS.length) {
+  process.env.LD_LIBRARY_PATH = [...LOCAL_BROWSER_LIBS, process.env.LD_LIBRARY_PATH || ''].filter(Boolean).join(':');
+}
+const SITE_ORIGIN = new URL(SITE_URL).origin;
+const FORK_STORAGE_STATE = {
+  cookies: [],
+  origins: [{
+    origin: SITE_ORIGIN,
+    localStorage: [{ name: 'faoForkMode', value: '1' }],
+  }],
+};
 
 export default defineConfig({
   testDir: './tests-e2e',
@@ -42,12 +61,12 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       testMatch: /.*\.read-only\.spec\.ts/,
     },
-    // The `wallet` project is structured so Synpress can be added later
-    // without touching every test file. Until Synpress is wired, only the
-    // `read-only` project runs.
     {
       name: 'wallet',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: FORK_STORAGE_STATE,
+      },
       testMatch: /.*\.wallet\.spec\.ts/,
       // grep: /@wallet/,
     },
