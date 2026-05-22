@@ -1,0 +1,59 @@
+name: Lighthouse CI
+
+# T1.v2.D7 + T2.v2.D10 — Web Vitals budgets enforced.
+# LCP < 2.5s, INP/TBT ≤ 200ms, CLS ≤ 0.1.
+
+permissions: {}
+
+on:
+  push:
+    paths:
+      - "site-testnet/**"
+      - "site-ops/**"
+      - "lighthouserc.json"
+      - ".github/workflows/lighthouse.yml"
+  schedule:
+    - cron: "13 4 * * *"  # daily 04:13 UTC
+  workflow_dispatch:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.14.x
+
+      - name: Run Lighthouse
+        run: lhci autorun --collect.numberOfRuns=3
+
+      - name: Save audit summary
+        if: always()
+        run: |
+          mkdir -p audit/lighthouse
+          if [ -d .lighthouseci ]; then
+            for f in .lighthouseci/*.json; do
+              [ -e "$f" ] && cp "$f" audit/lighthouse/
+            done
+          fi
+          ls -la audit/lighthouse/ || true
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: |
+            .lighthouseci/
+            audit/lighthouse/
+          retention-days: 14

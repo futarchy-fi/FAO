@@ -1,0 +1,91 @@
+name: Capture screenshots
+
+# Captures 6 pages × 2 viewports = 12 PNGs from the deployed sites and
+# commits them back to audit/screenshots/. Drives the multimodal T1.D6
+# evaluator which reads these PNGs.
+#
+# Triggered on push to site-testnet/** or manually.
+
+permissions:
+  contents: write   # to commit screenshots back
+
+on:
+  push:
+    paths:
+      - "site-testnet/**"
+      - "site-ops/fao/**"
+      - "scripts/capture-screenshots.sh"
+      - ".github/workflows/screenshots.yml"
+  schedule:
+    - cron: "31 5 * * *"  # daily 05:31 UTC
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright + chromium with system deps
+        run: |
+          npm install --package-lock=false @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        run: |
+          mkdir -p audit/screenshots
+          node --input-type=module <<'NODE'
+          import { chromium } from '@playwright/test';
+          import fs from 'fs';
+          import crypto from 'crypto';
+          const URL_BASE = process.env.FAO_SITE_URL || 'https://fao-testnet.pages.dev';
+          const pages = [
+            { url: URL_BASE + '/',          label: 'home' },
+            { url: URL_BASE + '/sale',      label: 'sale' },
+            { url: URL_BASE + '/proposals', label: 'proposals' },
+            { url: URL_BASE + '/create',    label: 'create' },
+            { url: URL_BASE + '/contracts', label: 'contracts' },
+            { url: URL_BASE + '/docs',      label: 'docs' },
+          ];
+          const viewports = [
+            { name: 'desktop', width: 1280, height: 720 },
+            { name: 'mobile',  width: 390,  height: 844 },
+          ];
+          const manifest = { generatedAt: new Date().toISOString(), siteUrl: URL_BASE, screenshots: [] };
+          const browser = await chromium.launch({ headless: true });
+          for (const p of pages) {
+            for (const v of viewports) {
+              const ctx = await browser.newContext({ viewport: { width: v.width, height: v.height } });
+              const page = await ctx.newPage();
+              try { await page.goto(p.url, { waitUntil: 'networkidle', timeout: 30_000 }); }
+              catch (e) { console.log('[warn] slow goto', p.url, e.message); }
+              await page.waitForTimeout(1500);
+              const file = 'audit/screenshots/' + p.label + '-' + v.name + '.png';
+              await page.screenshot({ path: file, fullPage: true });
+              const sha = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+              manifest.screenshots.push({ label: p.label, viewport: v.name, url: p.url, file, sha, bytes: fs.statSync(file).size });
+              console.log('[ok]', p.label, v.name, sha.slice(0,12));
+              await ctx.close();
+            }
+          }
+          await browser.close();
+          fs.writeFileSync('audit/screenshots/manifest.json', JSON.stringify(manifest, null, 2));
+          NODE
+
+      - name: Commit screenshots back
+        run: |
+          git config user.email "fleet-autocommit@futarchy.fi"
+          git config user.name "fleet-autocommit"
+          git add audit/screenshots/
+          if git diff --cached --quiet; then
+            echo "no screenshot changes"; exit 0
+          fi
+          git commit -m "chore(audit): refresh audit/screenshots/ via CI"
+          git push
