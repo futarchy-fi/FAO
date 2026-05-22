@@ -458,7 +458,7 @@
       const el = document.getElementById(id);
       if (!el) return;
       if (!addr || isZero(addr)) { el.textContent = '—'; return; }
-      el.innerHTML = `<a href="${explorerAddr(addr)}" target="_blank" rel="noopener">${addr}</a>`;
+      el.innerHTML = `<a href="${explorerAddr(addr)}" target="_blank" rel="noopener" title="${addr}">${fmtAddr(addr)}</a>`;
     };
     fillAddr('sale-addr-table-sale',   inst.sale);
     fillAddr('sale-addr-table-token',  inst.token);
