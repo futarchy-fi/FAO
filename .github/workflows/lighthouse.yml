@@ -3,28 +3,47 @@ name: Lighthouse CI
 # T1.v2.D7 + T2.v2.D10 — Web Vitals budgets enforced.
 # LCP < 2.5s, INP/TBT ≤ 200ms, CLS ≤ 0.1.
 
-permissions: {}
+permissions:
+  contents: write
 
 on:
   push:
+    branches: [main]
     paths:
       - "site-testnet/**"
       - "site-ops/**"
+      - "audit/dashboard/**"
+      - "audit/evaluations/**"
       - "lighthouserc.json"
+      - "package.json"
+      - "scripts/check-inp.mjs"
+      - "scripts/check-pages-freshness.mjs"
+      - "scripts/lighthouse-summary.mjs"
+      - "scripts/sync-ops-dashboard.sh"
+      - "audit/lighthouse/budgets.md"
       - ".github/workflows/lighthouse.yml"
+  workflow_run:
+    workflows:
+      - Deploy testnet site to Cloudflare Pages
+      - Deploy ops portal to Cloudflare Pages
+    types:
+      - completed
   schedule:
     - cron: "13 4 * * *"  # daily 04:13 UTC
   workflow_dispatch:
 
+concurrency:
+  group: lighthouse-ci
+  cancel-in-progress: false
+
 jobs:
   lighthouse:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,19 +53,60 @@ jobs:
       - name: Install Lighthouse CI
         run: npm install -g @lhci/cli@0.14.x
 
+      - name: Install npm deps
+        run: npm install --package-lock=false
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve Chromium path
+        id: chromium
+        run: echo "path=$(node -e \"const { chromium } = require('playwright'); console.log(chromium.executablePath())\")" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare static deploy outputs
+        run: |
+          bash scripts/check-deployments-sync.sh
+          bash scripts/sync-ops-dashboard.sh
+
+      - name: Wait for deployed Pages assets
+        continue-on-error: true
+        env:
+          PAGES_FRESHNESS_TIMEOUT_MS: 300000
+        run: node scripts/check-pages-freshness.mjs
+
       - name: Run Lighthouse
+        env:
+          CHROME_PATH: ${{ steps.chromium.outputs.path }}
         run: lhci autorun --collect.numberOfRuns=3
 
-      - name: Save audit summary
+      - name: Check INP
+        if: always()
+        env:
+          CHROME_PATH: ${{ steps.chromium.outputs.path }}
+        run: node scripts/check-inp.mjs
+
+      - name: Write audit reports
+        if: always()
+        run: node scripts/lighthouse-summary.mjs
+
+      - name: Verify deployed Pages assets are current
+        if: always()
+        env:
+          PAGES_FRESHNESS_TIMEOUT_MS: 0
+        run: node scripts/check-pages-freshness.mjs
+
+      - name: Commit Lighthouse reports
         if: always()
         run: |
-          mkdir -p audit/lighthouse
-          if [ -d .lighthouseci ]; then
-            for f in .lighthouseci/*.json; do
-              [ -e "$f" ] && cp "$f" audit/lighthouse/
-            done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit/lighthouse
+          if git diff --cached --quiet; then
+            echo "No Lighthouse report changes to commit."
+          else
+            git commit -m "chore: update lighthouse audit reports"
+            git push
           fi
-          ls -la audit/lighthouse/ || true
 
       - name: Upload Lighthouse reports
         if: always()

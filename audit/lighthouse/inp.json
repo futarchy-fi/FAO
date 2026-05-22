@@ -1,0 +1,285 @@
+{
+  "generatedAt": "2026-05-22T18:40:50.341Z",
+  "source": "performance-event-timing",
+  "budget": {
+    "metric": "inp",
+    "max": 200,
+    "op": "<=",
+    "unit": "ms"
+  },
+  "pass": true,
+  "pages": [
+    {
+      "url": "https://fao-ops.pages.dev/fao/",
+      "slug": "fao-ops-pages-dev-fao",
+      "value": 0,
+      "displayValue": "0 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 1,
+      "clicked": [],
+      "worstInteractions": [
+        {
+          "id": 6087,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 1490,
+          "duration": 0,
+          "processingStart": 1490.7999997138977,
+          "processingEnd": 1490.9000000953674
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    },
+    {
+      "url": "https://fao-testnet.pages.dev/",
+      "slug": "fao-testnet-pages-dev",
+      "value": 16,
+      "displayValue": "16 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 4,
+      "clicked": [
+        "Active: PRX ▾",
+        "Connect",
+        "All",
+        "Initial sale"
+      ],
+      "worstInteractions": [
+        {
+          "id": 4241,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 2363.4000000953674,
+          "duration": 16,
+          "processingStart": 2364,
+          "processingEnd": 2364.1000003814697
+        },
+        {
+          "id": 4262,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 3139.300000190735,
+          "duration": 16,
+          "processingStart": 3140,
+          "processingEnd": 3140
+        },
+        {
+          "id": 4269,
+          "name": "keydown",
+          "entryType": "event",
+          "startTime": 3394.9000000953674,
+          "duration": 16,
+          "processingStart": 3395.4000000953674,
+          "processingEnd": 3396
+        },
+        {
+          "id": 4234,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 2049.5,
+          "duration": 8,
+          "processingStart": 2050.5,
+          "processingEnd": 2050.5
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    },
+    {
+      "url": "https://fao-testnet.pages.dev/sale",
+      "slug": "fao-testnet-pages-dev-sale",
+      "value": 16,
+      "displayValue": "16 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 3,
+      "clicked": [
+        "Active: PRX ▾",
+        "Connect",
+        "1",
+        "10"
+      ],
+      "worstInteractions": [
+        {
+          "id": 8622,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 3971.4000000953674,
+          "duration": 16,
+          "processingStart": 3972.5999999046326,
+          "processingEnd": 3972.5999999046326
+        },
+        {
+          "id": 8629,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 4226.800000190735,
+          "duration": 16,
+          "processingStart": 4227.400000095367,
+          "processingEnd": 4227.5
+        },
+        {
+          "id": 8601,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 3139.0999999046326,
+          "duration": 0,
+          "processingStart": 3140,
+          "processingEnd": 3140
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    },
+    {
+      "url": "https://fao-testnet.pages.dev/proposals",
+      "slug": "fao-testnet-pages-dev-proposals",
+      "value": 16,
+      "displayValue": "16 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 4,
+      "clicked": [
+        "Active: PRX ▾",
+        "Connect",
+        "create-name",
+        "Connect MetaMask"
+      ],
+      "worstInteractions": [
+        {
+          "id": 3728,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 2355.0999999046326,
+          "duration": 16,
+          "processingStart": 2356.4000000953674,
+          "processingEnd": 2356.5
+        },
+        {
+          "id": 3742,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 2873.4000000953674,
+          "duration": 16,
+          "processingStart": 2874.4000000953674,
+          "processingEnd": 2874.5
+        },
+        {
+          "id": 3756,
+          "name": "keydown",
+          "entryType": "event",
+          "startTime": 3383.4000000953674,
+          "duration": 16,
+          "processingStart": 3383.699999809265,
+          "processingEnd": 3384.5
+        },
+        {
+          "id": 3721,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 2043.8000001907349,
+          "duration": 0,
+          "processingStart": 2044.6999998092651,
+          "processingEnd": 2044.8000001907349
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    },
+    {
+      "url": "https://fao-testnet.pages.dev/create",
+      "slug": "fao-testnet-pages-dev-create",
+      "value": 16,
+      "displayValue": "16 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 3,
+      "clicked": [
+        "Active: PRX ▾",
+        "Connect",
+        "ci-name",
+        "ci-symbol"
+      ],
+      "worstInteractions": [
+        {
+          "id": 9378,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 1894.3000001907349,
+          "duration": 16,
+          "processingStart": 1895.0999999046326,
+          "processingEnd": 1895.2000002861023
+        },
+        {
+          "id": 9392,
+          "name": "pointerdown",
+          "entryType": "event",
+          "startTime": 2410.5,
+          "duration": 16,
+          "processingStart": 2411.5,
+          "processingEnd": 2411.5999999046326
+        },
+        {
+          "id": 9371,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 1578.5999999046326,
+          "duration": 0,
+          "processingStart": 1579.4000000953674,
+          "processingEnd": 1579.4000000953674
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    },
+    {
+      "url": "https://fao-testnet.pages.dev/contracts",
+      "slug": "fao-testnet-pages-dev-contracts",
+      "value": 16,
+      "displayValue": "16 ms",
+      "budget": 200,
+      "unit": "ms",
+      "pass": true,
+      "interactions": 2,
+      "clicked": [
+        "Active: PRX ▾",
+        "Connect"
+      ],
+      "worstInteractions": [
+        {
+          "id": 1640,
+          "name": "keydown",
+          "entryType": "event",
+          "startTime": 2397,
+          "duration": 16,
+          "processingStart": 2397.2999997138977,
+          "processingEnd": 2398.5
+        },
+        {
+          "id": 1619,
+          "name": "pointerdown",
+          "entryType": "first-input",
+          "startTime": 1573.1999998092651,
+          "duration": 0,
+          "processingStart": 1573.8999996185303,
+          "processingEnd": 1573.8999996185303
+        }
+      ],
+      "supported": true,
+      "observerError": null,
+      "pageError": null
+    }
+  ]
+}

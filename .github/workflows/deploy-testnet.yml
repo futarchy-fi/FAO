@@ -1,20 +1,20 @@
-name: Deploy ops portal to Cloudflare Pages
+name: Deploy testnet site to Cloudflare Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - 'site-ops/**'
-      - 'audit/evaluations/**'
-      - 'scripts/sync-ops-dashboard.sh'
-      - '.github/workflows/deploy-ops.yml'
+      - 'site-testnet/**'
+      - 'deployments.json'
+      - 'scripts/check-deployments-sync.sh'
+      - '.github/workflows/deploy-testnet.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-pages-ops
+  group: cloudflare-pages-testnet
   cancel-in-progress: true
 
 jobs:
@@ -25,11 +25,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     environment:
       name: cloudflare-pages
-      url: https://ops.futarchy.ai
+      url: https://fao-testnet.pages.dev/
     steps:
       - uses: actions/checkout@v4
-      - name: Sync audit dashboard data
-        run: bash scripts/sync-ops-dashboard.sh
+      - name: Check deployment manifest sync
+        run: bash scripts/check-deployments-sync.sh
       - name: Note missing Wrangler credentials
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
         run: echo "::notice::Skipping Wrangler deploy because Cloudflare Pages secrets are not configured; use the Cloudflare Git integration or add the secrets."
@@ -39,4 +39,4 @@ jobs:
         with:
           apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site-ops --project-name=fao-ops --branch=main
+          command: pages deploy site-testnet --project-name=fao-testnet --branch=main

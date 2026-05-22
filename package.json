@@ -19,7 +19,10 @@
     "e2e:report": "playwright show-report",
     "capture:screenshots": "bash scripts/capture-screenshots.sh",
     "a11y": "playwright test tests-e2e/journeys/a11y.read-only.spec.ts",
-    "lighthouse": "lhci autorun"
+    "lighthouse": "lhci autorun",
+    "pages:freshness": "node scripts/check-pages-freshness.mjs",
+    "web-vitals:inp": "node scripts/check-inp.mjs",
+    "lighthouse:reports": "node scripts/lighthouse-summary.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",

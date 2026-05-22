@@ -5,6 +5,11 @@ runs per URL. The report script writes one representative JSON report per URL to
 `audit/lighthouse/<url-slug>.json` and aggregates the budget status in
 `audit/lighthouse/web-vitals.json`.
 
+The workflow also checks that the deployed Pages assets match the checked-out
+static output before accepting a run. If Cloudflare is still serving an older
+build, the job remains red while still writing the Lighthouse evidence for the
+deployed URL.
+
 | Metric | Threshold | Enforcement | Source |
 |---|---:|---|---|
 | Largest Contentful Paint | <= 2500 ms | `largest-contentful-paint` error | https://web.dev/lcp/ |

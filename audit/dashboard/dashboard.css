@@ -27,7 +27,7 @@ body {
 }
 
 h1, h2, h3 { font-weight: 600; }
-h1 { font-size: 24px; color: var(--accent); margin-bottom: 4px; }
+h1 { font-size: 28px; color: var(--accent); margin-bottom: 4px; }
 h2 { font-size: 18px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
 h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
 
@@ -70,6 +70,7 @@ h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
+  min-height: 250px;
 }
 .topic-card {
   background: var(--bg-elevated);
@@ -95,7 +96,7 @@ h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
 }
 .topic-card-min {
   font-family: var(--font-mono);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--accent);
 }
@@ -156,6 +157,7 @@ h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
+  min-height: 360px;
   overflow-x: auto;
 }
 .heatmap-table {
@@ -194,7 +196,7 @@ h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
 .heatmap-cell.s-2  { background: #803030; color: #ffb3b3; }
 .heatmap-cell.s-3  { background: #8a4040; color: #ffc0a0; }
 .heatmap-cell.s-4  { background: #806535; color: #ffd590; }
-.heatmap-cell.s-5  { background: #6d6a30; color: #ffe080; }
+.heatmap-cell.s-5  { background: #4f4a18; color: #fff0a8; }
 .heatmap-cell.s-6  { background: #4d6c30; color: #d3f098; }
 .heatmap-cell.s-7  { background: #2a703a; color: #b6f0b6; }
 .heatmap-cell.s-8  { background: #1c803a; color: var(--target); }
