@@ -7,17 +7,22 @@
 
 // @ts-nocheck — runs only after `npm install`.
 import { expect, test } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import path from 'node:path';
 import { createPublicClient, defineChain, http, parseAbi } from 'viem';
 
 const RPC_URL = process.env.FAO_RPC_URL || 'http://127.0.0.1:8545';
 const REGISTRY = '0x18D1f4e57412b48436C7825B9018437C235bBC5C';
+const FOUNDRY_BIN_DIR = `${homedir()}/.foundry/bin`;
 const DEFAULT_CAST_BIN = `${homedir()}/.foundry/bin/cast`;
+const DEFAULT_ANVIL_BIN = `${homedir()}/.foundry/bin/anvil`;
+const ANVIL_FORK_SCRIPT = path.resolve(process.cwd(), 'scripts/anvil-fork.sh');
 const CAST_BIN = process.env.CAST_BIN || (existsSync(DEFAULT_CAST_BIN) ? DEFAULT_CAST_BIN : 'cast');
+const ANVIL_BIN = process.env.ANVIL_BIN || (existsSync(DEFAULT_ANVIL_BIN) ? DEFAULT_ANVIL_BIN : 'anvil');
 const ANVIL_PRIVATE_KEY = process.env.ANVIL_PRIVATE_KEY
-  || '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+  || '0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6';
 
 const sepoliaFork = defineChain({
   id: 11155111,
@@ -43,15 +48,52 @@ async function readInstancesCount() {
   });
 }
 
-async function routeSepoliaRpcToFork(route) {
-  const request = route.request();
-  const response = await route.fetch({
-    url: RPC_URL,
-    method: request.method(),
-    headers: { 'content-type': request.headers()['content-type'] || 'application/json' },
-    postData: request.postData() || undefined,
+async function canReadForkBlock() {
+  try {
+    await publicClient.getBlockNumber();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function startAnvilFork() {
+  const env = {
+    ...process.env,
+    PATH: `${FOUNDRY_BIN_DIR}:${process.env.PATH || ''}`,
+  };
+
+  if (existsSync(ANVIL_FORK_SCRIPT)) {
+    execFileSync('bash', [ANVIL_FORK_SCRIPT], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: 30_000,
+      env,
+    });
+    return;
+  }
+
+  const args = ['--fork-url', process.env.SEPOLIA_RPC || 'https://ethereum-sepolia.publicnode.com', '--port', '8545'];
+  const forkBlock = process.env.ANVIL_FORK_BLOCK_NUMBER || process.env.FORK_BLOCK_NUMBER;
+  if (forkBlock) args.push('--fork-block-number', forkBlock);
+
+  const child = spawn(ANVIL_BIN, args, {
+    detached: true,
+    stdio: 'ignore',
+    env,
   });
-  await route.fulfill({ response });
+  child.unref();
+}
+
+async function ensureAnvilFork() {
+  if (!(await canReadForkBlock())) {
+    startAnvilFork();
+  }
+
+  await expect.poll(async () => Number(await publicClient.getBlockNumber()), {
+    timeout: 30_000,
+    message: 'Anvil fork must be running on http://127.0.0.1:8545',
+  }).toBeGreaterThan(0);
 }
 
 function castSendCreatePart1({ name, symbol, description }) {
@@ -83,22 +125,22 @@ function castSendCreatePart1({ name, symbol, description }) {
       timeout: 120_000,
     });
   } catch (error) {
+    const status = error.status == null ? '' : `\nstatus: ${error.status}`;
+    const signal = error.signal == null ? '' : `\nsignal: ${error.signal}`;
     const stdout = error.stdout ? `\nstdout:\n${error.stdout}` : '';
     const stderr = error.stderr ? `\nstderr:\n${error.stderr}` : '';
-    throw new Error(`cast send createFutarchyPart1 failed.${stdout}${stderr}`);
+    throw new Error(`cast send createFutarchyPart1 failed.${status}${signal}${stdout}${stderr}`);
   }
 }
 
 test.describe('fork state — read-only UI over cast mutations', () => {
+  test.beforeAll(async ({}, testInfo) => {
+    if (testInfo.project.name !== 'fork') return;
+    await ensureAnvilFork();
+  });
+
   test('home page reflects instancesCount after cast-created instance', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'fork', 'fork-state specs require the Playwright fork project');
-
-    await page.route(/^https:\/\/ethereum-sepolia\.publicnode\.com\/?.*/, routeSepoliaRpcToFork);
-
-    await expect.poll(async () => Number(await publicClient.getBlockNumber()), {
-      timeout: 10_000,
-      message: 'Anvil fork must already be running on http://127.0.0.1:8545',
-    }).toBeGreaterThan(0);
 
     await page.goto('/');
 
