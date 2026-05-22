@@ -1535,6 +1535,11 @@ main:focus { outline: none; }
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.wallet-provider-cap {
+  color: var(--success);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
 .wallet-provider-picker {
   display: grid;
   gap: var(--space-2);

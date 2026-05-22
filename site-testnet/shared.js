@@ -30,6 +30,8 @@
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const STORAGE_KEY = 'faoActiveInstanceId';
   const WALLET_PROVIDER_STORAGE_KEY = 'faoSelectedWalletProvider';
+  const WALLET_SESSION_STORAGE_KEY = 'faoWalletSession';
+  const WALLET_IDLE_MS = 30 * 60 * 1000;
   const SEPOLIA_CHAIN_ID = 11155111n;
   const ZERO = '0x0000000000000000000000000000000000000000';
   const EIP6963_ANNOUNCE = 'eip6963:announceProvider';
@@ -88,6 +90,7 @@
   const walletProviders = new Map();
   const hookedProviders = new WeakSet();
   let selectedProviderRecord = null;
+  let walletIdleTimer = null;
 
   function normalizeProviderInfo(info = {}, provider) {
     const inferredName = provider?.isMetaMask ? 'MetaMask'
@@ -111,6 +114,23 @@
     window.faoSelectedWalletProviderInfo = stored;
   }
 
+  function rememberWalletSession(wallet, providerInfo) {
+    const stored = {
+      wallet,
+      provider: {
+        uuid: providerInfo?.uuid || '',
+        rdns: providerInfo?.rdns || '',
+        name: providerInfo?.name || '',
+      },
+      updatedAt: Date.now(),
+    };
+    try { localStorage.setItem(WALLET_SESSION_STORAGE_KEY, JSON.stringify(stored)); } catch (_) {}
+  }
+
+  function clearWalletSessionStorage() {
+    try { localStorage.removeItem(WALLET_SESSION_STORAGE_KEY); } catch (_) {}
+  }
+
   function readStoredWalletProvider() {
     try {
       const raw = localStorage.getItem(WALLET_PROVIDER_STORAGE_KEY);
@@ -118,6 +138,34 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function clearWalletIdleTimer() {
+    if (walletIdleTimer) {
+      clearTimeout(walletIdleTimer);
+      walletIdleTimer = null;
+    }
+  }
+
+  function armWalletIdleTimer() {
+    clearWalletIdleTimer();
+    if (!window.connectedWallet) return;
+    walletIdleTimer = setTimeout(() => {
+      resetWalletState('Wallet disconnected after 30 minutes idle.', { clearStorage: true });
+    }, WALLET_IDLE_MS);
+  }
+
+  function markWalletActivity() {
+    if (window.connectedWallet) armWalletIdleTimer();
+  }
+
+  function installWalletActivityGuards() {
+    for (const eventName of ['click', 'keydown', 'pointerdown', 'touchstart']) {
+      window.addEventListener(eventName, markWalletActivity, { passive: true });
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') markWalletActivity();
+    });
   }
 
   function addWalletProvider(info, provider) {
@@ -240,12 +288,18 @@
     return picked;
   }
 
-  function resetWalletState() {
+  function resetWalletState(reason = '', opts = {}) {
     window.activeSigner = undefined;
     window.connectedWallet = undefined;
+    window.faoSelectedWalletProvider = undefined;
+    window.faoWalletCapabilities = null;
+    window.faoWalletSupportsEip5792 = false;
+    clearWalletIdleTimer();
+    if (opts.clearStorage) clearWalletSessionStorage();
     const btn = $$('#topbar-connect');
     if (btn) btn.textContent = 'Connect';
     renderProviderChip();
+    if (reason) setTopbarStatus(reason, 'info');
     window.dispatchEvent(new CustomEvent('fao:walletChanged', { detail: { wallet: null, signer: null, provider: selectedProviderRecord?.info || null } }));
   }
 
@@ -253,8 +307,8 @@
     const provider = record?.provider;
     if (!provider || hookedProviders.has(provider)) return;
     hookedProviders.add(provider);
-    provider.on?.('chainChanged', resetWalletState);
-    provider.on?.('accountsChanged', resetWalletState);
+    provider.on?.('chainChanged', () => resetWalletState('Wallet network changed; reconnect on Sepolia.', { clearStorage: true }));
+    provider.on?.('accountsChanged', () => resetWalletState('Wallet account changed; reconnect to continue.', { clearStorage: true }));
   }
 
   function chainIdToBigInt(value) {
@@ -286,10 +340,71 @@
     });
   }
 
+  async function detectWalletCapabilities(provider, wallet) {
+    window.faoWalletCapabilities = null;
+    window.faoWalletSupportsEip5792 = false;
+    if (!provider || !wallet) return null;
+    const chainHex = '0xaa36a7';
+    try {
+      const caps = await provider.request({
+        method: 'wallet_getCapabilities',
+        params: [wallet, [chainHex]],
+      });
+      window.faoWalletCapabilities = caps || null;
+      const chainCaps = caps?.[chainHex] || caps?.[SEPOLIA_CHAIN_ID.toString()] || caps;
+      window.faoWalletSupportsEip5792 = !!(chainCaps?.atomicBatch || chainCaps?.paymasterService || chainCaps?.sessionKeys || chainCaps?.auxiliaryFunds);
+      return caps || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function sendWalletCalls(calls) {
+    const provider = window.faoSelectedWalletProvider;
+    if (!provider || !window.connectedWallet) throw new Error('Connect an EIP-5792 wallet first.');
+    if (!window.faoWalletSupportsEip5792) throw new Error('Selected wallet does not advertise EIP-5792 call batching.');
+    return provider.request({
+      method: 'wallet_sendCalls',
+      params: [{
+        version: '2.0.0',
+        from: window.connectedWallet,
+        chainId: '0xaa36a7',
+        calls,
+      }],
+    });
+  }
+  window.sendWalletCalls = sendWalletCalls;
+
+  function handleWalletStorageEvent(event) {
+    if (event.key === WALLET_PROVIDER_STORAGE_KEY) {
+      selectedProviderRecord = null;
+      try {
+        window.faoSelectedWalletProviderInfo = event.newValue ? JSON.parse(event.newValue) : null;
+      } catch (_) {
+        window.faoSelectedWalletProviderInfo = null;
+      }
+      renderProviderChip();
+      return;
+    }
+    if (event.key !== WALLET_SESSION_STORAGE_KEY) return;
+    if (!event.newValue) {
+      if (window.connectedWallet) resetWalletState('Wallet disconnected in another tab.');
+      return;
+    }
+    try {
+      const next = JSON.parse(event.newValue);
+      if (window.connectedWallet && next.wallet && next.wallet.toLowerCase() !== window.connectedWallet.toLowerCase()) {
+        resetWalletState('Wallet account changed in another tab.');
+      }
+    } catch (_) {}
+  }
+
   window.addEventListener(EIP6963_ANNOUNCE, (event) => {
     const detail = event.detail || {};
     addWalletProvider(detail.info || {}, detail.provider);
   });
+  window.addEventListener('storage', handleWalletStorageEvent);
+  installWalletActivityGuards();
   requestWalletProviders();
 
   function getInstParam() {
@@ -439,10 +554,12 @@
       return;
     }
     chip.hidden = false;
-    chip.title = `${info.name || 'Wallet'} (${info.rdns || 'unknown provider'})`;
+    const batchLabel = window.faoWalletSupportsEip5792 ? ' · EIP-5792 batching' : '';
+    chip.title = `${info.name || 'Wallet'} (${info.rdns || 'unknown provider'})${batchLabel}`;
     chip.innerHTML = `
       ${providerIdentityHTML(info)}
       <span class="wallet-provider-address">${escapeHtml(fmtAddr(window.connectedWallet))}</span>
+      ${window.faoWalletSupportsEip5792 ? '<span class="wallet-provider-cap" data-testid="topbar-wallet-capabilities">5792</span>' : ''}
     `;
   }
 
@@ -695,13 +812,16 @@
       name: record.info.name,
     };
     rememberWalletProvider(record.info);
+    rememberWalletSession(window.connectedWallet, record.info);
+    await detectWalletCapabilities(eip1193Provider, window.connectedWallet);
+    armWalletIdleTimer();
     hookProviderReset(record);
     const connectBtn = $$('#topbar-connect');
     if (connectBtn) connectBtn.textContent = fmtAddr(window.connectedWallet);
     renderProviderChip();
-    setTopbarStatus(`Connected with ${record.info.name}.`, 'ok');
+    setTopbarStatus(`Connected with ${record.info.name}${window.faoWalletSupportsEip5792 ? ' · batching available' : ''}.`, 'ok');
     window.dispatchEvent(new CustomEvent('fao:walletChanged', {
-      detail: { wallet: window.connectedWallet, signer, provider: record.info },
+      detail: { wallet: window.connectedWallet, signer, provider: record.info, capabilities: window.faoWalletCapabilities },
     }));
     return signer;
   }

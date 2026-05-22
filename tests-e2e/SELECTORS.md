@@ -27,6 +27,7 @@ These are the **required** testids the source must expose. The site is currently
 | `topbar-connect` | "Connect" button in topbar |
 | `topbar-active-chip` | Active-instance chip in topbar |
 | `topbar-wallet-identity` | Selected wallet provider identity chip |
+| `topbar-wallet-capabilities` | EIP-5792 wallet capability indicator |
 | `topbar-status` | Inline status banner in topbar |
 | `topbar-switch-sepolia` | Chain-mismatch action button |
 | `wallet-provider-picker` | EIP-6963 provider picker dialog body |
