@@ -41,7 +41,7 @@ budget, and what currently exists (E = engine, S = status: `decided`,
 | INV-ARB-006 | Safety-mode threshold gating | Halmos | **decided** | `check_INV_ARB_006_safetyModeBlocksTimeout` (`test/FutarchyArbitration.symbolic.t.sol`) |
 | INV-ORCH-001 | Atomic promote — rollback envelope | SMTChecker | **undecided-bounded** (cross-function dependency; SMTChecker needs `--show-unproved`) | Foundry concrete tests |
 | INV-ORCH-002 | Refuse pre-initialized pool | SMTChecker / Halmos | **decided** | `check_INV_ORCH_002_refusesPreInit` (`test/FAOOfficialProposalOrchestrator.symbolic.t.sol`) |
-| INV-TWAP-001 | Resolver anchor monotonicity | Halmos | **decided** | Planned `check_INV_TWAP_001_anchorMonotone` |
+| INV-TWAP-001 | Resolver anchor monotonicity | Halmos | **decided** | `check_INV_TWAP_001_anchorMonotone` (`test/FAOTwapResolver.symbolic.t.sol`) |
 | INV-TWAP-002 | TWAP window respects observation cardinality | Halmos | **undecided-bounded** (`observe`-tuple arithmetic outside the linear fragment) | Foundry fork tests |
 
 ## Bounded surfaces
