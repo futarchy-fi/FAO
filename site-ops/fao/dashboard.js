@@ -1,8 +1,8 @@
 /*
  * FAO audit dashboard — pure-client rendering of the rubric trend.
  *
- * Reads evaluations/topic-{1..6}-evals.jsonl over fetch from the Cloudflare
- * Pages deploy tree at site-ops/fao/evaluations/.
+ * Reads audit/evaluations/topic-{1..6}-evals.jsonl over fetch (served by a
+ * local static http.server, parent path is `../evaluations/...`).
  *
  * No build step. No backend. Refresh every 30s.
  */
@@ -18,7 +18,7 @@ const TOPICS = [
 const TARGET = 8.0;
 
 async function loadTopic(id) {
-  const r = await fetch(`evaluations/topic-${id}-evals.jsonl`, { cache: 'no-cache' });
+  const r = await fetch(`../evaluations/topic-${id}-evals.jsonl`, { cache: 'no-cache' });
   if (!r.ok) return [];
   const txt = await r.text();
   return txt.trim().split('\n').filter(Boolean).map((l) => {
@@ -59,15 +59,15 @@ function renderOverview(allTopicRounds) {
     const min = Math.min(...scores);
     const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
     const atTarget = scores.filter(s => s >= TARGET).length;
-    const cls = min >= TARGET ? 'target' : min < 5 ? 'below5' : 'below8';
+    const cls = mean >= TARGET ? 'target' : mean < 5 ? 'below5' : 'below8';
     const pips = scores.map(s => `<span class="dim-pip ${s >= TARGET ? 'target' : s < 5 ? 'below5' : 'below8'}" title="${s.toFixed(1)}"></span>`).join('');
     return `<div class="topic-card">
       <div class="topic-card-head">
         <span class="topic-card-num">T${t.id} · ${rounds.length} rounds</span>
         <span class="topic-card-title">${t.label}</span>
       </div>
-      <div class="topic-card-min ${cls}">${min.toFixed(1)}</div>
-      <div class="topic-card-line">mean ${mean.toFixed(2)} · ${atTarget}/${scores.length} ≥ ${TARGET}</div>
+      <div class="topic-card-min ${cls}">${mean.toFixed(2)}</div>
+      <div class="topic-card-line">mean · min ${min.toFixed(1)} · ${atTarget}/${scores.length} ≥ ${TARGET}</div>
       <div class="topic-card-dims">${pips}</div>
     </div>`;
   }).join('');
@@ -85,18 +85,19 @@ function fmtTs(ts) {
 let minChartInstance = null;
 function renderMinChart(allTopicRounds) {
   const ctx = document.getElementById('min-chart');
-  // Time-axis: collect every (timestamp, score) pair across all topics.
-  // Chart.js time scale uses {x: Date, y: number} data points.
+  // Time-axis: one (timestamp, mean) point per evaluator R-round per topic.
+  // Mean is the average sub-score for that topic at that timestamp.
   const datasets = [];
 
   TOPICS.forEach((t, i) => {
     const rounds = allTopicRounds[i];
-    const data = rounds.map(r => ({
-      x: new Date(r.timestamp),
-      y: Math.min(...r.scores.map(s => s.score)),
-    })).filter(p => !isNaN(p.x.getTime()));
+    const data = rounds.map(r => {
+      const scores = r.scores.map(s => s.score);
+      const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+      return { x: new Date(r.timestamp), y: mean };
+    }).filter(p => !isNaN(p.x.getTime()));
     datasets.push({
-      label: `T${t.id} ${t.label} (min)`,
+      label: `T${t.id} ${t.label} (mean)`,
       data,
       borderColor: t.color,
       backgroundColor: t.color + '20',

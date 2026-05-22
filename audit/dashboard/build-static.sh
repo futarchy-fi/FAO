@@ -82,7 +82,8 @@ $JS_PATCHED
 </section>
 
 <section class="section">
-  <h2>Min / mean over time</h2>
+  <h2>Average score per topic over time</h2>
+  <p class="section-sub">Mean across all sub-scores in each topic. Dashed line at 8.0 is the convergence target.</p>
   <div class="chart-wrap"><canvas id="min-chart"></canvas></div>
 </section>
 
