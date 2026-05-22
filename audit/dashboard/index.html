@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FAO audit dashboard — Phase 6 score tracker</title>
+  <link rel="stylesheet" href="dashboard.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script src="dashboard.js" defer></script>
+</head>
+<body>
+
+<header class="hdr">
+  <h1>FAO audit dashboard</h1>
+  <p class="hdr-sub">/goal Phase 6 — six rubrics × N rounds — track score trend per topic and per dimension. Reads the JSONL evaluation files emitted by the codex evaluators (no build step).</p>
+  <div class="hdr-stats" id="hdr-stats">Loading…</div>
+</header>
+
+<section class="section">
+  <h2>Overview — latest round per topic</h2>
+  <div class="overview-grid" id="overview-grid">Loading…</div>
+</section>
+
+<section class="section">
+  <h2>Min / mean over time</h2>
+  <div class="chart-wrap">
+    <canvas id="min-chart"></canvas>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Per-dimension trend (one chart per topic)</h2>
+  <div class="per-topic-grid" id="per-topic-grid">Loading…</div>
+</section>
+
+<section class="section">
+  <h2>Heatmap — dim × round</h2>
+  <p class="section-sub">Each cell colored 0.0 (red) → 5.0 (amber) → 8.0+ (green = target). Click a row label to view its evolution.</p>
+  <div id="heatmap-wrap">Loading…</div>
+</section>
+
+<section class="section">
+  <h2>Recent deltas</h2>
+  <table class="delta-table" id="delta-table">
+    <thead><tr><th>Topic</th><th>Dimension</th><th>R<sub>n-1</sub></th><th>R<sub>n</sub></th><th>Δ</th><th>Direction</th></tr></thead>
+    <tbody><tr><td colspan="6">Loading…</td></tr></tbody>
+  </table>
+</section>
+
+<footer class="ftr">
+  <p>Source: audit/evaluations/topic-{1..6}-evals.jsonl. Built by hand. Refreshes every 30s.</p>
+  <p>Open <code>audit/dashboard/index.html</code> via <code>cd audit/dashboard && python3 -m http.server 8767</code> then visit <code>http://127.0.0.1:8767/</code>.</p>
+</footer>
+
+</body>
+</html>
