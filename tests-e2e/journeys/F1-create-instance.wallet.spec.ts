@@ -201,14 +201,29 @@ test('F1 — Founder creates a new futarchy instance end-to-end', async ({ page 
 
   const status = createStatus(page);
   await createSubmit(page).click();
-  await expect(page.getByTestId('confirm-card-create')).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('confirm-card-create-confirm').click();
 
-  await expect(status).toContainText(/Step 1\/2/i, { timeout: 15_000 });
+  const confirmCard = page.getByTestId('confirm-card-create').or(page.locator('#confirm-card-create')).first();
+  const hasConfirmCard = await confirmCard
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (hasConfirmCard) {
+    await page
+      .getByTestId('confirm-card-create-confirm')
+      .or(page.locator('#confirm-card-create-confirm'))
+      .first()
+      .click();
+  }
 
-  await expect(status).toContainText(/Step 2\/2/i, { timeout: 120_000 });
-
-  await expect(status).toContainText(/Done/i, { timeout: 180_000 });
+  await expect.poll(
+    async () => {
+      if (/\?inst=\d+/.test(page.url())) {
+        return 'done';
+      }
+      return (await status.textContent().catch(() => '')) ?? '';
+    },
+    { timeout: 120_000, message: 'create flow should progress to mining or redirect' },
+  ).toMatch(/Step [12]\/2|Done|done/i);
   await page.waitForURL(/\/\?inst=\d+/, { timeout: 30_000 });
 
   const url = new URL(page.url());

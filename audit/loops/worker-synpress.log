@@ -74,3 +74,11 @@
 [2026-05-22T14:38:52-03:00] F6-create-proposal happy path now passes against the persistent Anvil fork: the spec creates a fresh instance through the UI, submits a proposal through the proposals page, buffers Anvil gas estimates to avoid exact-estimate OOG, and asserts factory.marketsCount() plus proposals(index). Command: npm run e2e -- --project=wallet --grep "F6-create-proposal happy path" -> 1 passed.
 
 [2026-05-22T14:39:25-03:00] Targeted Forge verification for F6 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
+
+[2026-05-22T14:43:43-03:00] Combined F1/F2/F3/F6 wallet regression found F1 assuming the newer create confirmation card while the deployed create page can submit directly. Patching F1 to treat the confirmation card as optional and rerunning wallet-targeted checks only.
+
+[2026-05-22T14:45:02-03:00] F1 rerun submitted and mined successfully, but the fork advanced from Step 2/2 to Done before the strict Step 1/2 assertion observed it. Patching F1 to wait on durable progress/redirect instead of every transient status.
+
+[2026-05-22T14:48:34-03:00] F1 compatibility rerun passed, then combined targeted wallet regression passed: npm run e2e -- --project=wallet --grep "Founder creates|F2-buy-via-sale happy path|F3-ragequit happy path|F6-create-proposal happy path" -> 4 passed in 2.5m.
+
+[2026-05-22T14:48:45-03:00] Targeted Forge verification for F1 compatibility patch passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
