@@ -1,40 +1,54 @@
-# Baseline scores — Phase 1 self-evaluation (2026-05-22)
+# Baseline scores
 
-These are the **rubric authors' own** self-evaluations of the current `futarchy-fi/FAO` state, captured as a baseline before the Phase 6 improvement loop runs. Phase 5 will re-run independent Codex-backed CAO evaluators against the same rubrics to confirm / dispute these numbers.
+## Independent baseline (Phase 5, codex evaluators)
 
-| Topic | Dimensions | Min | Mean | Notes |
+Captured 2026-05-22 from `audit/evaluations/topic-{1..6}-evals.jsonl`. Each topic's min is the binding sub-score — that's the one Phase 6 must lift.
+
+| Topic | Min | Mean | Weakest dimension | Notes |
 |---|---|---|---|---|
-| 1 — Web3 UX | 6 (D1–D6) | **3.5** | 5.4 | Binds on D2 (wallet — native `alert/confirm/prompt`) and D5 (a11y — no `aria-live`, `outline:none` repeated, native modals) |
-| 2 — Interface testing | 7 (D1–D7) | **0.07** | 0.07 | Zero E2E tests; only D7 gets 0.5 for prose journey inventory |
-| 3 — Spec formalization | 8 (D1–D8) | **0.0** | 2.5 | D1 = 0 (no `audit/specs/`); D6 = 0 (no spec→impl IDs); other dims 3–5 |
-| 4 — SC testing infra | 6 (D1–D6) | **2.5** | 3.9 | Has 244 unit tests + 1 invariant suite; missing fuzz / mutation / symbolic / Slither / coverage gates; 1 failing test on main |
-| 5 — Holistic architecture | 6 (D1–D6) | **3.0** | 3.6 | D2 explicitly capped by topic-3 < 3 ∧ topic-4 < 3; deprecation entropy across v3→v4→v5 |
-| 6 — LLM wiki | 6 (D1–D6) | **2.5** | 4.0 | Predicted v0; wiki doesn't exist yet |
+| 1 — Web3 UX | **4.0** | 5.0 | D6 — Visual hierarchy + minimalism | D2 wallet & D5 a11y already lifted by foundation pass |
+| 2 — Interface testing | **0.3** | 1.7 | D4 — Failure-mode coverage | Zero real E2E tests; Playwright scaffold only |
+| 3 — Spec formalization | **3.0** | 4.4 | D2 — Invariant explicitness | INVARIANTS.md exists; just lifted by invariant tests |
+| 4 — SC testing infra | **3.2** | 4.9 | D6 — Tooling diversity | Foundry + Slither only; needs Halmos / Echidna / Vertigo |
+| 5 — Holistic | **2.0** | 2.8 | D2 — Security posture | Single key + no timelock + v3/v4 deprecation entropy |
+| 6 — LLM wiki | **5.0** | 6.2 | D3 — Convergence signal | First pass; needs subsequent passes to demonstrate convergence |
 
-**Total sub-scores: 39.** **System floor: 0.0** (T3.D1 + T3.D6 + T2 dims). **Mean of mins: 1.9.**
+**System floor: 0.3.** **Mean of mins: 2.92.**
 
-Per the goal directive, **every** sub-score must reach ≥ 8.0. That's a ~6-point lift on average, ~8-point lift on the weakest dimensions.
+## Lift target
 
-## Highest-leverage first targets (lowest-score → quickest wins)
+Every sub-score → ≥ 8.0.
+- Worst-case lift: 7.7 points (T2.D4: 0.3 → 8.0).
+- Mean lift required: ~5.1 points.
 
-| Sub-score | Score | Why it's low | First fix |
+## Phase-1 (rubric self-eval) vs Phase-5 (independent codex)
+
+The Phase-1 self-evaluations were the rubric authors' own estimates. The Phase-5 codex evaluators corroborate the overall shape but score consistently higher (the foundation lifts I applied between Phase 1 and Phase 5 are visible in the numbers).
+
+| Topic | Phase-1 min | Phase-5 min | Δ |
 |---|---|---|---|
-| T3.D1 — Spec doc existence | 0.0 | No spec artifact at all | Create `audit/specs/` with an initial invariants doc derived from `docs/onchain-futarchy-design.md` |
-| T3.D6 — Spec ↔ impl traceability | 0.0 | No spec IDs cross-referenced | Number top-15 invariants and link from NatSpec |
-| T2.D1 — User-flow coverage | 0.0 | Zero E2E tests | Stand up Anvil + Playwright + Synpress; cover F1 (create instance) end-to-end |
-| T2.D3 — Fork realism | 0.0 | No fork-based tests | Same scaffold as T2.D1 |
-| T2.D5 — Selector quality | 0.0 | No `data-testid` attrs | Add stable selectors as Playwright lands |
-| T1.D2 — Wallet-state | 3.5 | Native `alert/confirm/prompt` x3 in `shared.js`, `bonds.js` | Replace with in-page status panels + `aria-live` |
-| T1.D5 — a11y | 3.5 | `outline:none` x3; no `prefers-reduced-motion` | a11y sweep + token file |
-| T4.D6 — Tooling diversity | 2.5 | Foundry-only | Add Slither + Halmos in CI (separate jobs) |
+| 1 | 3.5 | 4.0 | +0.5 (a11y lift, modal helpers) |
+| 2 | 0.07 | 0.3 | +0.23 (Playwright scaffold + SELECTORS.md) |
+| 3 | 0.0 | 3.0 | +3.0 (INVARIANTS.md + @custom:spec NatSpec) |
+| 4 | 2.5 | 3.2 | +0.7 (Slither workflow + ci profile) |
+| 5 | 3.0 | 2.0 | −1.0 (foundation lifts surfaced more issues the codex evaluator caught) |
+| 6 | predicted 2.5 | 5.0 | +2.5 (wiki actually exists now) |
 
-## Cross-rubric caps (binding)
+T5 going DOWN is interesting: the codex evaluator was harsher about the deprecation entropy (v3/v4 broadcast files still in tree, UI hardcoded addresses) than the rubric author was. Worth investigating in the loop — could be a regression-detection signal.
 
-- T5.D2 (security posture) capped at 4.0 by `min(T3, T4) < 3` — must lift T3 or T4 before T5.D2 can exceed 4.
-- T6 every dim conditional on `audit/wiki/` existing — Phase 3 build precedes its first non-predicted score.
+## Phase 6 strategy
 
-## Phase 6 loop strategy
+Priority queue (lowest sub-score first, with cross-rubric caps):
 
-Priority order = lowest sub-score first, but with two caveats:
-1. **Cross-rubric caps:** lifting a capping topic (T3 or T4) unlocks T5 — prioritize the cap.
-2. **Foundation-first:** spec → tests → infra → UI polish. Building UI a11y on top of a broken test layer is wasteful.
+1. **T2.D4 (0.3)** — failure-mode coverage. Needs Synpress + chain-state assertions.
+2. **T2.D1 (0.5)** — user-flow coverage breadth.
+3. **T2.D3 (0.5)** — fork realism.
+4. **T2.D2 (0.6)** — test signal density.
+5. **T5.D2 (2.0)** — security posture (capped by T3 + T4).
+6. **T2.D6 (2.0)** — performance / cycle time.
+7. **T5.D3 (2.8)** — deprecation hygiene.
+8. **T3.D2 (3.0)** — invariant explicitness (already partly lifted).
+9. **T3.D3 (3.0)** — pre/postcondition coverage.
+10. **T5.D1 (3.0)** — architectural coupling.
+
+T2 dominates. Realistic next session focus: dedicate one full pass to T2 (Playwright + Synpress + 5+ real journey tests with chain-state assertions). That should lift T2 min from 0.3 → 5-6.
