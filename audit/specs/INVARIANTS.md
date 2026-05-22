@@ -33,7 +33,7 @@ With `minted_in` summing the `Transfer(0x0, *, value)` events and `burned_in` su
 
 **Cite.** `src/FAOToken.sol`, `src/GenericFutarchyToken.sol:32-37` (mint hook), and the inherited OZ `ERC20Burnable` `burn`/`burnFrom`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/InstanceSale.invariants.t.sol::invariant_INV_TOKEN_001_supplyTracksHandlerOps`).
 
 ---
 
@@ -50,7 +50,7 @@ sale.effectiveSupply() == (total > saleHeld ? total - saleHeld : 0)
 
 **Cite.** `src/InstanceSale.sol:125-133`.
 
-**Status:** STATED. Existing read-only assertion target; testable as a Foundry property after a state-mutating handler.
+**Status:** TESTED (`test/InstanceSale.invariants.t.sol::invariant_INV_SALE_001_effectiveSupplyFormula`).
 
 ---
 
@@ -80,7 +80,7 @@ for r in ragequitTokens where isRagequitToken[r]:
 
 **Cite.** `src/InstanceSale.sol:188-226`.
 
-**Status:** STATED. Unit-tested for the ETH portion in `test/InstanceSale.t.sol::test_ragequit_*`; ERC20 portion needs a multi-token property test.
+**Status:** TESTED (`test/InstanceSale.proRata.invariants.t.sol::invariant_INV_SALE_002_ragequitPaysExactlyProRata`, `test/InstanceSale.proRata.invariants.t.sol::invariant_INV_SALE_002_ratioNonIncreasing`; ERC20 coverage in `test/InstanceSale.t.sol::test_ragequit_distributesProRataAcrossMultipleTokens`).
 
 ---
 
@@ -96,7 +96,7 @@ for r in ragequitTokens where isRagequitToken[r]:
 
 **Cite.** `src/InstanceSale.sol:188-201`.
 
-**Status:** STATED. Unit-tested in `test/InstanceSale.t.sol`.
+**Status:** TESTED (`test/InstanceSale.t.sol::test_ragequit_revertsOn*`).
 
 ---
 
@@ -113,7 +113,7 @@ for r in ragequitTokens where isRagequitToken[r]:
 
 **Cite.** `src/InstanceSale.sol:170-180`, `src/FAOSale.sol:46-56`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/InstanceSale.invariants.t.sol::invariant_INV_SALE_004_phaseMonotone`).
 
 ---
 
@@ -316,11 +316,11 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 
 | ID | STATED | TESTED | PROVED |
 |---|---|---|---|
-| INV-TOKEN-001 | ✓ | partial (token unit tests) | — |
-| INV-SALE-001 | ✓ | ✓ (`InstanceSale.t.sol::test_effectiveSupply_*`) | — |
-| INV-SALE-002 | ✓ | partial (ETH only — `test_ragequit_ETHOnly`) | — |
+| INV-TOKEN-001 | ✓ | ✓ (`invariant_INV_TOKEN_001_supplyTracksHandlerOps`) | — |
+| INV-SALE-001 | ✓ | ✓ (`invariant_INV_SALE_001_effectiveSupplyFormula`) | — |
+| INV-SALE-002 | ✓ | ✓ (`invariant_INV_SALE_002_ragequitPaysExactlyProRata`, `invariant_INV_SALE_002_ratioNonIncreasing`, `test_ragequit_distributesProRataAcrossMultipleTokens`) | — |
 | INV-SALE-003 | ✓ | ✓ (`test_ragequit_revertsOn*`) | — |
-| INV-SALE-004 | ✓ | partial | — |
+| INV-SALE-004 | ✓ | ✓ (`invariant_INV_SALE_004_phaseMonotone`) | — |
 | INV-ARB-001 | ✓ | ✓ (`invariant_INV_ARB_001_nextProposalIdMonotonic`) | — |
 | INV-ARB-002 | ✓ | ✓ (`invariant_INV_ARB_002_settledIrreversible`) | — |
 | INV-ARB-003 | ✓ | ✓ (`invariant_INV_ARB_003_bondTreasuryConserved`) | — |
@@ -332,7 +332,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-TWAP-001 | ✓ | ✓ (`invariant_INV_TWAP_001_anchorMonotoneWindowFixed`) | — |
 | INV-TWAP-002 | ✓ | ✓ (`invariant_INV_TWAP_002_resolutionWriteCardinality`) | — |
 
-**Phase 6 priority:** finish the partial TESTED entries, then add the missing TESTED rows. PROVED column is a v0.1 goal once Certora/Halmos is wired (Topic 4 D2 + D6).
+**Phase 6 priority:** all Top-15 rows now have TESTED coverage. PROVED column is a v0.1 goal once Certora/Halmos is wired (Topic 4 D2 + D6).
 
 ---
 
@@ -347,7 +347,7 @@ This is an authored spec, not a generated one. Updates happen in two ways:
 
 - `audit/rubrics/topic-3-spec-formalization.md` — the rubric that grades this doc.
 - `audit/research/topic-3-spec-formalization.md` — research backing.
-- `test/FutarchyArbitration.invariants.t.sol` — the existing partial implementation.
+- `test/FutarchyArbitration.invariants.t.sol`, `test/FAOOfficialProposalOrchestrator.invariants.t.sol`, `test/FAOTwapResolver.invariants.t.sol`, `test/InstanceSale.invariants.t.sol`, and `test/InstanceSale.proRata.invariants.t.sol` — the stateful invariant implementations.
 
 ## How this might be wrong
 
