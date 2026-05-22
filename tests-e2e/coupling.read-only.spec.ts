@@ -43,6 +43,10 @@ function checksum(value) {
   return getAddress(value);
 }
 
+function shortAddr(value) {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
 function field(raw, name, index) {
   return raw?.[name] ?? raw?.[index];
 }
@@ -101,7 +105,11 @@ test.describe('deployment coupling - read-only live site', () => {
     expect(checksum(active.sale)).toBe(expected.sale);
     expect(checksum(active.arbitration)).toBe(expected.arbitration);
 
-    await expect(page.locator('#sale-addr-table-token')).toContainText(expected.token);
-    await expect(page.locator('#sale-addr-table-sale')).toContainText(expected.sale);
+    const tokenLink = page.locator('#sale-addr-table-token a');
+    const saleLink = page.locator('#sale-addr-table-sale a');
+    await expect(tokenLink).toContainText(shortAddr(expected.token));
+    await expect(tokenLink).toHaveAttribute('title', expected.token);
+    await expect(saleLink).toContainText(shortAddr(expected.sale));
+    await expect(saleLink).toHaveAttribute('title', expected.sale);
   });
 });

@@ -34,6 +34,7 @@
   let provider;
   let rankSortKey = 'mcap';
   let rankFilter = 'all';
+  let rankingsWired = false;
 
   // ─── Boot ────────────────────────────────────────────────────────────
   function start() {
@@ -44,6 +45,7 @@
     window.addEventListener('fao:activeInstanceChanged', renderRankings);
   }
 
+  wireRankingsControls();
   if (window.allInstances) start();
   else window.addEventListener('fao:sharedReady', start, { once: true });
 
@@ -96,6 +98,7 @@
   function renderRankings() {
     const tbody = $$('#rankings-rows');
     if (!tbody) return;
+    syncFilterPills();
     const all = window.allInstances || [];
     let visible = all.filter(i => i.sale && !isZero(i.sale));
     if (rankFilter === 'initial-sale')  visible = visible.filter(i => i.salePhase === 'initial-sale' || i.salePhase === 'phase-ended');
@@ -144,7 +147,15 @@
     }).join('');
   }
 
+  function syncFilterPills() {
+    document.querySelectorAll('[data-rank-filter]').forEach((btn) => {
+      btn.classList.toggle('filter-pill-active', btn.dataset.rankFilter === rankFilter);
+    });
+  }
+
   function wireRankingsControls() {
+    if (rankingsWired) return;
+    rankingsWired = true;
     document.querySelectorAll('.rank-sort').forEach(th => {
       th.addEventListener('click', () => {
         const key = th.dataset.rankSort;
@@ -154,12 +165,12 @@
         renderRankings();
       });
     });
-    document.querySelectorAll('[data-rank-filter]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        rankFilter = btn.dataset.rankFilter;
-        document.querySelectorAll('[data-rank-filter]').forEach(x => x.classList.toggle('filter-pill-active', x === btn));
-        renderRankings();
-      });
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-rank-filter]');
+      if (!btn) return;
+      rankFilter = btn.dataset.rankFilter || 'all';
+      syncFilterPills();
+      renderRankings();
     });
     // Row clicks now navigate via <a> — but we still need to record the
     // active instance in localStorage before the navigation happens so the

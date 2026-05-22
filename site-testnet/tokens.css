@@ -30,7 +30,7 @@
 
   --text:         #e0e4ec;          /* primary text on --bg */
   --text-muted:   #8892a4;          /* secondary text, labels */
-  --text-dim:     #5a6478;          /* tertiary, hint text */
+  --text-dim:     #8892a4;          /* tertiary, hint text */
 
   --accent:       #3effb0;          /* primary CTA, success, positive trend */
   --accent-hover: #5cffbc;
