@@ -25,7 +25,7 @@ export CLOUDFLARE_ACCOUNT_ID="878924eda0607cab3b6c0c86a9babb3f"
 LAST_HASH=""
 
 while true; do
-  HASH=$(cat audit/evaluations/topic-{1..6}-evals.jsonl 2>/dev/null | sha256sum | awk '{print $1}')
+  HASH=$(cat audit/evaluations/topic-{1..6}-evals.jsonl audit/dashboard/index.html audit/dashboard/dashboard.js audit/dashboard/dashboard.css 2>/dev/null | sha256sum | awk '{print $1}')
   if [[ -n "$HASH" && "$HASH" != "$LAST_HASH" ]]; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] evaluations changed (hash=${HASH:0:12}); syncing + redeploying" >> "$LOG"
     bash scripts/sync-ops-dashboard.sh >> "$LOG" 2>&1

@@ -7,11 +7,11 @@ import { expect, test } from '@playwright/test';
 
 const PAGES = [
   { label: 'home', path: '/', readyTestId: 'rankings-rows' },
-  { label: 'sale', path: '/sale', readyTestId: 'sale-decision-strip' },
-  { label: 'create', path: '/create', readyTestId: 'create-submit' },
-  { label: 'proposals', path: '/proposals', readyTestId: 'create-proposal-name' },
-  { label: 'contracts', path: '/contracts', readyTestId: 'topbar-connect' },
-  { label: 'docs', path: '/docs', readyTestId: 'topbar-connect' },
+  { label: 'sale', path: '/sale.html', readyTestId: 'sale-decision-strip' },
+  { label: 'create', path: '/create.html', readyTestId: 'create-submit' },
+  { label: 'proposals', path: '/proposals.html', readyTestId: 'create-proposal-name' },
+  { label: 'contracts', path: '/contracts.html', readyTestId: 'topbar-connect' },
+  { label: 'docs', path: '/docs.html', readyTestId: 'topbar-connect' },
 ];
 
 const VIEWPORTS = [
