@@ -16,6 +16,56 @@ const TOPICS = [
   { id: 6, label: 'Wiki self-improve', color: '#f59e0b' },
 ];
 const TARGET = 8.0;
+const CHART_JS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+const CHART_ADAPTER_SRC = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js';
+let chartLibPromise = null;
+let chartsReady = false;
+let chartsRequested = false;
+let detailsReady = false;
+let detailsRequested = false;
+let fullLoaded = false;
+let fullLoadRequested = false;
+let latestTopicRounds = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function loadChartLibs() {
+  if (window.Chart) return;
+  if (!chartLibPromise) {
+    chartLibPromise = loadScript(CHART_JS_SRC).then(() => loadScript(CHART_ADAPTER_SRC));
+  }
+  await chartLibPromise;
+}
+
+// Minimum dims a row must have to count as a "canonical" full evaluator
+// entry. Partial-dim entries (multimodal: 3 dims; worker self-scores: 1 dim)
+// would otherwise pollute the trend chart and mean computation.
+//
+// Per rubric:
+//   T1.v1=6, T1.v2=8, T2.v1=7, T2.v2=10, T3=8, T4=6, T5=6, T6=6
+// 5 dims is a permissive floor that filters out 1-3-dim partial rows but
+// keeps every real evaluator entry.
+const MIN_CANONICAL_DIMS = 5;
+
+// Evaluator names that are NOT canonical (don't count toward the trend).
+const NON_CANONICAL_EVALUATORS = new Set(['multimodal']);
+
+function isCanonicalRow(d) {
+  // Worker self-scores leak through with evaluator="worker-*".
+  const ev = (d.evaluator || 'codex').toLowerCase();
+  if (ev.startsWith('worker-')) return false;
+  if (NON_CANONICAL_EVALUATORS.has(ev)) return false;
+  return (d.scores || []).length >= MIN_CANONICAL_DIMS;
+}
 
 async function loadTopic(id) {
   // Pages-relative path: the deployed dashboard lives at /fao/index.html
@@ -26,9 +76,38 @@ async function loadTopic(id) {
   const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) return [];
   const txt = await r.text();
-  return txt.trim().split('\n').filter(Boolean).map((l) => {
+  const rows = txt.trim().split('\n').filter(Boolean).map((l) => {
     try { return JSON.parse(l); } catch (_) { return null; }
   }).filter(Boolean);
+  // Keep ONLY canonical full-evaluator rows for the trend chart.
+  // Partial rows (multimodal D5/D6/D8 only, worker self-scores) are
+  // dropped — they show a misleading mean.
+  return rows.filter(isCanonicalRow);
+}
+
+async function loadSummary() {
+  const url = new URL('summary.json', document.baseURI).toString();
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`Could not load summary (${r.status})`);
+  return r.json();
+}
+
+async function loadAllTopicRounds() {
+  return Promise.all(TOPICS.map(t => loadTopic(t.id)));
+}
+
+function summaryToTopicRounds(summary) {
+  return TOPICS.map((topic, i) => {
+    const item = summary.topics?.find(t => t.id === topic.id) || summary.topics?.[i];
+    const last = {
+      timestamp: item?.timestamp || summary.generatedAt,
+      scores: item?.scores || [],
+    };
+    const rounds = Math.max(1, Number(item?.rounds || summary.latestRound || 1));
+    const arr = Array.from({ length: rounds }, () => null);
+    arr[arr.length - 1] = last;
+    return arr;
+  });
 }
 
 function scoreColorClass(s) {
@@ -54,6 +133,7 @@ function statsHeader(allTopicRounds) {
 
 function renderOverview(allTopicRounds) {
   const root = document.getElementById('overview-grid');
+  root.setAttribute('aria-busy', 'false');
   root.innerHTML = TOPICS.map((t, i) => {
     const rounds = allTopicRounds[i];
     if (!rounds || rounds.length === 0) {
@@ -87,8 +167,23 @@ function fmtTs(ts) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+function onVisible(targets, callback, fallbackDelay = 4000) {
+  const visibleTargets = targets.filter(Boolean);
+  if ('IntersectionObserver' in window && visibleTargets.length) {
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect();
+      callback();
+    }, { rootMargin: '160px 0px' });
+    visibleTargets.forEach(target => observer.observe(target));
+  } else {
+    setTimeout(callback, fallbackDelay);
+  }
+}
+
 let minChartInstance = null;
 function renderMinChart(allTopicRounds) {
+  if (!window.Chart) return;
   const ctx = document.getElementById('min-chart');
   // Time-axis: one (timestamp, mean) point per evaluator R-round per topic.
   // Mean is the average sub-score for that topic at that timestamp.
@@ -152,12 +247,13 @@ function renderMinChart(allTopicRounds) {
 
 const perTopicCharts = {};
 function renderPerTopicCharts(allTopicRounds) {
+  if (!window.Chart) return;
   const root = document.getElementById('per-topic-grid');
   root.innerHTML = '';
   TOPICS.forEach((t) => {
     const wrap = document.createElement('div');
     wrap.className = 'topic-chart-wrap';
-    wrap.innerHTML = `<div class="topic-chart-title">T${t.id} · ${t.label}</div><canvas id="chart-t${t.id}"></canvas>`;
+    wrap.innerHTML = `<div class="topic-chart-title">T${t.id} · ${t.label}</div><canvas id="chart-t${t.id}" role="img" aria-label="T${t.id} ${t.label} score trend"></canvas>`;
     root.appendChild(wrap);
   });
   TOPICS.forEach((t, i) => {
@@ -207,6 +303,37 @@ function renderPerTopicCharts(allTopicRounds) {
         },
         plugins: { legend: { labels: { color: '#e0e4ec', font: { size: 10 }, boxWidth: 12 } } },
       },
+    });
+  });
+}
+
+async function renderChartsWhenReady() {
+  if (!latestTopicRounds) return;
+  await loadChartLibs();
+  chartsReady = true;
+  renderMinChart(latestTopicRounds);
+  renderPerTopicCharts(latestTopicRounds);
+}
+
+function queueCharts(allTopicRounds) {
+  latestTopicRounds = allTopicRounds;
+  if (chartsReady) {
+    renderMinChart(allTopicRounds);
+    renderPerTopicCharts(allTopicRounds);
+    return;
+  }
+  if (chartsRequested) return;
+  chartsRequested = true;
+
+  onVisible([
+    document.querySelector('.chart-wrap'),
+    document.getElementById('per-topic-grid')
+  ], () => {
+    renderChartsWhenReady().catch((e) => {
+      const min = document.querySelector('.chart-wrap');
+      const perTopic = document.getElementById('per-topic-grid');
+      if (min) min.textContent = `Chart load failed: ${e.message}`;
+      if (perTopic) perTopic.textContent = `Chart load failed: ${e.message}`;
     });
   });
 }
@@ -273,15 +400,72 @@ function renderDeltaTable(allTopicRounds) {
   }).join('');
 }
 
-async function refresh() {
-  try {
-    const allTopicRounds = await Promise.all(TOPICS.map(t => loadTopic(t.id)));
-    document.getElementById('hdr-stats').innerHTML = statsHeader(allTopicRounds);
-    renderOverview(allTopicRounds);
-    renderMinChart(allTopicRounds);
-    renderPerTopicCharts(allTopicRounds);
+function queueDetails(allTopicRounds) {
+  latestTopicRounds = allTopicRounds;
+  if (detailsReady) {
     renderHeatmap(allTopicRounds);
     renderDeltaTable(allTopicRounds);
+    return;
+  }
+  if (detailsRequested) return;
+  detailsRequested = true;
+
+  onVisible([
+    document.getElementById('heatmap-wrap'),
+    document.getElementById('delta-table')
+  ], () => {
+    detailsReady = true;
+    if (!latestTopicRounds) return;
+    renderHeatmap(latestTopicRounds);
+    renderDeltaTable(latestTopicRounds);
+  });
+}
+
+function renderAll(allTopicRounds) {
+  document.getElementById('hdr-stats').innerHTML = statsHeader(allTopicRounds);
+  renderOverview(allTopicRounds);
+  queueCharts(allTopicRounds);
+  queueDetails(allTopicRounds);
+}
+
+function queueFullData() {
+  if (fullLoadRequested) return;
+  fullLoadRequested = true;
+  onVisible([
+    document.querySelector('.chart-wrap'),
+    document.getElementById('per-topic-grid'),
+    document.getElementById('heatmap-wrap'),
+    document.getElementById('delta-table')
+  ], async () => {
+    try {
+      const allTopicRounds = await loadAllTopicRounds();
+      fullLoaded = true;
+      renderAll(allTopicRounds);
+    } catch (e) {
+      document.getElementById('hdr-stats').innerHTML = `<span class="hdr-stat-val danger">error: ${e.message}</span>`;
+    }
+  });
+}
+
+async function refresh() {
+  try {
+    if (!fullLoaded) {
+      try {
+        const summary = await loadSummary();
+        const summaryRounds = summaryToTopicRounds(summary);
+        document.getElementById('hdr-stats').innerHTML = statsHeader(summaryRounds);
+        renderOverview(summaryRounds);
+        queueFullData();
+      } catch (_) {
+        const allTopicRounds = await loadAllTopicRounds();
+        fullLoaded = true;
+        renderAll(allTopicRounds);
+      }
+      return;
+    }
+
+    const allTopicRounds = await loadAllTopicRounds();
+    renderAll(allTopicRounds);
   } catch (e) {
     document.getElementById('hdr-stats').innerHTML = `<span class="hdr-stat-val danger">error: ${e.message}</span>`;
   }

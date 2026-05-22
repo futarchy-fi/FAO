@@ -1,0 +1,239 @@
+{
+  "generatedAt": "2026-05-22T18:27:33Z",
+  "target": 8.0,
+  "totalDimensions": 39,
+  "atTarget": 7,
+  "min": 2.0,
+  "mean": 5.797435897435897,
+  "latestRound": 34,
+  "topics": [
+    {
+      "id": 1,
+      "label": "Web3 UX",
+      "rounds": 24,
+      "timestamp": "2026-05-22T17:32:54Z",
+      "min": 5.0,
+      "mean": 6.466666666666668,
+      "atTarget": 0,
+      "total": 6,
+      "scores": [
+        {
+          "dimension": "D1 \u2014 Primary-action surface",
+          "score": 5.0
+        },
+        {
+          "dimension": "D2 \u2014 Wallet-state handling",
+          "score": 7.0
+        },
+        {
+          "dimension": "D3 \u2014 Pre-confirm / pending / success / error affordances",
+          "score": 6.6
+        },
+        {
+          "dimension": "D4 \u2014 Information density vs noise",
+          "score": 6.8
+        },
+        {
+          "dimension": "D5 \u2014 Mobile responsiveness + accessibility (a11y)",
+          "score": 6.4
+        },
+        {
+          "dimension": "D6 \u2014 Visual hierarchy + minimalism",
+          "score": 7.0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "label": "Interface testing",
+      "rounds": 28,
+      "timestamp": "2026-05-22T18:15:38Z",
+      "min": 2.0,
+      "mean": 3.7142857142857144,
+      "atTarget": 0,
+      "total": 7,
+      "scores": [
+        {
+          "dimension": "D1 \u2014 User-flow coverage breadth",
+          "score": 3
+        },
+        {
+          "dimension": "D2 \u2014 Test signal density (% non-useless tests)",
+          "score": 2
+        },
+        {
+          "dimension": "D3 \u2014 Realism (fork vs mock)",
+          "score": 4
+        },
+        {
+          "dimension": "D4 \u2014 Failure-mode coverage",
+          "score": 3
+        },
+        {
+          "dimension": "D5 \u2014 Selector & maintainability quality",
+          "score": 5
+        },
+        {
+          "dimension": "D6 \u2014 Performance & developer cycle time",
+          "score": 3
+        },
+        {
+          "dimension": "D7 \u2014 Specification & journey-map fidelity",
+          "score": 6
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "label": "Spec formalization",
+      "rounds": 32,
+      "timestamp": "2026-05-22T18:23:04Z",
+      "min": 4.0,
+      "mean": 6.625,
+      "atTarget": 3,
+      "total": 8,
+      "scores": [
+        {
+          "dimension": "D1 spec-doc-existence",
+          "score": 9.0
+        },
+        {
+          "dimension": "D2 invariant-explicitness",
+          "score": 6.0
+        },
+        {
+          "dimension": "D3 pre-postcondition-coverage",
+          "score": 5.0
+        },
+        {
+          "dimension": "D4 economic-rule-statability",
+          "score": 8.0
+        },
+        {
+          "dimension": "D5 threat-model-formalism",
+          "score": 8.0
+        },
+        {
+          "dimension": "D6 traceability",
+          "score": 6.0
+        },
+        {
+          "dimension": "D7 verifiability-hooks",
+          "score": 7.0
+        },
+        {
+          "dimension": "D8 decidability-readiness",
+          "score": 4.0
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "label": "SC test infra",
+      "rounds": 34,
+      "timestamp": "2026-05-22T18:24:19Z",
+      "min": 4.5,
+      "mean": 7.0,
+      "atTarget": 3,
+      "total": 6,
+      "scores": [
+        {
+          "dimension": "Layer coverage (unit / integration / fuzz / invariant / symbolic / fork)",
+          "score": 8.8
+        },
+        {
+          "dimension": "Spec -> check traceability",
+          "score": 8.8
+        },
+        {
+          "dimension": "Mutation resistance (test-suite strength)",
+          "score": 4.5
+        },
+        {
+          "dimension": "Fork realism",
+          "score": 5.7
+        },
+        {
+          "dimension": "CI gating & reproducibility",
+          "score": 6
+        },
+        {
+          "dimension": "Tooling diversity (single-tool risk)",
+          "score": 8.2
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "label": "Holistic arch",
+      "rounds": 26,
+      "timestamp": "2026-05-22T17:50:43Z",
+      "min": 3.0,
+      "mean": 4.1499999999999995,
+      "atTarget": 0,
+      "total": 6,
+      "scores": [
+        {
+          "dimension": "D1 \u2014 Architectural coupling discipline (SC \u2194 UI \u2194 deploy-artefact)",
+          "score": 3.0
+        },
+        {
+          "dimension": "D2 \u2014 Security posture (admin keys, immutability, timelocks, multisig)",
+          "score": 4.6
+        },
+        {
+          "dimension": "D3 \u2014 Deprecation hygiene (v3 \u2192 v4 \u2192 v5 transitions)",
+          "score": 3.5
+        },
+        {
+          "dimension": "D4 \u2014 Operator surface readiness (daemons, runbooks, monitoring, alerting)",
+          "score": 4.8
+        },
+        {
+          "dimension": "D5 \u2014 Maintainability and freshness (docs \u2194 code; dead code; CI gating)",
+          "score": 4.7
+        },
+        {
+          "dimension": "D6 \u2014 Supply-chain risk (npm pin, foundry submodule pin, RPC, CDN, verification)",
+          "score": 4.3
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "label": "Wiki self-improve",
+      "rounds": 25,
+      "timestamp": "2026-05-22T17:51:01Z",
+      "min": 5.8,
+      "mean": 6.899999999999999,
+      "atTarget": 1,
+      "total": 6,
+      "scores": [
+        {
+          "dimension": "Source Traceability",
+          "score": 7.1
+        },
+        {
+          "dimension": "Cross-Link Graph Health",
+          "score": 8.7
+        },
+        {
+          "dimension": "Convergence Signal (per-pass measurable improvement)",
+          "score": 5.8
+        },
+        {
+          "dimension": "Abstraction Quality (not a cache, not pure prose)",
+          "score": 7.1
+        },
+        {
+          "dimension": "Out-of-Scope Abstention & Honesty",
+          "score": 6.9
+        },
+        {
+          "dimension": "Mode-Collapse Resistance & Freshness",
+          "score": 5.8
+        }
+      ]
+    }
+  ]
+}

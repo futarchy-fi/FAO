@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FAO audit dashboard — Phase 6 score tracker</title>
   <link rel="stylesheet" href="dashboard.css" />
+  <!-- Synchronous tags = bulletproof. Lazy-load pattern caused "Chart is not
+       defined" errors when CDN fetch raced or failed. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script src="dashboard.js" defer></script>
@@ -19,14 +21,21 @@
 
 <section class="section">
   <h2>Overview — latest round per topic</h2>
-  <div class="overview-grid" id="overview-grid">Loading…</div>
+  <div class="overview-grid" id="overview-grid" aria-busy="true">
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T1</span><span class="topic-card-title">Web3 UX</span></div><div class="topic-card-line">Loading</div></div>
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T2</span><span class="topic-card-title">Interface testing</span></div><div class="topic-card-line">Loading</div></div>
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T3</span><span class="topic-card-title">Spec formalization</span></div><div class="topic-card-line">Loading</div></div>
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T4</span><span class="topic-card-title">SC test infra</span></div><div class="topic-card-line">Loading</div></div>
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T5</span><span class="topic-card-title">Holistic arch</span></div><div class="topic-card-line">Loading</div></div>
+    <div class="topic-card"><div class="topic-card-head"><span class="topic-card-num">T6</span><span class="topic-card-title">Wiki self-improve</span></div><div class="topic-card-line">Loading</div></div>
+  </div>
 </section>
 
 <section class="section">
   <h2>Average score per topic over time</h2>
   <p class="section-sub">Mean across all sub-scores in each topic, plotted at the timestamp of the evaluator R-round. Dashed line at 8.0 is the convergence target.</p>
   <div class="chart-wrap">
-    <canvas id="min-chart"></canvas>
+    <canvas id="min-chart" role="img" aria-label="Average score per topic over time"></canvas>
   </div>
 </section>
 
