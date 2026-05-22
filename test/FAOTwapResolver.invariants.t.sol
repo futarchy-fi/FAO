@@ -195,9 +195,11 @@ contract FAOTwapResolverHandler is Test {
     bool public sawAnchorViolation;
     bool public sawWindowViolation;
     bool public sawResolveViolation;
+    bool public sawReResolveViolation;
     uint256 public bindCalls;
     uint256 public rebindAttempts;
     uint256 public resolveCalls;
+    uint256 public reResolveAttempts;
     uint256 public windowChecks;
 
     constructor(FAOTwapResolver resolver) {
@@ -317,6 +319,27 @@ contract FAOTwapResolverHandler is Test {
         }
     }
 
+    function resolveAgain(uint256 proposalSeed) external {
+        if (proposals.length == 0) return;
+        address proposal = proposals[proposalSeed % proposals.length];
+        if (!tracked[proposal].resolved) return;
+
+        BindingSnapshot memory beforeState = _snapshot(proposal);
+        reResolveAttempts += 1;
+
+        try RESOLVER.resolve(proposal) {
+            sawReResolveViolation = true;
+        } catch (bytes memory reason) {
+            if (_selector(reason) != FAOTwapResolver.AlreadyResolved.selector) {
+                sawReResolveViolation = true;
+            }
+        }
+
+        if (!_sameBinding(beforeState, _snapshot(proposal))) {
+            sawReResolveViolation = true;
+        }
+    }
+
     function advanceTime(uint256 secondsSeed) external {
         vm.warp(block.timestamp + 1 + (secondsSeed % 12 hours));
     }
@@ -402,17 +425,19 @@ contract FAOTwapResolverHandler is Test {
 }
 
 /// @custom:spec INV-TWAP-001 — see audit/specs/INVARIANTS.md.
+/// @custom:spec INV-TWAP-002 — see audit/specs/INVARIANTS.md.
 contract FAOTwapResolverInvariants is StdInvariant, Test {
     uint32 internal constant TIMEOUT = 2 hours;
     uint32 internal constant TWAP_WINDOW = 1 hours;
 
     FAOTwapResolver internal resolver;
+    TwapInvariantCTF internal ctf;
     FAOTwapResolverHandler internal handler;
 
     function setUp() public {
         vm.warp(1_000_000);
 
-        TwapInvariantCTF ctf = new TwapInvariantCTF();
+        ctf = new TwapInvariantCTF();
         resolver = new FAOTwapResolver(TIMEOUT, TWAP_WINDOW, IConditionalTokensLike(address(ctf)));
         handler = new FAOTwapResolverHandler(resolver);
         resolver.setOrchestrator(address(handler));
@@ -420,13 +445,15 @@ contract FAOTwapResolverInvariants is StdInvariant, Test {
         handler.bindProposal(1);
         handler.resolveProposal(0, 1 hours);
         handler.attemptRebind(0, 1);
+        handler.resolveAgain(0);
 
         targetContract(address(handler));
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = FAOTwapResolverHandler.bindProposal.selector;
         selectors[1] = FAOTwapResolverHandler.attemptRebind.selector;
         selectors[2] = FAOTwapResolverHandler.resolveProposal.selector;
         selectors[3] = FAOTwapResolverHandler.advanceTime.selector;
+        selectors[4] = FAOTwapResolverHandler.resolveAgain.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -466,6 +493,30 @@ contract FAOTwapResolverInvariants is StdInvariant, Test {
                 uint256(anchorTimestamp) + TIMEOUT,
                 "window end changed"
             );
+        }
+    }
+
+    /// @custom:spec INV-TWAP-002 — resolution writes happen once and are immutable.
+    function invariant_INV_TWAP_002_resolutionWriteCardinality() public view {
+        assertGt(handler.resolveCalls(), 0, "INV-TWAP-002 not resolved");
+        assertGt(handler.reResolveAttempts(), 0, "INV-TWAP-002 re-resolve not exercised");
+        assertFalse(handler.sawResolveViolation(), "INV-TWAP-002 resolve failed");
+        assertFalse(handler.sawReResolveViolation(), "INV-TWAP-002 re-resolve changed state");
+
+        uint256 count = handler.trackedCount();
+        for (uint256 i = 0; i < count; i++) {
+            address proposal = handler.proposalAt(i);
+            (,,,, bytes32 questionId,, bool resolved, bool accepted) = resolver.bindings(proposal);
+
+            bool expectedResolved = handler.expectedResolved(proposal);
+            assertEq(resolved, expectedResolved, "resolved changed");
+            if (expectedResolved) {
+                assertEq(accepted, handler.expectedAccepted(proposal), "accepted changed");
+                assertEq(ctf.reportCount(questionId), 1, "payout report count changed");
+            } else {
+                assertFalse(accepted, "accepted set before resolve");
+                assertEq(ctf.reportCount(questionId), 0, "unresolved payout report");
+            }
         }
     }
 }

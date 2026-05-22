@@ -285,7 +285,7 @@ else:
 
 **Cite.** `src/FAOTwapResolver.sol:117-144`, `src/FutarchyTWAPOracle.sol:187-217`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FAOTwapResolver.invariants.t.sol::invariant_INV_TWAP_002_resolutionWriteCardinality`).
 
 ---
 
@@ -330,7 +330,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ORCH-001 | ✓ | ✓ (`invariant_INV_ORCH_001_atomicRollbackEnvelope`) | — |
 | INV-ORCH-002 | ✓ | ✓ (`invariant_INV_ORCH_002_refusesPreInitializedPool`) | — |
 | INV-TWAP-001 | ✓ | ✓ (`invariant_INV_TWAP_001_anchorMonotoneWindowFixed`) | — |
-| INV-TWAP-002 | ✓ | — | — |
+| INV-TWAP-002 | ✓ | ✓ (`invariant_INV_TWAP_002_resolutionWriteCardinality`) | — |
 
 **Phase 6 priority:** finish the partial TESTED entries, then add the missing TESTED rows. PROVED column is a v0.1 goal once Certora/Halmos is wired (Topic 4 D2 + D6).
 
