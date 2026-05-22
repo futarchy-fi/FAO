@@ -1,43 +1,43 @@
 {
-  "generatedAt": "2026-05-22T18:07:30.968Z",
-  "runStartedAt": "2026-05-22T18:06:51.466Z",
+  "generatedAt": "2026-05-22T19:29:50.555Z",
+  "runStartedAt": "2026-05-22T19:29:21.532Z",
   "tool": "Playwright Chromium",
-  "baseUrl": "http://127.0.0.1:8770/",
+  "baseUrl": "http://127.0.0.1:8772/",
   "pages": [
     {
       "page": "home",
       "path": "/",
-      "sourceUrl": "http://127.0.0.1:8770/",
+      "sourceUrl": "http://127.0.0.1:8772/",
       "waitForTestId": "rankings-rows"
     },
     {
       "page": "sale",
       "path": "/sale",
-      "sourceUrl": "http://127.0.0.1:8770/sale",
+      "sourceUrl": "http://127.0.0.1:8772/sale.html",
       "waitForTestId": "sale-decision-strip"
     },
     {
       "page": "proposals",
       "path": "/proposals",
-      "sourceUrl": "http://127.0.0.1:8770/proposals",
+      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
       "waitForTestId": "create-proposal-name"
     },
     {
       "page": "create",
       "path": "/create",
-      "sourceUrl": "http://127.0.0.1:8770/create",
+      "sourceUrl": "http://127.0.0.1:8772/create.html",
       "waitForTestId": "create-name"
     },
     {
       "page": "contracts",
       "path": "/contracts",
-      "sourceUrl": "http://127.0.0.1:8770/contracts",
+      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
       "waitForTestId": "skip-nav"
     },
     {
       "page": "docs",
       "path": "/docs",
-      "sourceUrl": "http://127.0.0.1:8770/docs",
+      "sourceUrl": "http://127.0.0.1:8772/docs.html",
       "waitForTestId": "skip-nav"
     }
   ],
@@ -59,19 +59,19 @@
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/",
-      "capturedAt": "2026-05-22T18:06:55.112Z",
+      "sourceUrl": "http://127.0.0.1:8772/",
+      "capturedAt": "2026-05-22T19:29:24.075Z",
       "file": "audit/screenshots/home-desktop.png",
-      "sha256": "2a1d9d86289c0ddde2f244b1c6484443f67aed7f4e08eb6bd3f665fb9f65fae6",
-      "bytes": 57013
+      "sha256": "b363165c020872eef212674367c9b0b6cfd0b47ed63a4133f396303b30a3e898",
+      "bytes": 57006
     },
     {
       "page": "home",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/",
-      "capturedAt": "2026-05-22T18:06:58.533Z",
+      "sourceUrl": "http://127.0.0.1:8772/",
+      "capturedAt": "2026-05-22T19:29:26.502Z",
       "file": "audit/screenshots/home-mobile.png",
       "sha256": "93ff43e66833313245708a20b8944577e7d707e1dc88d2b79ad7778bca7087a2",
       "bytes": 48846
@@ -81,41 +81,41 @@
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/sale",
-      "capturedAt": "2026-05-22T18:07:02.845Z",
+      "sourceUrl": "http://127.0.0.1:8772/sale.html",
+      "capturedAt": "2026-05-22T19:29:28.922Z",
       "file": "audit/screenshots/sale-desktop.png",
-      "sha256": "85485de4fbfac0ad31062083aa1a9eca5db1c46a8837fddd0bcb40f9d55f2158",
-      "bytes": 38879
+      "sha256": "3c74dc47cf895f83c4a905cb3366066296d890e9e1c593f900b0a21189fcb37f",
+      "bytes": 38635
     },
     {
       "page": "sale",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/sale",
-      "capturedAt": "2026-05-22T18:07:07.053Z",
+      "sourceUrl": "http://127.0.0.1:8772/sale.html",
+      "capturedAt": "2026-05-22T19:29:31.328Z",
       "file": "audit/screenshots/sale-mobile.png",
-      "sha256": "bff7404fc3866c45b8674df30cb3e6e5c80641194e69c957526c734b79d8869c",
-      "bytes": 26650
+      "sha256": "241a8ac512c592f01df639bd59000b5d9c74467612f1ea4730443141e3df381c",
+      "bytes": 22020
     },
     {
       "page": "proposals",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/proposals",
-      "capturedAt": "2026-05-22T18:07:10.369Z",
+      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
+      "capturedAt": "2026-05-22T19:29:33.753Z",
       "file": "audit/screenshots/proposals-desktop.png",
-      "sha256": "5cf3eda34e45711996d1707bb4e30b8f5b1a7839d67d0f79bfc1c8d04836fc9f",
-      "bytes": 63837
+      "sha256": "b796703a0383769f2edbcf9d2d4e11ec878a6982b3b9cbac60d1da01e7c413c8",
+      "bytes": 63882
     },
     {
       "page": "proposals",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/proposals",
-      "capturedAt": "2026-05-22T18:07:13.821Z",
+      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
+      "capturedAt": "2026-05-22T19:29:36.103Z",
       "file": "audit/screenshots/proposals-mobile.png",
       "sha256": "54d4cd0244c288b812b0fd4454b26c1d7dc63a570f34ffd0e837e767176860ba",
       "bytes": 55221
@@ -125,41 +125,41 @@
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/create",
-      "capturedAt": "2026-05-22T18:07:16.654Z",
+      "sourceUrl": "http://127.0.0.1:8772/create.html",
+      "capturedAt": "2026-05-22T19:29:38.553Z",
       "file": "audit/screenshots/create-desktop.png",
-      "sha256": "7aefdd1ed4d1cd7d3cbc9644ea3db213b9b1b30bafc67cbae8a45166e14da635",
-      "bytes": 53874
+      "sha256": "926f495cf726f6138814f11d35c91ca59a4750488e477504e9b431231ceb0960",
+      "bytes": 53935
     },
     {
       "page": "create",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/create",
-      "capturedAt": "2026-05-22T18:07:19.531Z",
+      "sourceUrl": "http://127.0.0.1:8772/create.html",
+      "capturedAt": "2026-05-22T19:29:40.945Z",
       "file": "audit/screenshots/create-mobile.png",
-      "sha256": "a35cdbd716a5e4d104389c2866fb9b0a83b2452eaa64aef861ff2f8aee9c610c",
-      "bytes": 41978
+      "sha256": "7a17bcecabe58e869c532f745c050ebb7a70292208e030bded8c697b39a7b3f8",
+      "bytes": 41969
     },
     {
       "page": "contracts",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/contracts",
-      "capturedAt": "2026-05-22T18:07:22.450Z",
+      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
+      "capturedAt": "2026-05-22T19:29:43.369Z",
       "file": "audit/screenshots/contracts-desktop.png",
-      "sha256": "a8142a6f913bad699b8dbc92d41f51516a6bddad35e065f93cdcf9c79ac48055",
-      "bytes": 61097
+      "sha256": "9903e52392e78522529af2d45e1c892c62f213552ebc9052b73ee32ed307706e",
+      "bytes": 61090
     },
     {
       "page": "contracts",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/contracts",
-      "capturedAt": "2026-05-22T18:07:25.250Z",
+      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
+      "capturedAt": "2026-05-22T19:29:45.762Z",
       "file": "audit/screenshots/contracts-mobile.png",
       "sha256": "2dfd9a1c5909f47daa8d1ffb1b677d7d247bef0f63b252131e56107fb8e052b2",
       "bytes": 56102
@@ -169,19 +169,19 @@
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8770/docs",
-      "capturedAt": "2026-05-22T18:07:28.076Z",
+      "sourceUrl": "http://127.0.0.1:8772/docs.html",
+      "capturedAt": "2026-05-22T19:29:48.168Z",
       "file": "audit/screenshots/docs-desktop.png",
-      "sha256": "5a723029ab4fd12a7f84b3376a97411c7107339503d0bfa3a2f506a7c97342b6",
-      "bytes": 46650
+      "sha256": "1cd004900f88d87efcef1295dbbffd1650c6dabd529702b39761a0fb6cb5988e",
+      "bytes": 46644
     },
     {
       "page": "docs",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8770/docs",
-      "capturedAt": "2026-05-22T18:07:30.931Z",
+      "sourceUrl": "http://127.0.0.1:8772/docs.html",
+      "capturedAt": "2026-05-22T19:29:50.519Z",
       "file": "audit/screenshots/docs-mobile.png",
       "sha256": "9e0353eeac9afd60666c1bdf8226eaaccf1390f570ff01f1fcf55722e13c1d87",
       "bytes": 40307

@@ -10,6 +10,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const OUT_DIR = path.resolve(process.env.FAO_SCREENSHOT_DIR || path.join(ROOT, 'audit', 'screenshots'));
 const BASE_URL = normalizeBaseUrl(process.env.FAO_SITE_URL || 'https://fao-testnet.pages.dev/');
 const SETTLE_MS = Number(process.env.FAO_SCREENSHOT_SETTLE_MS || 1500);
+const BASE_HOSTNAME = new URL(BASE_URL).hostname;
+const IS_LOCAL_STATIC_SERVER = BASE_HOSTNAME === '127.0.0.1' || BASE_HOSTNAME === 'localhost';
 
 const PAGES = [
   { label: 'home', path: '/', testId: 'rankings-rows' },
@@ -60,7 +62,10 @@ function normalizeBaseUrl(raw) {
 }
 
 function pageUrl(pagePath) {
-  const relative = pagePath.replace(/^\/+/, '');
+  let relative = pagePath.replace(/^\/+/, '');
+  if (IS_LOCAL_STATIC_SERVER && relative && !relative.endsWith('.html')) {
+    relative = `${relative}.html`;
+  }
   return relative ? new URL(relative, BASE_URL).toString() : BASE_URL;
 }
 
