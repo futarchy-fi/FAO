@@ -102,7 +102,9 @@ Add an optional `IMultisigLike admin` arg to `createFutarchyPart1`. When supplie
 
 ### Step C — Timelock on `seedLiquidityManager` + `addRagequitToken` + `setAdapter`
 
-Wrap each privileged write in a `TimelockController.schedule(...)` queue. Default delay: 48 hours. Bypass available only with multisig threshold N-of-M + admin override (rate-limited).
+`src/FAOTimelock.sol` is the executable sketch for the mainnet controller: a thin OpenZeppelin `TimelockController` wrapper with `MIN_DELAY_MAINNET = 1 days` for mainnet and `MIN_DELAY_STAGING = 1 hours` for rehearsal deploys. The deployed timelock address goes into a future `deployments.json::active.timelock` entry once Step B chooses the Safe/multisig address.
+
+Wrap each privileged write in a `TimelockController.schedule(...)` queue before mainnet: `seedLiquidityManager`, `addRagequitToken`, and `setAdapter`. Emergency bypass remains unresolved until the multisig policy is chosen; do not invent an override address in the deployment manifest.
 
 **Lift:** T5.D2 +1.0.
 
@@ -133,7 +135,7 @@ Impact: testnet ETH at risk = operator's wallet balance (~0.3 ETH at writing). S
 
 ### 4.2 Mainnet (future)
 
-- Multisig + timelock means admin compromise gives the attacker 48 hours of latency before any privileged write lands. Window is enough to detect + override.
+- Multisig + timelock means admin compromise gives the attacker a one-day latency window before any privileged write lands. Window is intended to be enough to detect + override once the mainnet multisig policy exists.
 - A separate "operator" key signs daemon txs but holds no admin roles; rotating it doesn't require any contract change.
 
 ## 5. Known limitations (residual risk)
@@ -171,6 +173,6 @@ When (not if) we rotate the operator key on testnet:
 ## How this might be wrong
 
 - Step B's multisig integration is theoretical until a Safe is actually wired into the registry. Mainnet may need different ergonomics.
-- Step C's 48-hour delay is a guess; the right value depends on the off-chain governance loop, which doesn't exist yet.
+- Step C's one-day delay is an executable target, not an empirically validated governance parameter. The right value still depends on the off-chain governance loop, which doesn't exist yet.
 - The incident-response section assumes the operator notices the compromise. There's no automated detection — that's part of Topic 5 D4 (operator surface readiness).
 - The runbook for testnet rotation is currently destructive (redeploy registry). Future passes should add an `acceptAdmin` flow per contract to make rotation cheap.
