@@ -54,3 +54,11 @@
 [2026-05-22T14:16:09-03:00] NOTE: plain npm test failed because this shell resolves forge incorrectly (Permission denied). Retried with /home/kelvin/.foundry/bin on PATH; the run was externally terminated after green partial output during parallel Forge CPU thrash. Per coordinator instruction, stopping full-suite reruns and using targeted Forge checks only before the F1 commit.
 
 [2026-05-22T14:16:22-03:00] Targeted Forge verification passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
+
+[2026-05-22T14:16:49-03:00] Committed F1 executable Anvil wallet path as aba4046. Moving to F2-buy-via-sale with targeted verification only; no more full Forge runs on intermediate commits.
+
+[2026-05-22T14:23:25-03:00] F2 provider-shim attempt passed wallet-notification discovery but failed on fork instance 0 with non-archive upstream historical storage. Patched F2 to provision a fresh local instance, but the long run timed out and Anvil was no longer listening afterward; restarting the fork via scripts/anvil-fork.sh and avoiding repeated fresh Part2 setup when a ready local instance is available.
+
+[2026-05-22T14:29:07-03:00] F2-buy-via-sale happy path now passes against a persistent Anvil fork: the spec creates a fresh instance through the UI, buys 1 token through the sale page using the shared Anvil wallet fixture, and asserts totalAmountRaised plus buyer ERC20 balance deltas. Command: npm run e2e -- --project=wallet --grep "F2-buy-via-sale happy path" -> 1 passed.
+
+[2026-05-22T14:29:20-03:00] Targeted Forge verification for F2 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
