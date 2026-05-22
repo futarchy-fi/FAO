@@ -166,12 +166,157 @@
 
     if (connectBtn) {
       connectBtn.addEventListener('click', () => {
-        connectWallet().catch((e) => alert('Connect failed: ' + (e?.message || e)));
+        connectWallet().catch((e) => setTopbarStatus(`Connect failed: ${e?.message || e}`, 'error'));
       });
       // Reflect current state if already connected.
       if (window.connectedWallet) connectBtn.textContent = fmtAddr(window.connectedWallet);
     }
   }
+
+  /// Inline status panel in the topbar (replaces native `alert`). The
+  /// `#topbar-status` slot is rendered on every page; updates are
+  /// broadcast-announced via `aria-live="polite"` for screen readers.
+  function setTopbarStatus(text, kind) {
+    const root = document.getElementById('topbar-root');
+    if (!root) return;
+    let slot = root.querySelector('#topbar-status');
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.id = 'topbar-status';
+      slot.setAttribute('role', 'status');
+      slot.setAttribute('aria-live', 'polite');
+      slot.className = 'topbar-status';
+      root.appendChild(slot);
+    }
+    slot.textContent = text || '';
+    slot.dataset.kind = kind || '';
+    if (text) {
+      // Auto-clear after 6 s unless it's an error (errors persist until next status).
+      if (kind !== 'error') {
+        clearTimeout(slot._t);
+        slot._t = setTimeout(() => { slot.textContent = ''; slot.dataset.kind = ''; }, 6000);
+      }
+    }
+  }
+  window.setTopbarStatus = setTopbarStatus;
+
+  // ─── In-page modal helpers (replace native alert/confirm/prompt) ────
+  // These are accessible (focus trap, aria-modal, Esc to close, role="dialog")
+  // and return Promises so call sites can `await` them.
+
+  function ensureModalHost() {
+    let host = document.getElementById('fao-modal-host');
+    if (host) return host;
+    host = document.createElement('div');
+    host.id = 'fao-modal-host';
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function escapeText(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function openModal({ title, bodyHTML, footerHTML, onMount }) {
+    return new Promise((resolve) => {
+      const host = ensureModalHost();
+      const backdrop = document.createElement('div');
+      backdrop.className = 'fao-modal-backdrop';
+      backdrop.setAttribute('role', 'dialog');
+      backdrop.setAttribute('aria-modal', 'true');
+      backdrop.setAttribute('aria-labelledby', 'fao-modal-title');
+      backdrop.innerHTML = `
+        <div class="fao-modal-card">
+          <div class="fao-modal-head">
+            <h3 id="fao-modal-title" class="fao-modal-title">${escapeText(title)}</h3>
+            <button class="fao-modal-close" aria-label="Close" data-action="cancel">&times;</button>
+          </div>
+          <div class="fao-modal-body">${bodyHTML}</div>
+          <div class="fao-modal-foot">${footerHTML}</div>
+        </div>
+      `;
+      const close = (result) => {
+        document.removeEventListener('keydown', onKey);
+        host.removeChild(backdrop);
+        resolve(result);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') close(null); };
+      backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) return close(null);
+        const action = e.target.closest('[data-action]')?.dataset.action;
+        if (action === 'cancel') close(null);
+        else if (action === 'ok') {
+          const v = onMount?.getValue?.();
+          close(v === undefined ? true : v);
+        }
+      });
+      host.appendChild(backdrop);
+      document.addEventListener('keydown', onKey);
+      // Initial focus into the first focusable element (input or primary).
+      requestAnimationFrame(() => {
+        const focusable = backdrop.querySelector('input, button[data-action="ok"]');
+        focusable?.focus();
+      });
+      onMount?.afterMount?.(backdrop, close);
+    });
+  }
+
+  /// Replacement for `confirm()`. Returns Promise<boolean>.
+  function faoConfirm({ title = 'Confirm', message, okLabel = 'Confirm', cancelLabel = 'Cancel' }) {
+    const bodyHTML = `<p class="fao-modal-message">${escapeText(message)}</p>`;
+    const footerHTML = `
+      <button class="btn btn-secondary" data-action="cancel">${escapeText(cancelLabel)}</button>
+      <button class="btn btn-primary" data-action="ok">${escapeText(okLabel)}</button>
+    `;
+    return openModal({ title, bodyHTML, footerHTML });
+  }
+  window.faoConfirm = faoConfirm;
+
+  /// Replacement for `prompt()`. Returns Promise<string|null>.
+  function faoPrompt({ title = 'Input', message, defaultValue = '', placeholder = '', validate }) {
+    const bodyHTML = `
+      ${message ? `<p class="fao-modal-message">${escapeText(message)}</p>` : ''}
+      <input class="fao-modal-input" type="text" value="${escapeText(defaultValue)}"
+             placeholder="${escapeText(placeholder)}" aria-label="${escapeText(title)}" />
+      <p class="fao-modal-validation" aria-live="polite"></p>
+    `;
+    const footerHTML = `
+      <button class="btn btn-secondary" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary" data-action="ok">OK</button>
+    `;
+    let inputEl;
+    return openModal({
+      title, bodyHTML, footerHTML,
+      onMount: {
+        afterMount: (root, close) => {
+          inputEl = root.querySelector('.fao-modal-input');
+          const valEl = root.querySelector('.fao-modal-validation');
+          const okBtn = root.querySelector('[data-action="ok"]');
+          inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') okBtn.click();
+          });
+          const refresh = () => {
+            if (!validate) return;
+            const msg = validate(inputEl.value);
+            valEl.textContent = msg || '';
+            okBtn.disabled = !!msg;
+          };
+          inputEl.addEventListener('input', refresh);
+          refresh();
+        },
+        getValue: () => inputEl?.value ?? null,
+      }
+    });
+  }
+  window.faoPrompt = faoPrompt;
+
+  /// Replacement for `alert()`. Returns Promise<void>.
+  function faoAlert({ title = 'Notice', message, kind = 'info' }) {
+    const bodyHTML = `<p class="fao-modal-message fao-modal-message-${escapeText(kind)}">${escapeText(message)}</p>`;
+    const footerHTML = `<button class="btn btn-primary" data-action="ok">OK</button>`;
+    return openModal({ title, bodyHTML, footerHTML });
+  }
+  window.faoAlert = faoAlert;
 
   // ─── Instance load ───────────────────────────────────────────────────
   async function loadInstances() {

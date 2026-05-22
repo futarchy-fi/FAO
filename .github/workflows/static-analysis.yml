@@ -1,0 +1,66 @@
+name: Static analysis
+
+# Slither runs on every push + PR. Findings of severity High / Medium
+# break the build; Low / Informational annotate the PR but don't block.
+# This is the Topic-4 D6 (tooling diversity) lift — see
+# `audit/rubrics/topic-4-sc-testing-infra.md`.
+
+permissions: {}
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "script/**"
+      - "test/**"
+      - "foundry.toml"
+      - ".github/workflows/static-analysis.yml"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write    # to upload SARIF results
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Compile (Foundry)
+        # Slither shells out to forge build; pre-warm the cache so its
+        # output isn't dominated by re-compile timings.
+        run: forge build --skip script
+
+      - name: Run Slither
+        id: slither
+        uses: crytic/slither-action@v0.4.0
+        continue-on-error: true
+        with:
+          target: .
+          slither-config: slither.config.json
+          fail-on: medium                    # break only on High/Medium
+          sarif: slither.sarif
+          slither-args: |
+            --filter-paths "lib/|test/|script/" \
+            --exclude-low \
+            --exclude-informational
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: ${{ steps.slither.outputs.sarif }}
+
+      - name: Re-emit fail-on-medium
+        if: steps.slither.outcome == 'failure'
+        run: |
+          echo "Slither found Medium- or High-severity issues. Failing the job."
+          exit 1

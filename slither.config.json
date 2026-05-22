@@ -1,0 +1,6 @@
+{
+  "detectors_to_exclude": "naming-convention,solc-version,pragma,assembly,low-level-calls",
+  "exclude_dependencies": true,
+  "filter_paths": "lib/|test/|script/|out/|cache/",
+  "compile_force_framework": "foundry"
+}

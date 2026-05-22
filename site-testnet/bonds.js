@@ -433,7 +433,11 @@
       throw new Error(`Insufficient ETH+WETH. Need ${ethers.formatEther(needed)} WETH; have ${ethers.formatEther(bal)} WETH + ${ethers.formatEther(ethBal)} ETH.`);
     }
 
-    const ok = confirm(`You have ${ethers.formatEther(bal)} WETH but need ${ethers.formatEther(needed)} WETH.\n\nWrap ${ethers.formatEther(shortBy)} ETH → WETH now?`);
+    const ok = await window.faoConfirm({
+      title: 'Wrap ETH → WETH',
+      message: `You have ${ethers.formatEther(bal)} WETH but need ${ethers.formatEther(needed)} WETH. Wrap ${ethers.formatEther(shortBy)} ETH → WETH now?`,
+      okLabel: 'Wrap',
+    });
     if (!ok) return false;
 
     setStatus(propAddr, `Wrapping ${ethers.formatEther(shortBy)} ETH → WETH…`, 'pending');
@@ -462,13 +466,20 @@
       if (baseX > minAmount && s.state === 0) minAmount = baseX;
 
       const defaultEth = ethers.formatEther(minAmount);
-      const input = prompt(
-        `Place YES bond for proposal ${propAddr.slice(0,10)}…\n\n` +
-        `Minimum: ${defaultEth} WETH ` +
-        (minByFlip > 0n ? `(2× current NO bond)` : `(activation minimum)`) + `\n\n` +
-        `Enter amount in WETH:`,
-        defaultEth
-      );
+      const minDesc = (minByFlip > 0n ? '2× current NO bond' : 'activation minimum');
+      const input = await window.faoPrompt({
+        title: `YES bond for ${propAddr.slice(0,10)}…`,
+        message: `Minimum: ${defaultEth} WETH (${minDesc}). Enter amount in WETH:`,
+        defaultValue: defaultEth,
+        placeholder: '0.001',
+        validate: (raw) => {
+          if (!raw || !raw.trim()) return 'Enter a positive WETH amount.';
+          let parsed;
+          try { parsed = ethers.parseEther(raw.trim()); } catch (_) { return 'Not a valid number.'; }
+          if (parsed < minAmount) return `Below minimum ${ethers.formatEther(minAmount)} WETH.`;
+          return '';
+        },
+      });
       if (input == null) { setStatus(propAddr, '', 'info'); return; }
 
       let amount;

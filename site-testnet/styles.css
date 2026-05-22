@@ -1190,7 +1190,7 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
 }
 .sale-form input:focus {
-  outline: none;
+  outline: 2px solid var(--accent); outline-offset: 2px;
   border-color: var(--accent);
 }
 .sale-cost-line {
@@ -1691,7 +1691,7 @@ body.has-topbar nav.nav { display: none; }
   color: var(--text);
   font-size: 22px;
   font-weight: 600;
-  outline: none;
+  outline: 2px solid var(--accent); outline-offset: 2px;
   font-variant-numeric: tabular-nums;
 }
 .sale-input-suffix {
@@ -1944,7 +1944,7 @@ body.has-topbar nav.nav { display: none; }
   color: var(--text);
   font-size: 18px;
   font-weight: 600;
-  outline: none;
+  outline: 2px solid var(--accent); outline-offset: 2px;
   font-variant-numeric: tabular-nums;
 }
 .trade-amount-sfx {
@@ -2011,4 +2011,96 @@ body.has-topbar nav.nav { display: none; }
 .trade-btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ─── In-page modal (replaces native alert/confirm/prompt) ───── */
+.fao-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.fao-modal-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+.fao-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0 20px;
+}
+.fao-modal-title { margin: 0; font-size: 16px; color: var(--text); }
+.fao-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+}
+.fao-modal-close:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fao-modal-body { padding: 12px 20px; }
+.fao-modal-message { color: var(--text); font-size: 14px; line-height: 1.5; margin: 0 0 10px 0; }
+.fao-modal-message-error { color: #ff8080; }
+.fao-modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  font-family: var(--mono);
+}
+.fao-modal-input:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.fao-modal-validation { color: #ff8080; font-size: 12px; margin: 4px 0 0 0; min-height: 16px; }
+.fao-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px 20px;
+}
+
+/* ─── Topbar status slot (replaces alert) ─────────────────────── */
+.topbar-status {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding: 6px 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+.topbar-status[data-kind="error"] { color: #ff8080; background: rgba(255,128,128,0.08); }
+.topbar-status[data-kind="ok"]    { color: #56e88f; background: rgba(86,232,143,0.08); }
+.topbar-status[data-kind="pending"] { color: #f6c560; background: rgba(246,197,96,0.08); }
+.topbar-status:empty { display: none; }
+
+/* ─── a11y: respect reduced motion ────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── a11y: focus-visible for keyboard users only ────────────── */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
