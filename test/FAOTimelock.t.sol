@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 import {FAOTimelock} from "../src/FAOTimelock.sol";
 
@@ -13,11 +14,19 @@ contract TimelockTarget {
     }
 }
 
+contract TimelockOwnableTarget is Ownable2Step {
+    constructor(address initialOwner) {
+        _transferOwnership(initialOwner);
+    }
+}
+
 contract FAOTimelockTest is Test {
     address internal constant MULTISIG = address(0x51AFE);
     address internal constant EXECUTOR = address(0xE11EC);
+    address internal constant NEW_OWNER = address(0xB055);
     bytes32 internal constant PREDECESSOR = bytes32(0);
     bytes32 internal constant SALT = keccak256("FAO_TIMELOCK_TEST");
+    bytes32 internal constant OWNERSHIP_SALT = keccak256("FAO_TIMELOCK_OWNERSHIP_TEST");
 
     FAOTimelock internal timelock;
     TimelockTarget internal target;
@@ -73,5 +82,33 @@ contract FAOTimelockTest is Test {
         timelock.execute(address(target), 0, payload, PREDECESSOR, SALT);
 
         assertEq(target.value(), 42);
+    }
+
+    function test_transferOwnershipRequiresQueuedDelayToPass() public {
+        TimelockOwnableTarget ownableTarget = new TimelockOwnableTarget(address(timelock));
+        bytes memory payload = abi.encodeWithSignature("transferOwnership(address)", NEW_OWNER);
+        uint256 delay = timelock.MIN_DELAY_MAINNET();
+
+        assertEq(ownableTarget.owner(), address(timelock));
+
+        vm.prank(MULTISIG);
+        timelock.schedule(address(ownableTarget), 0, payload, PREDECESSOR, OWNERSHIP_SALT, delay);
+
+        vm.warp(block.timestamp + delay - 1);
+        vm.expectRevert("TimelockController: operation is not ready");
+        vm.prank(EXECUTOR);
+        timelock.execute(address(ownableTarget), 0, payload, PREDECESSOR, OWNERSHIP_SALT);
+
+        vm.warp(block.timestamp + 1);
+        vm.prank(EXECUTOR);
+        timelock.execute(address(ownableTarget), 0, payload, PREDECESSOR, OWNERSHIP_SALT);
+
+        assertEq(ownableTarget.owner(), address(timelock));
+        assertEq(ownableTarget.pendingOwner(), NEW_OWNER);
+
+        vm.prank(NEW_OWNER);
+        ownableTarget.acceptOwnership();
+
+        assertEq(ownableTarget.owner(), NEW_OWNER);
     }
 }
