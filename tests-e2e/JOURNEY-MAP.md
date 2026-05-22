@@ -134,13 +134,26 @@ names against this table.
 |---|---|
 | `tests-e2e/journeys/home.read-only.spec.ts` | D1 partial (browse persona), D7 (journey-map presence). |
 | `tests-e2e/journeys/failure-modes.read-only.spec.ts` | D4 (failure modes: missing deployments.json, malformed JSON, zero-address registry, RPC down, blocked deployments fetch, sale-empty-state). |
-| `tests-e2e/journeys/fork-state.read-only.spec.ts` | D3 fork realism: starts/uses Anvil on `8545`, reads `instancesCount()` via viem, mutates the fork with `cast send`, reloads `/`, and asserts `data-testid="rankings-rows"` reflects `N + 1`. |
+| `tests-e2e/journeys/fork-state.read-only.spec.ts` | D3 fork realism: starts/uses Anvil on `8545`, reads chain state via viem, mutates the fork with `cast send`, and reloads the UI to prove `/`, `/sale.html`, and `/proposals.html` reflect the fork state without a wallet. |
 
 ## Fork-state local-dev cycle
 
 The fork-state read-only spec proves the no-wallet path: browser reads come
 from `localStorage.faoForkMode=1`, chain assertions read the same fork via
 viem, and state mutations happen with `cast send`.
+
+Covered fork mutations:
+
+- Home: `FutarchyRegistry.createFutarchyPart1(...)` increments
+  `instancesCount()`, then `/` reloads and `data-testid="rankings-rows"` shows
+  the new instance.
+- Sale: `InstanceSale.buy(uint256)` is sent directly with `cast`, then
+  `/sale.html?inst=N` reloads and shows updated `initialTokensSold` plus the
+  read-only buyer token balance.
+- Proposals: `createFutarchyPart2`, `FAOFutarchyFactory.createProposal(...)`,
+  WETH `deposit/approve`, `createProposalWithId`, and `placeYesBond` are sent
+  directly with `cast`, then `/proposals.html?inst=N` reloads and shows the YES
+  bond chip.
 
 1. Start the local static site:
 
