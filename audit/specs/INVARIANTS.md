@@ -182,7 +182,7 @@ after placeNoBond(p):
 
 **Cite.** `src/FutarchyArbitration.sol:278-303`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_004_strictNoBondMatching`).
 
 ---
 
@@ -324,7 +324,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ARB-001 | ✓ | ✓ (`invariant_INV_ARB_001_nextProposalIdMonotonic`) | — |
 | INV-ARB-002 | ✓ | ✓ (`invariant_INV_ARB_002_settledIrreversible`) | — |
 | INV-ARB-003 | ✓ | ✓ (`invariant_INV_ARB_003_bondTreasuryConserved`) | — |
-| INV-ARB-004 | ✓ | — | — |
+| INV-ARB-004 | ✓ | ✓ (`invariant_INV_ARB_004_strictNoBondMatching`) | — |
 | INV-ARB-005 | ✓ | — | — |
 | INV-ARB-006 | ✓ | — | — |
 | INV-ORCH-001 | ✓ | — | — |

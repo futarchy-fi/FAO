@@ -76,6 +76,7 @@ contract WETHMock is IERC20 {
         bool public sawNextProposalIdRegression;
         bool public sawAutoCreateStepViolation;
         bool public sawSettledRegression;
+        bool public sawNoBondMismatch;
 
         constructor(FutarchyArbitration arb_, address[] memory actors_) {
             ARB = arb_;
@@ -156,10 +157,16 @@ contract WETHMock is IERC20 {
             if (proposalIds.length == 0) return;
 
             uint256 proposalId = _proposalId(proposalSeed);
+            FutarchyArbitration.Proposal memory beforeNoBond = _proposal(proposalId);
             address actor = _actor(actorSeed);
 
             vm.prank(actor);
-            try ARB.placeNoBond(proposalId) {} catch {}
+            try ARB.placeNoBond(proposalId) {
+                FutarchyArbitration.Proposal memory afterNoBond = _proposal(proposalId);
+                if (afterNoBond.noBond.amount != beforeNoBond.yesBond.amount) {
+                    sawNoBondMismatch = true;
+                }
+            } catch {}
 
             _observeProposal(proposalId);
             _observeNextProposalId();
@@ -326,7 +333,8 @@ contract WETHMock is IERC20 {
         }
     }
 
-    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003 — see audit/specs/INVARIANTS.md.
+    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003, INV-ARB-004 — see
+    /// audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
@@ -465,5 +473,26 @@ contract WETHMock is IERC20 {
                 expectedBalance,
                 "INV-ARB-003 violated: WETH balance != escrow + withdrawable"
             );
+        }
+
+        /// @custom:spec INV-ARB-004 — every successful NO bond exactly matches prior YES.
+        function invariant_INV_ARB_004_strictNoBondMatching() public view {
+            assertFalse(
+                handler.sawNoBondMismatch(),
+                "INV-ARB-004 violated: NO bond did not match previous YES"
+            );
+
+            uint256 proposalCount = handler.proposalCount();
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                if (p.state == FutarchyArbitration.ProposalState.NO) {
+                    assertEq(
+                        p.noBond.amount,
+                        p.yesBond.amount,
+                        "INV-ARB-004 violated: NO-state bond mismatch"
+                    );
+                }
+            }
         }
     }
