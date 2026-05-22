@@ -445,6 +445,11 @@
     if ($$('#sale-initial-sold')) $$('#sale-initial-sold').textContent = `${initialSold.toString()} / ${minInitial.toString()} ${sym}`;
     if ($$('#sale-curve-sold'))   $$('#sale-curve-sold').textContent   = `${curveSold.toString()} ${sym}`;
     if ($$('#sale-phase-end'))    $$('#sale-phase-end').textContent    = phaseEnd === 0n ? '—' : new Date(Number(phaseEnd) * 1000).toLocaleString();
+    if ($$('#sale-decision-sold')) {
+      $$('#sale-decision-sold').textContent = BigInt(minInitial) > 0n
+        ? `${initialSold.toString()} / ${minInitial.toString()} ${sym}`
+        : `${curveSold.toString()} ${sym}`;
+    }
 
     const wallet = window.connectedWallet;
     if (wallet) {
@@ -456,6 +461,7 @@
       ctx.userBalance = BigInt(bal);
       if ($$('#sale-balance')) $$('#sale-balance').textContent = fmtToken(bal, sym);
       if ($$('#sale-eth'))     $$('#sale-eth').textContent     = fmtEthShort(ethBal);
+      if ($$('#sale-decision-wallet')) $$('#sale-decision-wallet').textContent = `${fmtToken(bal, sym)} · ${fmtEthShort(ethBal)}`;
       if ($$('#sale-flp-balance')) $$('#sale-flp-balance').textContent =
         seederAddr ? `${(+ethers.formatUnits(flpBal, 18)).toFixed(6)} fLP` : 'n/a';
     } else {
@@ -463,11 +469,12 @@
       if ($$('#sale-balance'))     $$('#sale-balance').textContent     = '— (connect wallet)';
       if ($$('#sale-eth'))         $$('#sale-eth').textContent         = '—';
       if ($$('#sale-flp-balance')) $$('#sale-flp-balance').textContent = '—';
+      if ($$('#sale-decision-wallet')) $$('#sale-decision-wallet').textContent = 'Connect wallet';
     }
-    if ($$('#sale-pool-liq')) {
-      const liq = await safe(() => new ethers.Contract(inst.spotPool, POOL_ABI, provider).liquidity(), 0n);
-      $$('#sale-pool-liq').textContent = BigInt(liq) === 0n ? 'empty' : BigInt(liq).toString();
-    }
+    const liq = await safe(() => new ethers.Contract(inst.spotPool, POOL_ABI, provider).liquidity(), 0n);
+    const liqText = BigInt(liq) === 0n ? 'empty' : BigInt(liq).toString();
+    if ($$('#sale-pool-liq')) $$('#sale-pool-liq').textContent = liqText;
+    if ($$('#sale-decision-liq')) $$('#sale-decision-liq').textContent = liqText;
 
     const fillAddr = (id, addr) => {
       const el = document.getElementById(id);

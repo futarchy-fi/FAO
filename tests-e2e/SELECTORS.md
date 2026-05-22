@@ -55,6 +55,8 @@ These are the **required** testids the source must expose. The site is currently
 |---|---|
 | `sale-hero-symbol` / `sale-hero-name` / `sale-hero-price` | Hero strip values |
 | `sale-phase-badge` | The colored phase badge |
+| `sale-decision-strip` | Compact decision-time numeric strip |
+| `sale-decision-wallet` / `sale-decision-sold` / `sale-decision-liq` | Wallet capacity, sale progress, and spot liquidity values |
 | `trade-buy-amount` | Buy amount input |
 | `trade-buy-quick-<n>` | Quick-buy chips (1/10/100/1000) |
 | `trade-buy-cost` | Cost preview value |
