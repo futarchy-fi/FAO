@@ -70,3 +70,46 @@ The evaluator's regression-detection mechanism caught two real signals:
 - Wiki refresh dispatch: just sent.
 
 Total CAO codex sessions to date: 13 (1 wiki-builder + 6 R1 evaluators + 6 R2 evaluators).
+
+## R3 → R4 → R5 (later rounds)
+
+### R3 deltas (after preconditions × 5 + InstanceSale.proRata.invariants.t.sol)
+
+| Topic | R2 min | R3 min | Δ min | Note |
+|---|---|---|---|---|
+| 1 | 4.0 | 4.7 | +0.7 | D6 lifted by tokens.css landing — still capped because tokens.css was dead-letter until R4 |
+| 3 | 3.0 | 4.0 | +1.0 | D8 stays binding; D1 graduated to 8.0 |
+| 6 | 4.0 | 6.5 | **+2.5** | wiki refresh successful — convergence + cross-link improvements |
+
+### R4 deltas (after tokens.css unification, deployments.json wiring, btn-primary dedup, DEPRECATIONS.md, JOURNEY-MAP.md, failure-modes.read-only.spec.ts)
+
+| Topic | R3 min | R4 min | Δ min | Highlights |
+|---|---|---|---|---|
+| 1 | 4.7 | 4.9 | +0.2 | D1 5→6.4 (primary dedup); D6 stayed low because tokens.css landed mid-run |
+| 2 | 0.0 | 0.5 | +0.5 | D4 0→3.0 (failure-mode tests); D7 5.0→6.5 (journey map); D5 -0.3 regression |
+| 3 | 4.0 | 4.0 | +0.0 | symbolic.t.sol landed after the eval was dispatched — expect R5 lift |
+| 4 | 5.0 | 5.0 | +0.0 | R4 not yet landed for T4 at time of writing |
+| 5 | 3.0 | 3.0 | +0.0 | D2/D3/D5 +0.2-0.5 each; D1 stays at 3 (deployments.json wiring landed mid-run) |
+| 6 | 4.0 | 4.5 | +0.5 | **REGRESSION** on D3 (-2.7), D4 (-1.0), D6 (-1.4) — wiki fell behind repo HEAD |
+
+T6 R4 regression detected: wiki-builder dispatched with a 6-point refresh agenda — DEPRECATIONS, SUPPLY-CHAIN, JOURNEY-MAP, symbolic test, btn-ghost demotion, deployments.json wiring.
+
+### R5 dispatched (in flight) — covers: SUPPLY-CHAIN.md, RUNBOOK.md, InstanceSale.symbolic.t.sol
+
+## Lifts applied since R2 (this session)
+
+| Lift | Rubric / dimension | Artifact |
+|---|---|---|
+| preconditions/{FAOTwapResolver,InstanceSale,FutarchyArbitration,GenericFutarchyToken,FAOOfficialProposalOrchestrator}.md | T3.D3 | 5 per-contract PRE/POST/FRAME/REVERTS docs |
+| InstanceSale.proRata.invariants.t.sol | T3.D2 + T4.D1 | 2 stateful invariants × 5000 calls |
+| tokens.css authoritative (styles.css override removed) | T1.D6 | site-testnet/{tokens.css,styles.css} |
+| .btn-ghost + .btn-primary dedup (1 per viewport) | T1.D1 | index.html + sale.html + styles.css |
+| shared.js fetches deployments.json | T5.D1 | site-testnet/shared.js + scripts/check-deployments-sync.sh + workflow gate |
+| DEPRECATIONS.md | T5.D3 | audit/state/DEPRECATIONS.md (DEPR-1..DEPR-8) |
+| JOURNEY-MAP.md | T2.D7 | tests-e2e/JOURNEY-MAP.md (F1..F10 + read-only specs) |
+| failure-modes.read-only.spec.ts | T2.D4 | 6 read-only tests of the deployments / RPC / empty-state paths |
+| InstanceSale.symbolic.t.sol | T3.D8 | 3 Halmos `check_INV_*` proof obligations |
+| SUPPLY-CHAIN.md | T5.D6 | audit/specs/SUPPLY-CHAIN.md (layers 0-4 trust boundaries) |
+| RUNBOOK.md | T5.D4 | audit/state/RUNBOOK.md (daemons, logs, playbooks, failure modes) |
+
+Total CAO codex sessions to date: 25 (1 wiki-builder + 18 evaluator runs across R1-R5 + 6 dispatched but not yet scored at R5).
