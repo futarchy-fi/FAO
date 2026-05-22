@@ -326,7 +326,7 @@ contract WETHMock is IERC20 {
         }
     }
 
-    /// @custom:spec INV-ARB-001 — see audit/specs/INVARIANTS.md.
+    /// @custom:spec INV-ARB-001, INV-ARB-002 — see audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
@@ -392,6 +392,41 @@ contract WETHMock is IERC20 {
             for (uint256 proposalId = 1; proposalId < nextProposalId; proposalId++) {
                 FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
                 assertTrue(p.exists, "INV-ARB-001 violated: auto id gap");
+            }
+        }
+
+        /// @custom:spec INV-ARB-002 — settled is irreversible and accepted is immutable.
+        function invariant_INV_ARB_002_settledIrreversible() public view {
+            assertFalse(
+                handler.sawSettledRegression(), "INV-ARB-002 violated: settled proposal regressed"
+            );
+
+            uint256 proposalCount = handler.proposalCount();
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+
+                if (p.state == FutarchyArbitration.ProposalState.SETTLED) {
+                    assertTrue(p.settled, "INV-ARB-002 violated: SETTLED without settled flag");
+                }
+            }
+
+            uint256 settledCount = handler.settledCount();
+            for (uint256 i = 0; i < settledCount; i++) {
+                uint256 proposalId = handler.settledIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+
+                assertTrue(p.settled, "INV-ARB-002 violated: settled flag cleared");
+                assertEq(
+                    uint256(p.state),
+                    uint256(FutarchyArbitration.ProposalState.SETTLED),
+                    "INV-ARB-002 violated: state left SETTLED"
+                );
+                assertEq(
+                    p.accepted,
+                    handler.settledAccepted(proposalId),
+                    "INV-ARB-002 violated: accepted changed after settlement"
+                );
             }
         }
 

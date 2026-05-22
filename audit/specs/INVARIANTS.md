@@ -149,7 +149,7 @@ write-set of `proposals[p].exists := true` ⊆ { _initProposal }
 
 **Cite.** `src/FutarchyArbitration.sol:312-346, 395-419`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_002_settledIrreversible`).
 
 ---
 
@@ -322,7 +322,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-SALE-003 | ✓ | ✓ (`test_ragequit_revertsOn*`) | — |
 | INV-SALE-004 | ✓ | partial | — |
 | INV-ARB-001 | ✓ | ✓ (`invariant_INV_ARB_001_nextProposalIdMonotonic`) | — |
-| INV-ARB-002 | ✓ | — | — |
+| INV-ARB-002 | ✓ | ✓ (`invariant_INV_ARB_002_settledIrreversible`) | — |
 | INV-ARB-003 | ✓ | ✓ (`test/FutarchyArbitration.invariants.t.sol`, currently as `>=`) | — |
 | INV-ARB-004 | ✓ | — | — |
 | INV-ARB-005 | ✓ | — | — |
