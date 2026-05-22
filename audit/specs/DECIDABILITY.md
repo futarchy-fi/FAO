@@ -28,7 +28,7 @@ budget, and what currently exists (E = engine, S = status: `decided`,
 
 | INV-ID | Description | Engine | Status | Implementation |
 |---|---|---|---|---|
-| INV-TOKEN-001 | `totalSupply` only changes via mint/burn | Halmos | **decided** (within `--loop 3`) | `check_INV_TOKEN_001_supplyTracksHandlerOps` (planned; today: `invariant_INV_TOKEN_001_supplyTracksHandlerOps` covers it under fuzz) |
+| INV-TOKEN-001 | `totalSupply` only changes via mint/burn | Halmos | **decided** (within `--loop 3`) | `check_INV_TOKEN_001_supplyTracksHandlerOps` (`test/GenericFutarchyToken.symbolic.t.sol`) |
 | INV-SALE-001 | `effectiveSupply == totalSupply − balanceOf(sale)` | Halmos | **decided** | `check_INV_SALE_001_initialState`, `check_INV_SALE_001_afterBuy` (`test/InstanceSale.symbolic.t.sol`) |
 | INV-SALE-002 | Ragequit pays exactly `floor(ethBalance × burn / effSupply)` | Halmos | **undecided-bounded** (floor + multiplication overflows the linear-arithmetic fragment for large bounds) | Fuzz: `invariant_INV_SALE_002_ragequitPaysExactlyProRata` × 5000 calls |
 | INV-SALE-003 | Per-effective-token ratio non-increasing | Halmos | **undecided-bounded** (same overflow as INV-SALE-002) | Fuzz: `invariant_INV_SALE_002_ratioNonIncreasing` × 5000 calls |
