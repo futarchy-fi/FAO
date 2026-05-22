@@ -11,3 +11,8 @@
 # OS
 .DS_Store
 *~
+# Audit-loop / dev junk
+core
+.wrangler/
+.claude/worktrees/
+audit/evaluations/*.jsonl.tmp

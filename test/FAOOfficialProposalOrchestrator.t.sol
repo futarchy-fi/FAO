@@ -373,14 +373,26 @@ contract FAOOrchestratorTest is Test {
         assertTrue(adapter.migrated());
     }
 
-    function test_adapter_cannotBeSetTwice() public {
+    function test_adapter_isReplaceableByAdmin() public {
+        // setAdapter is intentionally admin-replaceable (testnet v0 keeps
+        // adapter bugs hot-swappable; see commit d315e57). The previous
+        // one-shot semantics + AdapterAlreadySet error are obsolete; the
+        // contract now overwrites the storage slot on each admin call.
         NoopAdapter a = new NoopAdapter();
         vm.prank(admin);
         orch.setAdapter(a);
+        assertEq(address(orch.adapter()), address(a));
+
         NoopAdapter b = new NoopAdapter();
         vm.prank(admin);
-        vm.expectRevert(FAOOfficialProposalOrchestrator.AdapterAlreadySet.selector);
         orch.setAdapter(b);
+        assertEq(address(orch.adapter()), address(b), "admin can swap adapter");
+    }
+
+    function test_setAdapter_revertsForNonAdmin() public {
+        NoopAdapter a = new NoopAdapter();
+        vm.expectRevert(FAOOfficialProposalOrchestrator.NotAdmin.selector);
+        orch.setAdapter(a);
     }
 
     function test_onlyAdminCanCreateOfficialProposal() public {

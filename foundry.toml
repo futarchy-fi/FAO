@@ -31,6 +31,15 @@ remappings = [
 exclude_lints = ["unsafe-typecast"]
 ignore = ["lib/sx-evm/**"]
 
+# CI profile referenced by .github/workflows/test.yml.
+# Without this block, FOUNDRY_PROFILE=ci silently fell through to default —
+# Topic 4 D5 (CI gating + reproducibility) flagged that gap.
+[profile.ci]
+verbosity = 3
+fuzz = { runs = 1000 }                          # default 256; CI gets more cycles
+invariant = { runs = 100, depth = 50 }          # exercise the invariant suites
+fail_on_revert = true                            # surface unhandled reverts as failures
+
 [rpc_endpoints]
 gnosis = "https://rpc.gnosischain.com"
 
