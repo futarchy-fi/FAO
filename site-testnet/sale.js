@@ -374,16 +374,22 @@
     // Trade-grid prices + Uniswap links ─────────────────────────────
     if ($$('#trade-buy-sale-price')) $$('#trade-buy-sale-price').textContent = `${fmtEth(salePriceWei)}/${sym}`;
     if ($$('#trade-sell-rq-price'))  $$('#trade-sell-rq-price').textContent  = (await ragequitPerTokenLabel(sale, sym));
-    if (uniQ.hasLiquidity) {
-      if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = `${fmtEth(uniQ.priceBuyEthPerToken)}/${sym}`;
-      if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = `${fmtEth(uniQ.priceSellEthPerToken)}/${sym}`;
-    } else {
+    // "Thin pool" predicate: a 1-token swap would move the pool price by
+    // >5× the sale's reference price. The quoter still returns a number,
+    // but it represents extreme slippage rather than the real market.
+    const thinBuy  = uniQ.hasLiquidity && uniQ.priceBuyEthPerToken  > ctx.salePriceWei * 5n;
+    const thinSell = uniQ.hasLiquidity && uniQ.priceSellEthPerToken * 5n < ctx.salePriceWei;
+    if (!uniQ.hasLiquidity) {
       if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = 'no liquidity';
       if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = 'no liquidity';
+    } else {
+      if ($$('#trade-buy-uni-price'))  $$('#trade-buy-uni-price').textContent  = thinBuy  ? 'thin pool' : `${fmtEth(uniQ.priceBuyEthPerToken)}/${sym}`;
+      if ($$('#trade-sell-uni-price')) $$('#trade-sell-uni-price').textContent = thinSell ? 'thin pool' : `${fmtEth(uniQ.priceSellEthPerToken)}/${sym}`;
     }
-    // Disable the inline-swap buttons when the pool has no liquidity.
-    if ($$('#trade-buy-uni-btn'))  $$('#trade-buy-uni-btn').disabled  = !uniQ.hasLiquidity;
-    if ($$('#trade-sell-uni-btn')) $$('#trade-sell-uni-btn').disabled = !uniQ.hasLiquidity;
+    // Disable the inline-swap buttons when the pool has no liquidity OR is
+    // too thin to absorb a 1-token trade without absurd slippage.
+    if ($$('#trade-buy-uni-btn'))  $$('#trade-buy-uni-btn').disabled  = !uniQ.hasLiquidity || thinBuy;
+    if ($$('#trade-sell-uni-btn')) $$('#trade-sell-uni-btn').disabled = !uniQ.hasLiquidity || thinSell;
     // Provide the external Uniswap-UI escape hatch too.
     if ($$('#trade-buy-uni-external'))  $$('#trade-buy-uni-external').href  = `${UNI_SWAP_URL}?inputCurrency=ETH&outputCurrency=${inst.token}&chain=sepolia`;
     if ($$('#trade-sell-uni-external')) $$('#trade-sell-uni-external').href = `${UNI_SWAP_URL}?inputCurrency=${inst.token}&outputCurrency=ETH&chain=sepolia`;
@@ -442,21 +448,36 @@
     return q === 0n ? '— (treasury empty)' : `${fmtEth(q)}/${sym}`;
   }
 
+  // Banner heuristic: if Uniswap's per-token buy price is more than 5× the
+  // sale price (or sell price less than 1/5×), the spot pool is too thin
+  // to absorb a 1-token trade — surface that instead of an absurd percent.
+  // Same on the sell side. Otherwise show the normal "Uniswap is X% cheaper"
+  // line with a hard cap so we never render "201000400% cheaper".
   function renderCompareBanner(salePrice, uniBuyPrice, uniSellPrice, hasLiq, sym) {
     const el = $$('#trade-compare-banner');
     if (!el) return;
     if (!hasLiq || salePrice === 0n || uniBuyPrice === 0n) { el.hidden = true; return; }
 
-    // Compare the buy side: sale price vs Uniswap buy price (ETH/token).
+    const subline = `<span class="trade-compare-sub">(${sym} sale ${fmtEth(salePrice)} · Uniswap-buy ${fmtEth(uniBuyPrice)} · Uniswap-sell ${fmtEth(uniSellPrice)})</span>`;
+
+    // Thin-pool case: spot pool can't fill a 1-token trade without massive
+    // slippage. Skip the per-cent math.
+    if (uniBuyPrice > salePrice * 5n || uniSellPrice * 5n < salePrice) {
+      el.innerHTML = `<span class="trade-compare-icon">⚠</span> Spot pool is too thin for a 1-${sym} trade — quotes shown reflect heavy slippage. The sale is your reliable buy path; ragequit your reliable sell path. ${subline}`;
+      el.hidden = false;
+      return;
+    }
+
     const diff = uniBuyPrice > salePrice ? uniBuyPrice - salePrice : salePrice - uniBuyPrice;
-    const pct = Number((diff * 10000n) / salePrice) / 100;
-    if (pct < 0.5) { el.hidden = true; return; }
+    const pctRaw = Number((diff * 10000n) / salePrice) / 100;
+    if (pctRaw < 0.5) { el.hidden = true; return; }
+    const pct = Math.min(pctRaw, 999.9); // clamp display; thin-pool case above covers >>500%
 
     const uniCheaper = uniBuyPrice < salePrice;
     const buyTip = uniCheaper
       ? `Buying via Uniswap looks <strong>${pct.toFixed(1)}% cheaper</strong> right now.`
       : `Buying via the sale looks <strong>${pct.toFixed(1)}% cheaper</strong> right now.`;
-    el.innerHTML = `<span class="trade-compare-icon">⚠</span> ${buyTip} <span class="trade-compare-sub">(${sym} sale ${fmtEth(salePrice)} · Uniswap-buy ${fmtEth(uniBuyPrice)} · Uniswap-sell ${fmtEth(uniSellPrice)})</span>`;
+    el.innerHTML = `<span class="trade-compare-icon">⚠</span> ${buyTip} ${subline}`;
     el.hidden = false;
   }
 
