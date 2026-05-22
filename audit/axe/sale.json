@@ -1,7 +1,7 @@
 {
   "label": "sale",
-  "url": "http://127.0.0.1:32829/sale",
-  "timestamp": "2026-05-22T18:02:32.733Z",
+  "url": "http://127.0.0.1:37205/sale",
+  "timestamp": "2026-05-22T19:33:25.745Z",
   "violations": [],
   "counts": {
     "critical": 0,
