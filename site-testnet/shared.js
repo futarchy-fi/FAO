@@ -20,11 +20,35 @@
   'use strict';
 
   // ─── Config ──────────────────────────────────────────────────────────
-  const REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C'; // v5 (sqrtPriceX96 derived from sale)
+  // T5.D1 (architectural coupling): the active deploy lives in
+  // `deployments.json` — the single source of truth, also consumed by
+  // CI/audit. shared.js fetches it at startup; if the fetch fails, the
+  // fallback constant below keeps the UI booting (kept in sync via a
+  // CI check). Update the JSON, not the constant.
+  const FALLBACK_REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C';
+  let REGISTRY_ADDR = FALLBACK_REGISTRY_ADDR;
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const STORAGE_KEY = 'faoActiveInstanceId';
   const SEPOLIA_CHAIN_ID = 11155111n;
   const ZERO = '0x0000000000000000000000000000000000000000';
+  // Promise that resolves with the parsed deployments.json (or null on
+  // failure — in which case FALLBACK_REGISTRY_ADDR keeps the page alive).
+  let __deploymentsPromise = null;
+
+  function loadDeployments() {
+    if (__deploymentsPromise) return __deploymentsPromise;
+    __deploymentsPromise = fetch('./deployments.json', { cache: 'no-cache' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (j && j.active && j.active.registry) {
+          REGISTRY_ADDR = j.active.registry;
+          window.faoDeployments = j;
+        }
+        return j;
+      })
+      .catch(() => null);
+    return __deploymentsPromise;
+  }
 
   // v4 is a clean break: no hardcoded FAO bootstrap, no backwards-compat
   // fallback. Picker reads directly from the registry. If the registry has
@@ -320,6 +344,10 @@
 
   // ─── Instance load ───────────────────────────────────────────────────
   async function loadInstances() {
+    // Resolve deployments.json BEFORE first registry read so the address
+    // in the JSON wins over the fallback. Always succeeds (either the
+    // JSON loads, or the fallback constant stays in effect).
+    await loadDeployments();
     const provider = new ethers.JsonRpcProvider(RPC);
     const reg = new ethers.Contract(REGISTRY_ADDR, REGISTRY_ABI, provider);
     let list = [];

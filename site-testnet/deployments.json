@@ -1,0 +1,49 @@
+{
+  "$schema": "./deployments.schema.json",
+  "version": "v5",
+  "generated_by": "manual — will become CI-generated when audit/wiki/10-fao-repo/deployment-history.md is wired",
+  "generated_at": "2026-05-22T11:30:00Z",
+  "network": "sepolia",
+  "chain_id": 11155111,
+  "shared": {
+    "weth":          "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+    "ctf":           "0x8bdC504dC3A05310059c1c67E0A2667309D27B93",
+    "w1155_factory": "0xD194319D1804C1051DD21Ba1Dc931cA72410B79f",
+    "univ3_factory": "0x0227628f3F023bb0B980b67D528571c95c6DaC1c",
+    "univ3_npm":     "0x1238536071E1c677A632429e3655c799b22cDA52",
+    "univ3_quoter":  "0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3",
+    "univ3_router":  "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"
+  },
+  "active": {
+    "registry":                "0x18D1f4e57412b48436C7825B9018437C235bBC5C",
+    "token_arb_deployer":      "0x475a9630CbC4e78d95e0C2C49D7df7437589132a",
+    "futarchy_stack_deployer": "0xc5d7e4e0B73de05eda367Aa16D1cc58A2c3f4A46",
+    "proposal_impl_v5":        null,
+    "uniswap_v3_liquidity_adapter": "0x8Ccc8d0E6cf2685De388Bb2Ef764015268364B5A",
+    "operator":                "0x693E3FB46Bb36eE43C702FE94f9463df0691b43d"
+  },
+  "deprecated": {
+    "registry_v3": "0x554B437D...",
+    "registry_v4": "0x05d6c186E5004d36D99258574712BA7A66ca0a73",
+    "fao_bootstrap_token": "0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65",
+    "fao_bootstrap_sale":  "0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678"
+  },
+  "etherscan_verified": {
+    "InstanceSale_TestFuta": "0x4D6458BfE1D9504E66EEB472718F1830723d40B9",
+    "InstanceSale_ACME":     "0x4106fB746C6ffB619770bD3F334688b9438Bf24D",
+    "GenericFutarchyToken_TestFuta": "0xC64dc2718c410d24EFD556b4467f7a315E349fcC",
+    "GenericFutarchyToken_ACME":     "0xA9c66fb483ca3Acfc5eB888172Cf7D13E4213074",
+    "FAOSale_bootstrap":      "0x011F6e57DEfEca4d5Ea633DAf6Dc0e3c5DF45678"
+  },
+  "verification_todo": [
+    "v5 registry 0x18D1f4e5…BC5C",
+    "v5 TokenAndArbitrationDeployer 0x475a9630…132a",
+    "v5 FutarchyStackDeployer 0xc5d7e4e0…4A46",
+    "every v5-deployed per-instance contract once instances are created"
+  ],
+  "notes": {
+    "purpose": "Single source of truth for the active deploy. Site reads from this; CI maintains it. Replaces the historical pattern of hardcoded constants in site-testnet/shared.js.",
+    "topic_5_dim_1_lift": "Architectural coupling: SC ↔ UI ↔ artefact seam now has a JSON contract instead of comments.",
+    "topic_5_dim_5_lift": "Maintainability + freshness: drift detector can diff the on-chain registry vs this file."
+  }
+}

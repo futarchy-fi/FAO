@@ -4,35 +4,43 @@ Standalone static site for the Sepolia v0 deployment.
 
 ## Files
 
-- `index.html` — single-page dashboard (hero + stack stats + instances + proposals + contracts + docs)
-- `registry.js` — FutarchyRegistry instance picker + Create-Futarchy modal
-- `sepolia.js` — ethers.js v6 polling client (per-active-instance proposals + create + resolve)
-- `bonds.js` — bond escalation panel injected into each proposal card
-- `styles.css` — main stylesheet + standalone-testnet additions
-- `CNAME` — `testnet.fao.futarchy.ai`
+- `index.html` / `sale.html` / `proposals.html` / `create.html` /
+  `contracts.html` / `docs.html` — page templates. Each page declares its
+  identity via `<body data-page="…">`.
+- `shared.js` — topbar, wallet, active-instance state. Fetches
+  `deployments.json` at startup. Source of truth: this file binds the
+  per-page scripts via custom events (`fao:walletChanged`,
+  `fao:activeInstanceChanged`).
+- `sale.js` / `home.js` / `bonds.js` / `sepolia.js` — per-page scripts.
+- `tokens.css` — design tokens (colors, spacing, type-scale, motion).
+- `styles.css` — component CSS. Consumes `tokens.css`; does NOT
+  re-declare `:root`.
+- `deployments.json` — **copy** of `../deployments.json`. CI
+  (`scripts/check-deployments-sync.sh`) rejects drift.
+- `CNAME` — `testnet.fao.futarchy.ai`.
 
-## After deploying FutarchyRegistry — REQUIRED edit
+## After deploying a new `FutarchyRegistry`
 
-The registry-driven multi-instance UI keys off a single constant in
-`registry.js`. Until the registry is deployed, the constant is the zero
-address and the UI falls back to showing only the bootstrap FAO instance.
+The active registry address is read at runtime from `deployments.json` —
+the single source of truth, also consumed by audit/CI. Update **the
+JSON, not a hardcoded constant**:
 
-When the `FutarchyRegistry` contract is deployed to Sepolia:
+1. Edit `deployments.json` at repo root — set `active.registry` to the
+   new address.
+2. `cp deployments.json site-testnet/deployments.json` (keeps the
+   page-served copy in sync). CI guard:
+   `bash scripts/check-deployments-sync.sh`.
+3. Commit both files. Cloudflare Pages redeploys; `shared.js` fetches
+   the JSON on every page load and binds `REGISTRY_ADDR` from it.
 
-1. Open `site-testnet/registry.js`.
-2. Find the line marked with the trailing `// REGISTRY_ADDR` comment near
-   the top of the file:
+`shared.js` retains a `FALLBACK_REGISTRY_ADDR` constant so the UI keeps
+booting if the fetch is blocked (dev `file://` mode, network failure).
+Keep it in sync — the sync script verifies both copies match the same
+authoritative JSON.
 
-   ```js
-   const REGISTRY_ADDR = '0x0000000000000000000000000000000000000000'; // REGISTRY_ADDR
-   ```
-
-3. Replace the zero address with the deployed `FutarchyRegistry` address.
-4. Commit + redeploy this static site (Cloudflare Pages / Vercel / etc).
-
-No other code changes are required — `sepolia.js` and `bonds.js` already
-read per-instance addresses from `window.activeInstance`, which is
-populated by `registry.js` after a successful `instances()` read.
+No other code changes are required — `sale.js`, `proposals.js`, and
+`bonds.js` read per-instance addresses from `window.activeInstance`,
+populated by `shared.js` after a successful `instances()` read.
 
 ## Run locally
 

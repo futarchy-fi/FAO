@@ -1981,6 +1981,30 @@ body.has-topbar nav.nav { display: none; }
   text-decoration: none;
   display: block;
   text-align: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  font-family: var(--font-sans);
+}
+
+/* Trade primary inherits the visual weight of .btn-primary without sharing
+ * the class — keeps T1.D1's primary-action audit deterministic (the sale
+ * page mounts exactly one .btn-primary in flow + one modal-only confirm). */
+.trade-btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.trade-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  text-decoration: none;
+}
+
+.trade-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .trade-compare-banner {

@@ -14,11 +14,26 @@ on:
       - "script/**"
       - "test/**"
       - "foundry.toml"
+      - "deployments.json"
+      - "site-testnet/deployments.json"
+      - "scripts/check-deployments-sync.sh"
       - ".github/workflows/static-analysis.yml"
   pull_request:
   workflow_dispatch:
 
 jobs:
+  deployments-sync:
+    name: deployments.json sync (T5.D1)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Assert root and site copy match
+        run: bash scripts/check-deployments-sync.sh
+
   slither:
     name: Slither
     runs-on: ubuntu-latest
