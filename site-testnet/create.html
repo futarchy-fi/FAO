@@ -12,8 +12,11 @@
 </head>
 <body class="has-topbar" data-page="create">
 
+<a href="#main" class="skip-nav" data-testid="skip-nav">Skip to main content</a>
 <div id="topbar-root"></div>
+<noscript><p class="no-js-notice" data-testid="no-js-notice">Enable JavaScript to load live Sepolia data and wallet actions.</p></noscript>
 
+<main id="main" tabindex="-1">
 <section id="create" class="section">
   <h2 class="section-title">Create a new futarchy</h2>
   <p class="section-subtitle">
@@ -78,9 +81,10 @@
         <button id="confirm-card-create-confirm" data-testid="confirm-card-create-confirm" class="btn tx-confirm-primary" type="button">Confirm deploy</button>
       </div>
     </div>
-    <p id="create-instance-status" data-testid="create-status" class="create-instance-status"></p>
+    <p id="create-instance-status" data-testid="create-status" class="create-instance-status" role="status" aria-live="polite" aria-atomic="true"></p>
   </form>
 </section>
+</main>
 
 </body>
 </html>

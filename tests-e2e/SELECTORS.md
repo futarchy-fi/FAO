@@ -13,6 +13,13 @@ Every interactive element the test suite touches MUST be addressable by a stable
 
 These are the **required** testids the source must expose. The site is currently missing many of these — adding them is part of the Topic-2 D5 lift.
 
+### Global
+
+| Testid | Element |
+|---|---|
+| `skip-nav` | Skip-to-main-content link |
+| `no-js-notice` | No-JavaScript fallback notice |
+
 ### Home (`/`)
 
 | Testid | Element |

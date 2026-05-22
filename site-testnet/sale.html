@@ -12,8 +12,11 @@
 </head>
 <body class="has-topbar" data-page="sale">
 
+<a href="#main" class="skip-nav" data-testid="skip-nav">Skip to main content</a>
 <div id="topbar-root"></div>
+<noscript><p class="no-js-notice" data-testid="no-js-notice">Enable JavaScript to load live Sepolia data and wallet actions.</p></noscript>
 
+<main id="main" tabindex="-1">
 <section id="sale" class="section sale-page">
   <!-- Hero strip: token identity + current sale price + phase. -->
   <div class="sale-hero">
@@ -144,7 +147,7 @@
     </div>
   </div>
 
-  <p id="sale-buy-status" data-testid="sale-buy-status" class="sale-buy-status"></p>
+  <p id="sale-buy-status" data-testid="sale-buy-status" class="sale-buy-status" role="status" aria-live="polite" aria-atomic="true"></p>
 
   <!-- Stats + contract addresses (collapsed). -->
   <details class="sale-contract-details">
@@ -167,6 +170,7 @@
     </table>
   </details>
 </section>
+</main>
 
 </body>
 </html>

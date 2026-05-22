@@ -13,8 +13,11 @@
 </head>
 <body class="has-topbar" data-page="proposals">
 
+<a href="#main" class="skip-nav" data-testid="skip-nav">Skip to main content</a>
 <div id="topbar-root"></div>
+<noscript><p class="no-js-notice" data-testid="no-js-notice">Enable JavaScript to load live Sepolia data and wallet actions.</p></noscript>
 
+<main id="main" tabindex="-1">
 <section id="proposals" class="section">
   <h2 class="section-title">Proposals</h2>
   <p class="section-subtitle">
@@ -32,11 +35,15 @@
       TWAP window) is admin-only — operator runs it via the auto-promote daemon.
     </p>
     <div class="create-form">
-      <input id="create-name" type="text" placeholder="Proposal name (e.g., Should we ship feature X?)" maxlength="80" />
-      <textarea id="create-desc" placeholder="Description (optional)" maxlength="400" rows="3"></textarea>
+      <label class="form-label">Proposal name
+        <input id="create-name" data-testid="create-proposal-name" type="text" placeholder="e.g. Should we ship feature X?" maxlength="80" />
+      </label>
+      <label class="form-label">Description
+        <textarea id="create-desc" data-testid="create-proposal-desc" placeholder="Optional context for voters" maxlength="400" rows="3"></textarea>
+      </label>
       <div class="create-actions">
         <button id="connect-wallet" class="btn btn-secondary">Connect MetaMask</button>
-        <button id="create-submit" class="btn btn-primary" disabled>Submit (connect wallet first)</button>
+        <button id="create-submit" data-testid="create-proposal-submit" class="btn btn-primary" disabled>Submit (connect wallet first)</button>
       </div>
       <div id="confirm-card-proposal" data-testid="confirm-card-proposal" class="sale-confirm-card tx-confirm-card" hidden>
         <div class="sale-confirm-head">Review proposal creation</div>
@@ -65,7 +72,7 @@
           <button id="confirm-card-bond-confirm" data-testid="confirm-card-bond-confirm" class="btn tx-confirm-primary" type="button">Confirm bond</button>
         </div>
       </div>
-      <p id="create-status" class="create-status"></p>
+      <p id="create-status" class="create-status" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>
   </div>
 
@@ -75,6 +82,7 @@
     <p class="sep-empty">Loading…</p>
   </div>
 </section>
+</main>
 
 </body>
 </html>

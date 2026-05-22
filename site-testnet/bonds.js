@@ -295,7 +295,7 @@
         ${renderBondLine('NO bond', s.noBond)}
         ${actionsHtml}
         ${safetyNote}
-        <p class="bond-status" data-prop-status="${propAddr}"></p>
+        <p class="bond-status" data-prop-status="${propAddr}" role="status" aria-live="polite" aria-atomic="true"></p>
       </div>
     `;
   }
@@ -617,13 +617,13 @@
       const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
       const tx = await writeArb.withdraw();
       const mount = $$('#sep-bonds-mount');
-      if (mount) mount.innerHTML = `<p class="bond-status bond-status-pending">Withdraw tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a></p>`;
+      if (mount) mount.innerHTML = `<p class="bond-status bond-status-pending" role="status" aria-live="polite" aria-atomic="true">Withdraw tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a></p>`;
       await tx.wait();
       await refreshWithdrawBanner();
     } catch (err) {
       console.error('[bonds] onWithdraw failed', err);
       const mount = $$('#sep-bonds-mount');
-      if (mount) mount.innerHTML = `<p class="bond-status bond-status-error">Withdraw failed: ${escapeHtml(err.shortMessage || err.message || String(err))}</p>`;
+      if (mount) mount.innerHTML = `<p class="bond-status bond-status-error" role="status" aria-live="polite" aria-atomic="true">Withdraw failed: ${escapeHtml(err.shortMessage || err.message || String(err))}</p>`;
     }
   }
 

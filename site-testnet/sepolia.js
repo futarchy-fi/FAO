@@ -261,7 +261,7 @@
 
   function renderCard(c) {
     const resolveBtn = c.readyToResolve && !c.resolved
-      ? `<div class="sep-card-actions"><button class="bond-action-btn resolve-btn" data-prop="${c.propAddr}">Resolve now</button><span class="sep-card-action-status" data-prop-status="${c.propAddr}"></span></div>`
+      ? `<div class="sep-card-actions"><button class="bond-action-btn resolve-btn" data-prop="${c.propAddr}">Resolve now</button><span class="sep-card-action-status" data-prop-status="${c.propAddr}" role="status" aria-live="polite" aria-atomic="true"></span></div>`
       : '';
     return `
       <div class="sep-card">
