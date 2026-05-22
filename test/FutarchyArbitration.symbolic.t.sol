@@ -47,7 +47,7 @@ contract SymbolicWETH is IERC20 {
     }
 }
 
-/// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-004 — arbitration invariants.
+/// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-004, INV-ARB-006 — arbitration invariants.
 /// Halmos-checkable symbolic tests for the invariants listed in
 /// `audit/specs/INVARIANTS.md`.
 contract FutarchyArbitrationSymbolic is Test {
@@ -225,5 +225,47 @@ contract FutarchyArbitrationSymbolic is Test {
         assertEq(afterSecondNo.noBond.amount, beforeSecondNo.yesBond.amount);
         assertEq(afterSecondNo.noBond.amount, replacementYes);
         assertEq(uint256(afterSecondNo.state), uint256(FutarchyArbitration.ProposalState.NO));
+    }
+
+    /// @custom:spec INV-ARB-006 — See audit/specs/INVARIANTS.md.
+    /// Safety mode blocks timeout finalization for YES-state proposals.
+    function check_INV_ARB_006_safetyModeBlocksTimeout(uint16 noBondExtra) public {
+        vm.assume(noBondExtra >= 1 && noBondExtra <= 100);
+
+        uint256 threshold = arb.safetyNoBondThreshold();
+        uint256 safetyBond = threshold + uint256(noBondExtra);
+
+        vm.prank(CREATOR_ONE);
+        uint256 safetyProposalId = arb.createProposal(1);
+
+        vm.prank(YES_BIDDER);
+        arb.placeYesBond(safetyProposalId, safetyBond);
+
+        vm.prank(NO_BIDDER);
+        arb.placeNoBond(safetyProposalId);
+
+        assertEq(arb.totalActiveNoBonds(), safetyBond);
+        assertGe(arb.totalActiveNoBonds(), threshold);
+        assertTrue(arb.safetyModeActive());
+
+        vm.prank(CREATOR_TWO);
+        uint256 yesProposalId = arb.createProposal(1);
+
+        vm.prank(YES_BIDDER);
+        arb.placeYesBond(yesProposalId, 1);
+
+        FutarchyArbitration.Proposal memory beforeFinalize = arb.getProposal(yesProposalId);
+        assertEq(uint256(beforeFinalize.state), uint256(FutarchyArbitration.ProposalState.YES));
+        assertFalse(beforeFinalize.settled);
+
+        vm.warp(block.timestamp + 2 hours);
+        vm.expectRevert(FutarchyArbitration.SafetyModeActive.selector);
+        vm.prank(CALLER);
+        arb.finalizeByTimeout(yesProposalId);
+
+        FutarchyArbitration.Proposal memory afterFinalize = arb.getProposal(yesProposalId);
+        assertEq(uint256(afterFinalize.state), uint256(FutarchyArbitration.ProposalState.YES));
+        assertFalse(afterFinalize.settled);
+        assertTrue(arb.safetyModeActive());
     }
 }

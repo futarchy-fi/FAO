@@ -38,7 +38,7 @@ budget, and what currently exists (E = engine, S = status: `decided`,
 | INV-ARB-003 | Bond-treasury conservation | Halmos | **undecided-open** (dynamic loops over `withdrawable[]` mapping; symbolic key) | Fuzz: planned |
 | INV-ARB-004 | Strict bond matching | Halmos | **decided** | `check_INV_ARB_004_matchedBondsCorrespond` (`test/FutarchyArbitration.symbolic.t.sol`) |
 | INV-ARB-005 | Graduation reachability | Halmos | **undecided-open** (existential — needs Halmos `find` mode) | Reachability prose only |
-| INV-ARB-006 | Safety-mode threshold gating | Halmos | **decided** | Planned: `check_INV_ARB_006_safetyModeBlocksTimeout` |
+| INV-ARB-006 | Safety-mode threshold gating | Halmos | **decided** | `check_INV_ARB_006_safetyModeBlocksTimeout` (`test/FutarchyArbitration.symbolic.t.sol`) |
 | INV-ORCH-001 | Atomic promote — rollback envelope | SMTChecker | **undecided-bounded** (cross-function dependency; SMTChecker needs `--show-unproved`) | Foundry concrete tests |
 | INV-ORCH-002 | Refuse pre-initialized pool | SMTChecker / Halmos | **decided** | Planned `check_INV_ORCH_002_refusesPreInit` |
 | INV-TWAP-001 | Resolver anchor monotonicity | Halmos | **decided** | Planned `check_INV_TWAP_001_anchorMonotone` |
