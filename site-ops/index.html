@@ -6,7 +6,7 @@
   <title>ops.futarchy.ai — futarchy ops portal</title>
   <link rel="stylesheet" href="fao/dashboard.css" />
   <style>
-    body { padding: 48px 24px; max-width: 920px; }
+    body { padding: 48px 24px; max-width: 1120px; }
     .portal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 24px; }
     .portal-card {
       background: var(--bg-elevated); border: 1px solid var(--border);
@@ -18,6 +18,17 @@
     .portal-card-title { font-size: 18px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
     .portal-card-sub { font-size: 13px; color: var(--text-muted); }
     .portal-card-path { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-top: 12px; }
+    .portal-card-embed { grid-column: 1 / -1; padding: 0; overflow: hidden; }
+    .portal-card-embed:hover { transform: none; }
+    .portal-embed-head { padding: 22px 24px 16px; }
+    .portal-embed-frame {
+      display: block; width: 100%; height: 460px; border: 0;
+      border-top: 1px solid var(--border); background: var(--bg);
+    }
+    @media (max-width: 720px) {
+      body { padding: 32px 16px; }
+      .portal-embed-frame { height: 560px; }
+    }
   </style>
 </head>
 <body>
@@ -45,12 +56,27 @@
       <div class="portal-card-sub">Source of truth — contracts, site, audit/, agents/.</div>
       <div class="portal-card-path">github.com/futarchy-fi/FAO</div>
     </a>
+    <article class="portal-card portal-card-embed">
+      <div class="portal-embed-head">
+        <div class="portal-card-title">Live audit scores</div>
+        <div class="portal-card-sub">Embedded FAO audit dashboard preview with current rubric scores.</div>
+        <div class="portal-card-path">/fao</div>
+      </div>
+      <iframe id="fao-preview" class="portal-embed-frame" src="fao/" title="FAO audit dashboard preview"></iframe>
+    </article>
   </div>
 </section>
 
 <footer class="ftr">
   <p>Operated by futarchy.fi. This site is read-only and deployed from the FAO repo's <code>site-ops/</code> directory via Cloudflare Pages.</p>
 </footer>
+
+<script>
+  const faoPreview = document.getElementById('fao-preview');
+  setInterval(() => {
+    faoPreview.src = `fao/?portalRefresh=${Date.now()}`;
+  }, 30_000);
+</script>
 
 </body>
 </html>
