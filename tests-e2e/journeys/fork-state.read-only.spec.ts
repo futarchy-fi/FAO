@@ -340,6 +340,48 @@ function castApproveWeth(spender, amount) {
   castSend(WETH, 'approve(address,uint256)', [spender, amount.toString()], { gasLimit: '100000' });
 }
 
+async function createProposalWithYesBond({ instanceLabel, symbolPrefix, proposalLabel }) {
+  const suffix = Date.now().toString(36).slice(-6).toUpperCase();
+  const symbol = `${symbolPrefix}${suffix}`.slice(0, 10);
+  const { id, inst } = await createReadyInstance({
+    name: `Fork ${instanceLabel} ${suffix}`,
+    symbol,
+    description: 'Proposal and bond mutation target for fork-state.read-only.spec.ts.',
+  });
+  const proposalName = `Fork ${proposalLabel} ${suffix}`;
+  const { proposal } = await createFactoryProposal(inst, {
+    name: proposalName,
+    description: 'Cast-created proposal for a read-only fork-state bond assertion.',
+  });
+  const proposalId = BigInt(proposal);
+  const baseX = await readArbitrationBaseX(inst.arbitration);
+
+  castDepositWeth(baseX);
+  castApproveWeth(inst.arbitration, baseX);
+  castSend(
+    inst.arbitration,
+    'createProposalWithId(uint256,uint256)',
+    [proposal, baseX.toString()],
+    { gasLimit: '200000' },
+  );
+  castSend(
+    inst.arbitration,
+    'placeYesBond(uint256,uint256)',
+    [proposal, baseX.toString()],
+    { gasLimit: '250000' },
+  );
+
+  await expect.poll(async () => {
+    const p = await readArbitrationProposal(inst.arbitration, proposalId);
+    return `${p.state}:${p.yesBond.amount}`;
+  }, {
+    timeout: 30_000,
+    message: 'arbitration proposal should move to YES with the cast bond amount',
+  }).toBe(`1:${baseX}`);
+
+  return { id, inst, proposalName, proposal, proposalId, baseX };
+}
+
 async function routePublicRpcToFork(page) {
   const corsHeaders = {
     'access-control-allow-origin': '*',
@@ -530,6 +572,53 @@ test.describe('fork state — read-only UI over cast mutations', () => {
       message: 'proposal card should show the cast-updated YES chip after reload',
     }).toBe('YES');
     await expect(card.locator('.bond-panel')).toContainText('YES bond');
+    await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
+    await expect(card.locator('.bond-panel')).toContainText(ANVIL_ADDRESS.slice(0, 6));
+  });
+
+  test('proposals page reflects cast-placed NO bond without wallet signing', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'fork', 'fork-state specs require the Playwright fork project');
+
+    const { id, inst, proposalName, proposal, proposalId, baseX } = await createProposalWithYesBond({
+      instanceLabel: 'No Bond',
+      symbolPrefix: 'NOB',
+      proposalLabel: 'NO',
+    });
+
+    await page.goto(`/proposals.html?inst=${id}`);
+    const proposalList = page.locator('#sep-proposals');
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    const card = proposalList.locator('.sep-card', { hasText: proposalName });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should render the setup YES chip before NO mutation',
+    }).toBe('YES');
+
+    castDepositWeth(baseX);
+    castApproveWeth(inst.arbitration, baseX);
+    castSend(
+      inst.arbitration,
+      'placeNoBond(uint256)',
+      [proposal],
+      { gasLimit: '250000' },
+    );
+
+    await expect.poll(async () => {
+      const p = await readArbitrationProposal(inst.arbitration, proposalId);
+      return `${p.state}:${p.noBond.amount}`;
+    }, {
+      timeout: 30_000,
+      message: 'arbitration proposal should move to NO with the cast bond amount',
+    }).toBe(`2:${baseX}`);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(proposalList).toContainText(proposalName, { timeout: 30_000 });
+    await expect.poll(() => card.locator('.bond-state').textContent(), {
+      timeout: 30_000,
+      message: 'proposal card should show the cast-updated NO chip after reload',
+    }).toBe('NO');
+    await expect(card.locator('.bond-panel')).toContainText('NO bond');
     await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
     await expect(card.locator('.bond-panel')).toContainText(ANVIL_ADDRESS.slice(0, 6));
   });
