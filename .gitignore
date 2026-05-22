@@ -21,3 +21,4 @@ audit/evaluations/*.jsonl.tmp
 node_modules/
 playwright-report/
 playwright/.cache/
+static.html
