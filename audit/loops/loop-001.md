@@ -113,3 +113,47 @@ T6 R4 regression detected: wiki-builder dispatched with a 6-point refresh agenda
 | RUNBOOK.md | T5.D4 | audit/state/RUNBOOK.md (daemons, logs, playbooks, failure modes) |
 
 Total CAO codex sessions to date: 25 (1 wiki-builder + 18 evaluator runs across R1-R5 + 6 dispatched but not yet scored at R5).
+
+
+## R6 / R7 status
+
+### R6 deltas (post-DECIDABILITY/MUTATIONS/symbolic.yml fix)
+
+| Topic | R5 min | R6 min | Δ min | Highlights |
+|---|---|---|---|---|
+| 1 | 4.9 | 4.9 | +0.0 | (R6 ran before tokens hex sweep landed) |
+| 4 | 3.8 | 4.3 | **+0.5** | Mutation 3.8→4.3 (MUTATIONS.md); layer coverage 7.8→8.1 (symbolic test); tooling 7→7.6; CI gating 5→5.5 |
+| 5 | 3.0 | 3.0 | +0.0 | D5 +0.1; D1 still capped at 3 (cross-topic floor) |
+
+### R7 dispatched — covers: hex-color sweep, DEVELOPER.md, package.json scripts
+
+### Cumulative state at end of session 2026-05-22
+
+- **39 sub-scores total** across 6 topics.
+- **3 sub-scores ≥ 8.0**: T3.D1 (8.0), T6.D2 (8.6), T4.D1 (8.1).
+- **36 sub-scores still below target.**
+- Deepest gap: **T2.D3 (fork realism) at 0.5** — blocked on Synpress wiring or fork-driven E2E.
+- T4 the closest cluster: 4/6 dims ≥ 7.5; only mutation resistance + fork realism + CI gating below.
+- T5 floor-bound by T2.D3 cap (the evaluator explicitly cited inter-topic caps).
+
+### Lifts this session (R2 → R7 in flight)
+
+| # | Lift | Rubric / dim | Commit |
+|---|---|---|---|
+| 1-5 | preconditions/{InstanceSale,FAOTwapResolver,FutarchyArbitration,GenericFutarchyToken,FAOOfficialProposalOrchestrator}.md | T3.D3 | 1932cea, df93305, c0d2bea, ee8dcf9, be03070 |
+| 6 | InstanceSale.proRata.invariants.t.sol | T3.D2 + T4.D1 | 53b2cf1 |
+| 7 | tokens.css authoritative + .btn-ghost + .btn-primary dedup | T1.D6 + T1.D1 | b56c8f3 |
+| 8 | shared.js + deployments.json sync | T5.D1 | b807dab |
+| 9 | DEPRECATIONS.md | T5.D3 | (b807dab subset) |
+| 10 | failure-modes.read-only.spec.ts + JOURNEY-MAP.md | T2.D4 + T2.D7 | 94b91d1 |
+| 11 | InstanceSale.symbolic.t.sol | T3.D8 | 5e1187e |
+| 12 | SUPPLY-CHAIN.md | T5.D6 | 89a6f9f |
+| 13 | RUNBOOK.md | T5.D4 | 1b12ea2 |
+| 14 | MUTATIONS.md | T4.D3 | 132981b |
+| 15 | DECIDABILITY.md + symbolic.yml check_INV_* fix | T3.D8 | 2e444c5 |
+| 16 | tokens.css semantic state tokens (#hex sweep -44) | T1.D6 | e253784 |
+| 17 | DEVELOPER.md + package.json scripts | T2.D6 | 4d29801 |
+
+### Total CAO codex sessions
+
+29 codex evaluator runs (R1-R7) + 2 wiki-builder dispatches.
