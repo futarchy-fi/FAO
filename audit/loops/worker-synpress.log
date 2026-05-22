@@ -12,3 +12,45 @@
 [2026-05-22T13:18:58-03:00] Forge regression completed after Sepolia metadata patch: 25 suites / 256 tests passed. Rerunning F1 wallet grep now.
 
 [2026-05-22T13:19:53-03:00] F1 rerun after Sepolia metadata patch still failed in wallet_addEthereumChain: MetaMask requires built-in Sepolia symbol but also enforces a 1-6 char symbol limit. Synpress cache/install and forge regression are healthy; next attempt will avoid nativeCurrency on the existing-chain update path.
+
+[2026-05-22T13:21:16-03:00] Committed interim Synpress wiring artifact 3f3bdd2. Third network-update attempt omits nativeCurrency for existing Sepolia so MetaMask can preserve built-in chain metadata while accepting the local RPC URL.
+
+[2026-05-22T13:22:36-03:00] Stopped wallet_addEthereumChain attempts after three MetaMask validation failures; switched F1 to built-in Sepolia plus browser-context JSON-RPC routing to the Anvil fork.
+
+[2026-05-22T13:23:45-03:00] F1 switch-only path reached MetaMask switch handling; patched helper to capture immediate wallet_switchEthereumChain provider results before waiting for a notification popup.
+
+[2026-05-22T13:25:05-03:00] F1 switch prompt did not appear before account permission; moved dapp authorization before wallet_switchEthereumChain and left site connect for signer initialization after chain is correct.
+
+[2026-05-22T13:26:16-03:00] Account request also reused cached dapp permission without opening a notification; patched authorization to accept immediate provider success before invoking Synpress notification approval.
+
+[2026-05-22T13:27:59-03:00] Failure context showed MetaMask cached on the final ready screen; updated wallet.setup.ts to click the current "Open wallet" completion CTA before writing the Synpress cache.
+
+[2026-05-22T13:28:42-03:00] Coordinator accepted F1 wallet path artifact 3f3bdd2 and requested extension to F2 buy, F3 ragequit, and F6 create-proposal using the same Synpress fixture. Checking current fixture run before editing the new specs.
+
+[2026-05-22T13:34:34-03:00] Converted F2/F3/F6 happy paths to Synpress fixture specs with viem on-chain assertions; running Playwright discovery before browser execution.
+
+[2026-05-22T13:35:18-03:00] F2 smoke failed before UI because local Anvil RPC was not listening on 127.0.0.1:8545. Restarting fork before rerun.
+
+[2026-05-22T13:37:56-03:00] F2 hit the same MetaMask notification wait; adjusted connect helper to click the dapp button first, then let Synpress attach to any existing notification page.
+
+[2026-05-22T13:40:05-03:00] F2 failure screenshots showed a locked MetaMask extension page; connect helper now unlocks any visible MetaMask page before asking Synpress to approve dapp connection.
+
+[2026-05-22T13:41:25-03:00] BLOCKER: F2/F3/F6 specs are now executable Synpress happy paths, but local execution is blocked at the shared MetaMask notification discovery path. After dapp connect click, MetaMask does not expose a chrome-extension://*/notification.html page for Synpress to approve; screenshots show extension home/lock pages plus the site page. No fake assertions added; the specs retain real wallet confirmations and viem state assertions.
+
+[2026-05-22T13:48:59-03:00] New coordinator direction: pivot back to F1 executable wallet run. Anvil is already running on 8545; pausing the prior F2 validation path and running F1 next.
+
+[2026-05-22T13:51:04-03:00] F1 exact run failed in addLocalSepoliaNetwork: wallet_addEthereumChain did not produce a Synpress-visible notification page; patching toward provider/RPC shim instead of add-network approval.
+
+[2026-05-22T13:57:37-03:00] Resumed F1 executable pivot after context compaction. Local cast binary is unavailable in this shell; proceeding with the requested Playwright wallet project run against 127.0.0.1:8545 and the current Anvil provider shim.
+
+[2026-05-22T14:00:26-03:00] F1 provider-shim run progressed past wallet setup but the Connect click still invoked the real MetaMask extension; the app form was no longer reachable when Playwright tried create-name. Patching F1 to install the Anvil provider again after /create navigation and to use an HTTPS RPC URL that is routed back to Anvil.
+
+[2026-05-22T14:02:08-03:00] F1 rerun showed the live create page is reachable, but fao-testnet.pages.dev is serving an older create.html without the repo's data-testid attributes. Adding locator fallbacks to stable ids/roles while keeping data-testid as the first choice.
+
+[2026-05-22T14:03:10-03:00] F1 is now executable end-to-end: npm run e2e -- --project=wallet --grep F1 passed with 1 wallet test green and 4 unrelated F10 fixmes skipped. The test signs through the injected Anvil EIP-1193 provider inside the Synpress wallet project and verifies registry.instancesCount() plus the new sale address on the same fork.
+
+[2026-05-22T14:11:57-03:00] Contract regression gate passed using /home/kelvin/.foundry/bin/forge test --no-match-path 'test/fork/*': 29 suites, 267 tests passed, 0 failed, 0 skipped. The plain forge command is not on PATH in this shell.
+
+[2026-05-22T14:16:09-03:00] NOTE: plain npm test failed because this shell resolves forge incorrectly (Permission denied). Retried with /home/kelvin/.foundry/bin on PATH; the run was externally terminated after green partial output during parallel Forge CPU thrash. Per coordinator instruction, stopping full-suite reruns and using targeted Forge checks only before the F1 commit.
+
+[2026-05-22T14:16:22-03:00] Targeted Forge verification passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.

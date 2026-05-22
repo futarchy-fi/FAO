@@ -36,13 +36,26 @@ function sourceWalletSetupHash() {
   return createHash('shake256', { outputLength: 10 }).update(code).digest('hex');
 }
 
+async function finishReadyScreen(walletPage) {
+  const done = walletPage.getByTestId('onboarding-complete-done');
+  if (await done.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await done.click();
+  }
+
+  const openWallet = walletPage.getByRole('button', { name: /^open wallet$/i });
+  if (await openWallet.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await openWallet.click();
+    await walletPage.waitForLoadState('domcontentloaded').catch(() => {});
+  }
+}
+
 const walletSetup = defineWalletSetup(WALLET_PASSWORD, async (context, walletPage) => {
   const metamask = new MetaMask(context, walletPage, WALLET_PASSWORD);
   const extensionBase = walletPage.url().match(/^chrome-extension:\/\/[^/]+/)?.[0];
   if (!extensionBase) throw new Error(`Could not derive MetaMask extension URL from ${walletPage.url()}`);
 
   await metamask.importWallet(SEED_PHRASE);
-  await walletPage.getByTestId('onboarding-complete-done').click({ timeout: 10_000 }).catch(() => {});
+  await finishReadyScreen(walletPage);
   await walletPage.goto(`${extensionBase}/home.html`);
   await walletPage.waitForLoadState('domcontentloaded');
   const locked = await walletPage.getByTestId('unlock-password').waitFor({ state: 'visible', timeout: 10_000 })
@@ -51,7 +64,7 @@ const walletSetup = defineWalletSetup(WALLET_PASSWORD, async (context, walletPag
   if (locked) {
     await metamask.unlock();
   }
-  await walletPage.getByTestId('onboarding-complete-done').click({ timeout: 10_000 }).catch(() => {});
+  await finishReadyScreen(walletPage);
 
   if (process.env.TEST_PRIVATE_KEY) {
     await metamask.importWalletFromPrivateKey(process.env.TEST_PRIVATE_KEY);
