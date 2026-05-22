@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-05-22T18:41:24.241Z",
-  "source": "lighthouse-ci",
+  "generatedAt": "2026-05-22T19:41:55.094Z",
+  "source": "local-lighthouse-post-change",
   "mode": "mobile",
-  "inputDir": ".lighthouseci",
+  "inputDir": "/tmp/fao-*-lhr.json",
   "budgets": {
     "lcp": {
       "auditId": "largest-contentful-paint",
@@ -40,82 +40,23 @@
       "unit": "ms"
     }
   },
-  "pass": false,
+  "pass": true,
   "pages": [
     {
-      "url": "https://fao-ops.pages.dev/fao/",
-      "slug": "fao-ops-pages-dev-fao",
-      "report": "audit/lighthouse/fao-ops-pages-dev-fao.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475009148.json",
-      "budgetsPass": false,
-      "metrics": {
-        "lcp": {
-          "value": 2158.946,
-          "displayValue": "2.2 s",
-          "score": 0.95,
-          "budget": 2500,
-          "unit": "ms",
-          "pass": true
-        },
-        "inp": {
-          "value": 0,
-          "displayValue": "0 ms",
-          "score": null,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true,
-          "source": "performance-event-timing",
-          "interactions": 1,
-          "missing": false
-        },
-        "cls": {
-          "value": 0.09607,
-          "displayValue": "0.096",
-          "score": 0.9,
-          "budget": 0.1,
-          "unit": "unitless",
-          "pass": true
-        },
-        "tbt": {
-          "value": 6,
-          "displayValue": "10 ms",
-          "score": 1,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true
-        },
-        "fcp": {
-          "value": 2096.946,
-          "displayValue": "2.1 s",
-          "score": 0.81,
-          "budget": 1800,
-          "unit": "ms",
-          "pass": false
-        }
-      },
-      "categories": {
-        "performance": 0.94,
-        "accessibility": 0.94,
-        "bestPractices": 1,
-        "seo": 0.82
-      }
-    },
-    {
-      "url": "https://fao-testnet.pages.dev/",
+      "url": "http://127.0.0.1:8766/",
       "slug": "fao-testnet-pages-dev",
       "report": "audit/lighthouse/fao-testnet-pages-dev.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475060204.json",
-      "budgetsPass": false,
+      "runs": 1,
+      "representativeRun": "/tmp/fao-home-lhr.json",
+      "budgetsPass": true,
       "metrics": {
         "lcp": {
-          "value": 2659.196,
-          "displayValue": "2.7 s",
-          "score": 0.86,
+          "value": 1551.7402,
+          "displayValue": "1.6 s",
+          "score": 0.99,
           "budget": 2500,
           "unit": "ms",
-          "pass": false
+          "pass": true
         },
         "inp": {
           "value": 16,
@@ -129,49 +70,226 @@
           "missing": false
         },
         "cls": {
-          "value": 0,
-          "displayValue": "0",
+          "value": 0.00662889422968936,
+          "displayValue": "0.007",
           "score": 1,
           "budget": 0.1,
           "unit": "unitless",
           "pass": true
         },
         "tbt": {
-          "value": 207,
-          "displayValue": "210 ms",
-          "score": 0.89,
+          "value": 0,
+          "displayValue": "0 ms",
+          "score": 1,
           "budget": 200,
           "unit": "ms",
-          "pass": false
+          "pass": true
         },
         "fcp": {
-          "value": 1042.282,
-          "displayValue": "1.0 s",
-          "score": 1,
+          "value": 1201.7402,
+          "displayValue": "1.2 s",
+          "score": 0.99,
           "budget": 1800,
           "unit": "ms",
           "pass": true
         }
       },
       "categories": {
-        "performance": 0.93,
-        "accessibility": 0.96,
-        "bestPractices": 1,
-        "seo": 0.91
+        "performance": 1,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 1
       }
     },
     {
-      "url": "https://fao-testnet.pages.dev/contracts",
-      "slug": "fao-testnet-pages-dev-contracts",
-      "report": "audit/lighthouse/fao-testnet-pages-dev-contracts.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475213700.json",
+      "url": "http://127.0.0.1:8766/sale.html",
+      "slug": "fao-testnet-pages-dev-sale",
+      "report": "audit/lighthouse/fao-testnet-pages-dev-sale.json",
+      "runs": 1,
+      "representativeRun": "/tmp/fao-sale-lhr.json",
       "budgetsPass": true,
       "metrics": {
         "lcp": {
-          "value": 2490.6345,
-          "displayValue": "2.5 s",
-          "score": 0.9,
+          "value": 1652.3704,
+          "displayValue": "1.7 s",
+          "score": 0.99,
+          "budget": 2500,
+          "unit": "ms",
+          "pass": true
+        },
+        "inp": {
+          "value": 16,
+          "displayValue": "16 ms",
+          "score": null,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true,
+          "source": "performance-event-timing",
+          "interactions": 3,
+          "missing": false
+        },
+        "cls": {
+          "value": 0.00662889422968936,
+          "displayValue": "0.007",
+          "score": 1,
+          "budget": 0.1,
+          "unit": "unitless",
+          "pass": true
+        },
+        "tbt": {
+          "value": 126,
+          "displayValue": "130 ms",
+          "score": 0.96,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true
+        },
+        "fcp": {
+          "value": 1202.3704,
+          "displayValue": "1.2 s",
+          "score": 0.99,
+          "budget": 1800,
+          "unit": "ms",
+          "pass": true
+        }
+      },
+      "categories": {
+        "performance": 0.98,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 0.9
+      }
+    },
+    {
+      "url": "http://127.0.0.1:8766/proposals.html",
+      "slug": "fao-testnet-pages-dev-proposals",
+      "report": "audit/lighthouse/fao-testnet-pages-dev-proposals.json",
+      "runs": 1,
+      "representativeRun": "/tmp/fao-proposals-lhr.json",
+      "budgetsPass": true,
+      "metrics": {
+        "lcp": {
+          "value": 1801.6357,
+          "displayValue": "1.8 s",
+          "score": 0.98,
+          "budget": 2500,
+          "unit": "ms",
+          "pass": true
+        },
+        "inp": {
+          "value": 16,
+          "displayValue": "16 ms",
+          "score": null,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true,
+          "source": "performance-event-timing",
+          "interactions": 4,
+          "missing": false
+        },
+        "cls": {
+          "value": 0.00662889422968936,
+          "displayValue": "0.007",
+          "score": 1,
+          "budget": 0.1,
+          "unit": "unitless",
+          "pass": true
+        },
+        "tbt": {
+          "value": 150,
+          "displayValue": "150 ms",
+          "score": 0.94,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true
+        },
+        "fcp": {
+          "value": 1201.6357,
+          "displayValue": "1.2 s",
+          "score": 0.99,
+          "budget": 1800,
+          "unit": "ms",
+          "pass": true
+        }
+      },
+      "categories": {
+        "performance": 0.98,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 0.9
+      }
+    },
+    {
+      "url": "http://127.0.0.1:8766/create.html",
+      "slug": "fao-testnet-pages-dev-create",
+      "report": "audit/lighthouse/fao-testnet-pages-dev-create.json",
+      "runs": 1,
+      "representativeRun": "/tmp/fao-create-lhr.json",
+      "budgetsPass": true,
+      "metrics": {
+        "lcp": {
+          "value": 1542.3123,
+          "displayValue": "1.5 s",
+          "score": 1,
+          "budget": 2500,
+          "unit": "ms",
+          "pass": true
+        },
+        "inp": {
+          "value": 16,
+          "displayValue": "16 ms",
+          "score": null,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true,
+          "source": "performance-event-timing",
+          "interactions": 3,
+          "missing": false
+        },
+        "cls": {
+          "value": 0.00662889422968936,
+          "displayValue": "0.007",
+          "score": 1,
+          "budget": 0.1,
+          "unit": "unitless",
+          "pass": true
+        },
+        "tbt": {
+          "value": 0,
+          "displayValue": "0 ms",
+          "score": 1,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true
+        },
+        "fcp": {
+          "value": 1201.3123,
+          "displayValue": "1.2 s",
+          "score": 0.99,
+          "budget": 1800,
+          "unit": "ms",
+          "pass": true
+        }
+      },
+      "categories": {
+        "performance": 1,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 0.9
+      }
+    },
+    {
+      "url": "http://127.0.0.1:8766/contracts.html",
+      "slug": "fao-testnet-pages-dev-contracts",
+      "report": "audit/lighthouse/fao-testnet-pages-dev-contracts.json",
+      "runs": 1,
+      "representativeRun": "/tmp/fao-contracts-lhr.json",
+      "budgetsPass": true,
+      "metrics": {
+        "lcp": {
+          "value": 1501.1307,
+          "displayValue": "1.5 s",
+          "score": 1,
           "budget": 2500,
           "unit": "ms",
           "pass": true
@@ -188,212 +306,35 @@
           "missing": false
         },
         "cls": {
-          "value": 0,
-          "displayValue": "0",
+          "value": 0.00662889422968936,
+          "displayValue": "0.007",
           "score": 1,
           "budget": 0.1,
           "unit": "unitless",
           "pass": true
         },
         "tbt": {
-          "value": 127,
-          "displayValue": "130 ms",
-          "score": 0.96,
+          "value": 0,
+          "displayValue": "0 ms",
+          "score": 1,
           "budget": 200,
           "unit": "ms",
           "pass": true
         },
         "fcp": {
-          "value": 984.45,
-          "displayValue": "1.0 s",
-          "score": 1,
+          "value": 1201.1307,
+          "displayValue": "1.2 s",
+          "score": 0.99,
           "budget": 1800,
           "unit": "ms",
           "pass": true
         }
       },
       "categories": {
-        "performance": 0.98,
+        "performance": 1,
         "accessibility": 1,
         "bestPractices": 0.96,
-        "seo": 0.82
-      }
-    },
-    {
-      "url": "https://fao-testnet.pages.dev/create",
-      "slug": "fao-testnet-pages-dev-create",
-      "report": "audit/lighthouse/fao-testnet-pages-dev-create.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475151460.json",
-      "budgetsPass": false,
-      "metrics": {
-        "lcp": {
-          "value": 2680.3410000000003,
-          "displayValue": "2.7 s",
-          "score": 0.86,
-          "budget": 2500,
-          "unit": "ms",
-          "pass": false
-        },
-        "inp": {
-          "value": 16,
-          "displayValue": "16 ms",
-          "score": null,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true,
-          "source": "performance-event-timing",
-          "interactions": 3,
-          "missing": false
-        },
-        "cls": {
-          "value": 0,
-          "displayValue": "0",
-          "score": 1,
-          "budget": 0.1,
-          "unit": "unitless",
-          "pass": true
-        },
-        "tbt": {
-          "value": 102,
-          "displayValue": "100 ms",
-          "score": 0.98,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true
-        },
-        "fcp": {
-          "value": 981.5419999999998,
-          "displayValue": "1.0 s",
-          "score": 1,
-          "budget": 1800,
-          "unit": "ms",
-          "pass": true
-        }
-      },
-      "categories": {
-        "performance": 0.95,
-        "accessibility": 0.96,
-        "bestPractices": 1,
-        "seo": 0.82
-      }
-    },
-    {
-      "url": "https://fao-testnet.pages.dev/proposals",
-      "slug": "fao-testnet-pages-dev-proposals",
-      "report": "audit/lighthouse/fao-testnet-pages-dev-proposals.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475139182.json",
-      "budgetsPass": false,
-      "metrics": {
-        "lcp": {
-          "value": 2717.3645,
-          "displayValue": "2.7 s",
-          "score": 0.85,
-          "budget": 2500,
-          "unit": "ms",
-          "pass": false
-        },
-        "inp": {
-          "value": 16,
-          "displayValue": "16 ms",
-          "score": null,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true,
-          "source": "performance-event-timing",
-          "interactions": 4,
-          "missing": false
-        },
-        "cls": {
-          "value": 0.074645,
-          "displayValue": "0.075",
-          "score": 0.95,
-          "budget": 0.1,
-          "unit": "unitless",
-          "pass": true
-        },
-        "tbt": {
-          "value": 234,
-          "displayValue": "230 ms",
-          "score": 0.86,
-          "budget": 200,
-          "unit": "ms",
-          "pass": false
-        },
-        "fcp": {
-          "value": 991.7919999999999,
-          "displayValue": "1.0 s",
-          "score": 1,
-          "budget": 1800,
-          "unit": "ms",
-          "pass": true
-        }
-      },
-      "categories": {
-        "performance": 0.92,
-        "accessibility": 1,
-        "bestPractices": 1,
-        "seo": 0.82
-      }
-    },
-    {
-      "url": "https://fao-testnet.pages.dev/sale",
-      "slug": "fao-testnet-pages-dev-sale",
-      "report": "audit/lighthouse/fao-testnet-pages-dev-sale.json",
-      "runs": 3,
-      "representativeRun": ".lighthouseci/lhr-1779475101366.json",
-      "budgetsPass": false,
-      "metrics": {
-        "lcp": {
-          "value": 2671.282,
-          "displayValue": "2.7 s",
-          "score": 0.86,
-          "budget": 2500,
-          "unit": "ms",
-          "pass": false
-        },
-        "inp": {
-          "value": 16,
-          "displayValue": "16 ms",
-          "score": null,
-          "budget": 200,
-          "unit": "ms",
-          "pass": true,
-          "source": "performance-event-timing",
-          "interactions": 3,
-          "missing": false
-        },
-        "cls": {
-          "value": 0.193675,
-          "displayValue": "0.194",
-          "score": 0.63,
-          "budget": 0.1,
-          "unit": "unitless",
-          "pass": false
-        },
-        "tbt": {
-          "value": 292,
-          "displayValue": "290 ms",
-          "score": 0.79,
-          "budget": 200,
-          "unit": "ms",
-          "pass": false
-        },
-        "fcp": {
-          "value": 977.7760000000001,
-          "displayValue": "1.0 s",
-          "score": 1,
-          "budget": 1800,
-          "unit": "ms",
-          "pass": true
-        }
-      },
-      "categories": {
-        "performance": 0.81,
-        "accessibility": 1,
-        "bestPractices": 1,
-        "seo": 0.82
+        "seo": 0.9
       }
     }
   ]

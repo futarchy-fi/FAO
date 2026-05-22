@@ -20,49 +20,49 @@
   <!-- Hero strip: token identity + current sale price + phase. -->
   <div class="sale-hero" data-dynamic>
     <div class="sale-hero-left">
-      <div class="sale-hero-symbol" id="sale-hero-symbol">…</div>
+      <div class="sale-hero-symbol" id="sale-hero-symbol">PRX</div>
       <div class="sale-hero-text">
-        <h2 class="sale-hero-name" id="sale-hero-name">Loading…</h2>
-        <p class="sale-hero-desc" id="sale-hero-desc">&nbsp;</p>
+        <h2 class="sale-hero-name" id="sale-hero-name">PriceTest</h2>
+        <p class="sale-hero-desc" id="sale-hero-desc">v5 derived sqrtPriceX96</p>
         <div class="sale-hero-meta">
-          <span class="phase-badge" id="sale-phase-badge">—</span>
+          <span class="phase-badge badge-ended" id="sale-phase-badge">initial sale</span>
           <span class="sale-hero-sep">·</span>
-          <a id="sale-hero-addr" class="sale-hero-link" href="#" target="_blank" rel="noopener">contract</a>
+          <a id="sale-hero-addr" class="sale-hero-link" href="https://sepolia.etherscan.io/address/0x301e255Fa957dCace697b57F5bA9a4401559f510" target="_blank" rel="noopener">sale 0x301e…f510</a>
         </div>
       </div>
     </div>
     <div class="sale-hero-right">
       <div class="sale-hero-price-label">Sale price</div>
-      <div class="sale-hero-price" id="sale-hero-price">…</div>
-      <div class="sale-hero-price-sub" id="sale-hero-price-sub">per token</div>
+      <div class="sale-hero-price" id="sale-hero-price">0.000100 ETH</div>
+      <div class="sale-hero-price-sub" id="sale-hero-price-sub">per PRX</div>
     </div>
   </div>
 
   <div class="sale-decision-strip" data-testid="sale-decision-strip">
     <div class="sale-decision-item">
       <span>Wallet</span>
-      <strong id="sale-decision-wallet" data-testid="sale-decision-wallet" data-dynamic>—</strong>
+      <strong id="sale-decision-wallet" data-testid="sale-decision-wallet" data-dynamic>Connect wallet</strong>
     </div>
     <div class="sale-decision-item">
       <span>Sale sold</span>
-      <strong id="sale-decision-sold" data-testid="sale-decision-sold" data-dynamic>—</strong>
+      <strong id="sale-decision-sold" data-testid="sale-decision-sold" data-dynamic>0 / 10 PRX</strong>
     </div>
     <div class="sale-decision-item">
       <span>Spot liquidity</span>
-      <strong id="sale-decision-liq" data-testid="sale-decision-liq" data-dynamic>—</strong>
+      <strong id="sale-decision-liq" data-testid="sale-decision-liq" data-dynamic>empty</strong>
     </div>
   </div>
 
   <!-- Initial-phase progress bar (hidden once finalized). -->
-  <div class="sale-progress-block" id="sale-progress-block" data-dynamic hidden>
+  <div class="sale-progress-block" id="sale-progress-block" data-dynamic>
     <div class="sale-progress-head">
       <span>Initial-phase progress</span>
-      <span id="sale-progress-text">— / —</span>
+      <span id="sale-progress-text">0 / 10 PRX</span>
     </div>
     <div class="sale-progress-bar">
       <div class="sale-progress-fill" id="sale-progress-fill" style="width:0%"></div>
     </div>
-    <div class="sale-progress-foot" id="sale-progress-foot">Ends —</div>
+    <div class="sale-progress-foot" id="sale-progress-foot">Window ended May 22, 2026 · awaiting next buy to finalize</div>
   </div>
 
   <!-- Comparison banner: "Uniswap is X% cheaper" or "Sale is X% better". -->
@@ -78,7 +78,7 @@
       <div class="trade-card trade-card-active">
         <div class="trade-card-head">
           <span class="trade-card-label">via sale</span>
-          <span class="trade-card-price" id="trade-buy-sale-price" data-dynamic>—</span>
+          <span class="trade-card-price" id="trade-buy-sale-price" data-dynamic>0.000100 ETH/PRX</span>
         </div>
         <div class="trade-quick-bar">
           <span class="trade-quick-bar-label">Quick:</span>
@@ -90,11 +90,11 @@
         <label class="trade-amount-wrap">
           <span class="trade-amount-label">Amount</span>
           <input id="trade-buy-amount" class="trade-amount" data-testid="trade-buy-amount" type="number" min="1" step="1" value="1" />
-          <span class="trade-amount-sfx" id="trade-buy-suffix" data-dynamic>tokens</span>
+          <span class="trade-amount-sfx" id="trade-buy-suffix" data-dynamic>PRX</span>
         </label>
         <div class="trade-cost-row">
           <span>Cost</span>
-          <strong id="trade-buy-cost" data-dynamic>—</strong>
+          <strong id="trade-buy-cost" data-dynamic>0.000100 ETH</strong>
         </div>
         <button id="trade-buy-sale-btn" data-testid="trade-buy-sale-btn" class="btn trade-btn-primary" aria-current="true" type="button">Buy via sale</button>
       </div>
@@ -102,10 +102,10 @@
       <div class="trade-card trade-card-uni">
         <div class="trade-card-head">
           <span class="trade-card-label">via Uniswap (spot pool)</span>
-          <span class="trade-card-price" id="trade-buy-uni-price" data-dynamic>—</span>
+          <span class="trade-card-price" id="trade-buy-uni-price" data-dynamic>no liquidity</span>
         </div>
         <p class="trade-card-note" id="trade-buy-uni-note">QuoterV2 quote across the actual liquidity curve. Swaps stay in this page via SwapRouter02 — set your amount on the left, then click below.</p>
-        <button id="trade-buy-uni-btn" data-testid="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Buy via Uniswap</button>
+        <button id="trade-buy-uni-btn" data-testid="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button" disabled>Buy via Uniswap</button>
         <a id="trade-buy-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>
@@ -117,7 +117,7 @@
       <div class="trade-card trade-card-active">
         <div class="trade-card-head">
           <span class="trade-card-label">via ragequit</span>
-          <span class="trade-card-price" id="trade-sell-rq-price" data-dynamic>—</span>
+          <span class="trade-card-price" id="trade-sell-rq-price" data-dynamic>— (treasury empty)</span>
         </div>
         <div class="trade-quick-bar">
           <span class="trade-quick-bar-label">Quick:</span>
@@ -128,11 +128,11 @@
         <label class="trade-amount-wrap">
           <span class="trade-amount-label">Amount</span>
           <input id="trade-sell-amount" class="trade-amount" data-testid="trade-sell-amount" type="number" min="1" step="1" value="1" />
-          <span class="trade-amount-sfx" id="trade-sell-suffix" data-dynamic>tokens</span>
+          <span class="trade-amount-sfx" id="trade-sell-suffix" data-dynamic>PRX</span>
         </label>
         <div class="trade-cost-row">
           <span>You get</span>
-          <strong id="trade-sell-rq-out" data-dynamic>—</strong>
+          <strong id="trade-sell-rq-out" data-dynamic>— (treasury empty)</strong>
         </div>
         <p class="trade-card-note">Plus pro-rata of each ragequit-listed treasury ERC20 (e.g. fLP).</p>
         <button id="trade-sell-rq-btn" data-testid="trade-sell-rq-btn" class="btn trade-btn-secondary" type="button">Ragequit</button>
@@ -141,10 +141,10 @@
       <div class="trade-card trade-card-uni">
         <div class="trade-card-head">
           <span class="trade-card-label">via Uniswap (spot pool)</span>
-          <span class="trade-card-price" id="trade-sell-uni-price" data-dynamic>—</span>
+          <span class="trade-card-price" id="trade-sell-uni-price" data-dynamic>no liquidity</span>
         </div>
         <p class="trade-card-note">QuoterV2 quote across the actual liquidity curve. Swap unwraps WETH → ETH automatically.</p>
-        <button id="trade-sell-uni-btn" data-testid="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button">Sell via Uniswap</button>
+        <button id="trade-sell-uni-btn" data-testid="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" type="button" disabled>Sell via Uniswap</button>
         <a id="trade-sell-uni-external" class="trade-uni-external" href="#" target="_blank" rel="noopener">or open Uniswap UI →</a>
       </div>
     </div>

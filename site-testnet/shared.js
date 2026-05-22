@@ -559,25 +559,29 @@
   // ─── Topbar markup ───────────────────────────────────────────────────
   // The active page is highlighted via data-page on <body>. Inject the
   // markup into #topbar-root if present.
-  function renderTopbar() {
-    const root = document.getElementById('topbar-root');
-    if (!root) return;
-
+  function topbarLinks() {
     const pageKey = (document.body.dataset.page || '').toLowerCase();
-    const activeId = window.__activeInstanceId;
-    const inst = (window.allInstances || []).find(x => x.id === activeId);
-    const symbol = inst ? inst.symbol : '—';
-
-    // Cloudflare Pages serves clean URLs (strips .html automatically). Link
-    // to them directly so internal navigation skips the 308 redirect.
-    const links = [
+    return [
       { key: 'home',      label: 'Home',       href: instUrl('./') },
       { key: 'sale',      label: 'Buy',        href: instUrl('sale') },
       { key: 'proposals', label: 'Proposals',  href: instUrl('proposals') },
       { key: 'create',    label: 'Create',     href: 'create' },
       { key: 'contracts', label: 'Contracts',  href: 'contracts' },
       { key: 'docs',      label: 'Docs',       href: 'docs' },
-    ];
+    ].map(link => ({ ...link, active: pageKey === link.key }));
+  }
+
+  function renderTopbar() {
+    const root = document.getElementById('topbar-root');
+    if (!root) return;
+
+    const activeId = window.__activeInstanceId;
+    const inst = (window.allInstances || []).find(x => x.id === activeId);
+    const symbol = inst ? inst.symbol : '—';
+
+    // Cloudflare Pages serves clean URLs (strips .html automatically). Link
+    // to them directly so internal navigation skips the 308 redirect.
+    const links = topbarLinks();
 
     root.innerHTML = `
       <nav class="topbar">
@@ -588,7 +592,7 @@
           </a>
           <ul class="topbar-links">
             ${links.map(l => `
-              <li><a href="${l.href}" class="${pageKey === l.key ? 'topbar-link-active' : ''}">${l.label}</a></li>
+              <li><a href="${l.href}" data-topbar-link="${l.key}" class="${l.active ? 'topbar-link-active' : ''}">${l.label}</a></li>
             `).join('')}
           </ul>
 
@@ -607,6 +611,25 @@
     `;
 
     wireTopbar();
+  }
+
+  function refreshTopbarState() {
+    const root = document.getElementById('topbar-root');
+    if (!root || !root.querySelector('.topbar')) return renderTopbar();
+
+    const activeId = window.__activeInstanceId;
+    const inst = (window.allInstances || []).find(x => x.id === activeId);
+    const sym = root.querySelector('#active-inst-symbol');
+    if (sym) sym.textContent = inst?.symbol ?? '—';
+
+    for (const link of topbarLinks()) {
+      const el = root.querySelector(`[data-topbar-link="${link.key}"]`);
+      if (!el) continue;
+      el.href = link.href;
+      el.classList.toggle('topbar-link-active', link.active);
+    }
+
+    renderProviderChip();
   }
 
   // Build a URL preserving the active instance id as ?inst=.
@@ -904,6 +927,7 @@
     // Update topbar chip in place.
     const sym = $$('#active-inst-symbol');
     if (sym) sym.textContent = inst?.symbol ?? '—';
+    refreshTopbarState();
 
     window.dispatchEvent(new CustomEvent('fao:activeInstanceChanged', { detail: { id, inst } }));
   }
@@ -961,7 +985,7 @@
     const startId = pickInitialActive();
     if (startId != null) setActiveInstance(startId, false);
     else window.activeInstance = null;
-    renderTopbar();
+    refreshTopbarState();
     window.dispatchEvent(new CustomEvent('fao:sharedReady'));
     restoreWalletSession().catch((err) => {
       console.warn('[shared] wallet reconnect failed', err);
