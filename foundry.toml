@@ -5,6 +5,7 @@ libs = ["lib"]
 optimizer = true
 optimizer_runs = 200
 via_ir = true
+fs_permissions = [{ access = "read", path = "./deployments.json" }]
 
 remappings = [
     # Use SnapshotX-pinned OpenZeppelin versions (v4.x) to avoid OZ v5 init signature mismatches
