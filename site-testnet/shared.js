@@ -27,7 +27,13 @@
   // CI check). Update the JSON, not the constant.
   const FALLBACK_REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C';
   let REGISTRY_ADDR = FALLBACK_REGISTRY_ADDR;
-  const RPC = 'https://ethereum-sepolia.publicnode.com';
+  const ETHERS_SRC = 'https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js';
+  const DEFAULT_RPC = 'https://ethereum-sepolia.publicnode.com';
+  const FORK_RPC = 'http://127.0.0.1:8545';
+  function isForkMode() {
+    try { return localStorage.faoForkMode === '1'; } catch (_) { return false; }
+  }
+  const RPC = isForkMode() ? FORK_RPC : DEFAULT_RPC;
   const STORAGE_KEY = 'faoActiveInstanceId';
   const WALLET_PROVIDER_STORAGE_KEY = 'faoSelectedWalletProvider';
   const WALLET_SESSION_STORAGE_KEY = 'faoWalletSession';
@@ -40,6 +46,37 @@
   // failure — in which case FALLBACK_REGISTRY_ADDR keeps the page alive).
   let __deploymentsPromise = null;
   const __abiPromises = new Map();
+  let __ethersPromise = null;
+
+  function loadEthers() {
+    if (globalThis.ethers) return Promise.resolve(globalThis.ethers);
+    if (__ethersPromise) return __ethersPromise;
+    __ethersPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = ETHERS_SRC;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.onload = () => {
+        if (globalThis.ethers) resolve(globalThis.ethers);
+        else reject(new Error('ethers loaded without exposing window.ethers'));
+      };
+      script.onerror = () => reject(new Error('Could not load ethers.js'));
+      document.head.appendChild(script);
+    });
+    return __ethersPromise;
+  }
+  window.loadFaoEthers = loadEthers;
+
+  function afterInitialPaint(fn, delayMs = 0) {
+    const run = () => {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(fn, { timeout: 1500 });
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(run, delayMs)));
+  }
 
   function loadDeployments() {
     if (__deploymentsPromise) return __deploymentsPromise;
@@ -129,6 +166,15 @@
 
   function clearWalletSessionStorage() {
     try { localStorage.removeItem(WALLET_SESSION_STORAGE_KEY); } catch (_) {}
+  }
+
+  function readStoredWalletSession() {
+    try {
+      const raw = localStorage.getItem(WALLET_SESSION_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function readStoredWalletProvider() {
@@ -223,6 +269,26 @@
     `;
   }
 
+  function walletProviderErrorGuidance(info, err) {
+    const name = info?.name || 'selected wallet';
+    const rdns = String(info?.rdns || '').toLowerCase();
+    const msg = err?.shortMessage || err?.message || String(err || 'Unknown wallet error');
+    if (err?.code === 4001 || /reject|denied|cancel/i.test(msg)) {
+      return `${name} rejected the request. Reopen ${name}, approve the prompt, then try again.`;
+    }
+    if (/chain|network|11155111|sepolia/i.test(msg)) {
+      return `${name} is on the wrong network. Switch ${name} to Sepolia, then reconnect.`;
+    }
+    if (/locked|account|eth_accounts/i.test(msg)) {
+      return `${name} did not expose an account. Unlock ${name}, choose an account, then reconnect.`;
+    }
+    if (rdns.includes('metamask')) return `MetaMask could not connect: ${msg}. Check the extension prompt and selected account.`;
+    if (rdns.includes('rabby')) return `Rabby could not connect: ${msg}. Check Rabby's chain and account permissions.`;
+    if (rdns.includes('coinbase')) return `Coinbase Wallet could not connect: ${msg}. Open the wallet and approve Sepolia access.`;
+    return `${name} could not connect: ${msg}`;
+  }
+  window.faoWalletProviderErrorGuidance = walletProviderErrorGuidance;
+
   async function discoverWalletProviders(waitMs = 180) {
     requestWalletProviders();
     await new Promise(resolve => setTimeout(resolve, waitMs));
@@ -287,6 +353,61 @@
     rememberWalletProvider(picked.info);
     return picked;
   }
+
+  async function restoreWalletSession() {
+    const stored = readStoredWalletSession();
+    if (!stored?.wallet) return false;
+    const records = await discoverWalletProviders(300);
+    const record = records.find(r => walletRecordMatches(r, stored.provider));
+    if (!record) {
+      setTopbarStatus('Previously selected wallet is not available in this browser.', 'info');
+      return false;
+    }
+    selectedProviderRecord = record;
+    rememberWalletProvider(record.info);
+    hookProviderReset(record);
+
+    try {
+      const accounts = await record.provider.request({ method: 'eth_accounts' });
+      const wallet = accounts?.find(a => String(a).toLowerCase() === String(stored.wallet).toLowerCase()) || accounts?.[0];
+      if (!wallet) {
+        setTopbarStatus(walletProviderErrorGuidance(record.info, new Error('locked account: eth_accounts returned no addresses')), 'info');
+        return false;
+      }
+
+      const cid = await record.provider.request({ method: 'eth_chainId' });
+      if (chainIdToBigInt(cid) !== SEPOLIA_CHAIN_ID) {
+        renderChainMismatchAction(record.provider);
+        return false;
+      }
+
+      const browserProvider = new ethers.BrowserProvider(record.provider, 'any');
+      const signer = await browserProvider.getSigner(wallet);
+      window.connectedWallet = wallet;
+      window.activeSigner = signer;
+      window.faoSelectedWalletProvider = record.provider;
+      window.faoSelectedWalletProviderInfo = {
+        uuid: record.info.uuid,
+        rdns: record.info.rdns,
+        name: record.info.name,
+      };
+      rememberWalletSession(wallet, record.info);
+      await detectWalletCapabilities(record.provider, wallet);
+      armWalletIdleTimer();
+      const connectBtn = $$('#topbar-connect');
+      if (connectBtn) connectBtn.textContent = fmtAddr(wallet);
+      renderProviderChip();
+      setTopbarStatus(`Reconnected with ${record.info.name}${window.faoWalletSupportsEip5792 ? ' · batching available' : ''}.`, 'ok');
+      window.dispatchEvent(new CustomEvent('fao:walletChanged', {
+        detail: { wallet, signer, provider: record.info, capabilities: window.faoWalletCapabilities },
+      }));
+      return true;
+    } catch (err) {
+      setTopbarStatus(walletProviderErrorGuidance(record.info, err), 'error');
+      return false;
+    }
+  }
+  window.restoreWalletSession = restoreWalletSession;
 
   function resetWalletState(reason = '', opts = {}) {
     window.activeSigner = undefined;
@@ -472,7 +593,7 @@
           </ul>
 
           <div class="topbar-tools">
-            <div class="active-inst-chip" id="active-inst-chip" data-testid="topbar-active-chip" role="button" tabindex="0" aria-haspopup="listbox">
+            <div class="active-inst-chip" id="active-inst-chip" data-testid="topbar-active-chip" data-dynamic role="button" tabindex="0" aria-haspopup="listbox">
               <span class="active-inst-label">Active:</span>
               <strong class="active-inst-symbol" id="active-inst-symbol">${escapeHtml(symbol)}</strong>
               <span class="active-inst-caret">▾</span>
@@ -529,7 +650,7 @@
 
     if (connectBtn) {
       connectBtn.addEventListener('click', () => {
-        connectWallet().catch((e) => setTopbarStatus(`Connect failed: ${e?.message || e}`, 'error'));
+        connectWallet().catch((e) => setTopbarStatus(walletProviderErrorGuidance(selectedProviderRecord?.info, e), 'error'));
       });
       // Reflect current state if already connected.
       if (window.connectedWallet) connectBtn.textContent = fmtAddr(window.connectedWallet);
@@ -538,7 +659,7 @@
     const walletChip = $$('#wallet-provider-chip');
     if (walletChip) {
       walletChip.addEventListener('click', () => {
-        connectWallet({ forcePicker: true }).catch((e) => setTopbarStatus(`Connect failed: ${e?.message || e}`, 'error'));
+        connectWallet({ forcePicker: true }).catch((e) => setTopbarStatus(walletProviderErrorGuidance(selectedProviderRecord?.info, e), 'error'));
       });
     }
     renderProviderChip();
@@ -725,6 +846,7 @@
 
   // ─── Instance load ───────────────────────────────────────────────────
   async function loadInstances() {
+    await loadEthers();
     // Resolve deployments.json BEFORE first registry read so the address
     // in the JSON wins over the fallback. Always succeeds (either the
     // JSON loads, or the fallback constant stays in effect).
@@ -789,6 +911,7 @@
 
   // ─── Wallet ──────────────────────────────────────────────────────────
   async function connectWallet(options = {}) {
+    await loadEthers();
     const record = await resolveWalletProvider(options);
     const eip1193Provider = record.provider;
     const accounts = await eip1193Provider.request({ method: 'eth_requestAccounts' });
@@ -828,7 +951,7 @@
   window.connectWallet = connectWallet;
 
   // ─── Boot ────────────────────────────────────────────────────────────
-  async function boot() {
+  async function bootData() {
     try {
       await loadInstances();
     } catch (e) {
@@ -840,6 +963,14 @@
     else window.activeInstance = null;
     renderTopbar();
     window.dispatchEvent(new CustomEvent('fao:sharedReady'));
+    restoreWalletSession().catch((err) => {
+      console.warn('[shared] wallet reconnect failed', err);
+    });
+  }
+
+  function boot() {
+    renderTopbar();
+    afterInitialPaint(bootData, 2400);
   }
 
   if (document.readyState === 'loading') {
