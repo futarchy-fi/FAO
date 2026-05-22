@@ -7,7 +7,6 @@
   <meta name="description" content="FAO Futarchy Arbitration Organization v0 — live testnet deployment on Sepolia. 100% on-chain governance via conditional markets and UniV3 TWAP." />
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
   <script src="shared.js" defer></script>
   <script src="home.js" defer></script>
 </head>
@@ -58,7 +57,7 @@
           <th></th>
         </tr>
       </thead>
-      <tbody id="rankings-rows" data-testid="rankings-rows">
+      <tbody id="rankings-rows" data-testid="rankings-rows" data-dynamic>
         <tr><td colspan="7" class="rank-empty">Loading sales…</td></tr>
       </tbody>
     </table>
@@ -78,11 +77,11 @@
         <span class="live-dot"></span>
         <span class="dash-panel-title">Live stats</span>
       </div>
-      <div class="dash-row"><span class="dash-label">Latest block</span><span class="dash-value" id="sep-block">…</span></div>
-      <div class="dash-row"><span class="dash-label">Proposals created</span><span class="dash-value" id="sep-markets-count">…</span></div>
-      <div class="dash-row"><span class="dash-label">Operator wallet</span><span class="dash-value" id="sep-op-balance">…</span></div>
-      <div class="dash-row"><span class="dash-label">Resolver wiring</span><span class="dash-value" id="sep-oracle-ok">…</span></div>
-      <div class="dash-row"><span class="dash-label">Last update</span><span class="dash-value" id="sep-updated">…</span></div>
+      <div class="dash-row"><span class="dash-label">Latest block</span><span class="dash-value" id="sep-block" data-dynamic>…</span></div>
+      <div class="dash-row"><span class="dash-label">Proposals created</span><span class="dash-value" id="sep-markets-count" data-dynamic>…</span></div>
+      <div class="dash-row"><span class="dash-label">Operator wallet</span><span class="dash-value" id="sep-op-balance" data-dynamic>…</span></div>
+      <div class="dash-row"><span class="dash-label">Resolver wiring</span><span class="dash-value" id="sep-oracle-ok" data-dynamic>…</span></div>
+      <div class="dash-row"><span class="dash-label">Last update</span><span class="dash-value" id="sep-updated" data-dynamic>…</span></div>
     </div>
 
     <div class="dash-panel">

@@ -1373,6 +1373,13 @@ main:focus { outline: none; }
 }
 
 /* ─── Topbar (shared.js) ──────────────────────────────────────── */
+#topbar-root {
+  min-height: 57px;
+}
+#topbar-root:empty {
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+}
 .topbar {
   position: sticky;
   top: 0;

@@ -1,0 +1,111 @@
+{
+  "generatedAt": "2026-05-22T18:29:59.837Z",
+  "source": "local-lighthouse-post-change",
+  "mode": "mobile",
+  "budgets": {
+    "lcp": {
+      "auditId": "largest-contentful-paint",
+      "label": "Largest Contentful Paint",
+      "max": 2500,
+      "op": "<=",
+      "unit": "ms"
+    },
+    "inp": {
+      "auditId": "performance-event-timing:inp",
+      "label": "Interaction to Next Paint",
+      "max": 200,
+      "op": "<=",
+      "unit": "ms"
+    },
+    "cls": {
+      "auditId": "cumulative-layout-shift",
+      "label": "Cumulative Layout Shift",
+      "max": 0.1,
+      "op": "<=",
+      "unit": "unitless"
+    }
+  },
+  "pass": true,
+  "pages": [
+    {
+      "url": "http://127.0.0.1:8773/",
+      "slug": "fao-testnet-pages-dev",
+      "report": "audit/lighthouse/fao-testnet-pages-dev.json",
+      "runs": 1,
+      "budgetsPass": true,
+      "metrics": {
+        "lcp": {
+          "value": 1503.7975,
+          "displayValue": "1.5 s",
+          "score": 1,
+          "budget": 2500,
+          "unit": "ms",
+          "pass": true
+        },
+        "inp": {
+          "value": 24,
+          "displayValue": "24 ms",
+          "score": null,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true,
+          "source": "performance-event-timing"
+        },
+        "cls": {
+          "value": 0.006785,
+          "displayValue": "0.007",
+          "score": 1,
+          "budget": 0.1,
+          "unit": "unitless",
+          "pass": true
+        }
+      },
+      "categories": {
+        "performance": 1,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 1
+      }
+    },
+    {
+      "url": "http://127.0.0.1:8773/sale.html",
+      "slug": "fao-testnet-pages-dev-sale",
+      "report": "audit/lighthouse/fao-testnet-pages-dev-sale.json",
+      "runs": 1,
+      "budgetsPass": true,
+      "metrics": {
+        "lcp": {
+          "value": 1654.0943,
+          "displayValue": "1.7 s",
+          "score": 0.99,
+          "budget": 2500,
+          "unit": "ms",
+          "pass": true
+        },
+        "inp": {
+          "value": 16,
+          "displayValue": "16 ms",
+          "score": null,
+          "budget": 200,
+          "unit": "ms",
+          "pass": true,
+          "source": "performance-event-timing"
+        },
+        "cls": {
+          "value": 0.006785,
+          "displayValue": "0.007",
+          "score": 1,
+          "budget": 0.1,
+          "unit": "unitless",
+          "pass": true
+        }
+      },
+      "categories": {
+        "performance": 1,
+        "accessibility": 1,
+        "bestPractices": 0.96,
+        "seo": 0.9
+      }
+    }
+  ]
+}
