@@ -56,6 +56,14 @@ jobs:
         env:
           FAO_SITE_URL: https://fao-testnet.pages.dev
 
+      - name: Upload axe audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: axe-audit-read-only
+          path: audit/axe/
+          retention-days: 14
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
