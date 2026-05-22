@@ -16,3 +16,8 @@ core
 .wrangler/
 .claude/worktrees/
 audit/evaluations/*.jsonl.tmp
+
+# Synpress / Playwright (added by worker-synpress)
+node_modules/
+playwright-report/
+playwright/.cache/
