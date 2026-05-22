@@ -1,0 +1,79 @@
+name: Forge tests
+
+# Runs the unit + integration + invariant test suite on every push + PR.
+# Symbolic and fork tests are out of scope here — they have dedicated
+# workflows (symbolic.yml + nightly fork tests planned).
+#
+# T4.D5 (CI gating & reproducibility) lift — adds the missing forge-side
+# gate so PRs cannot merge with broken unit / invariant tests.
+
+permissions: {}
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "test/**"
+      - "script/**"
+      - "foundry.toml"
+      - "lib/**"
+      - "remappings.txt"
+      - ".github/workflows/forge.yml"
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build:
+    name: forge build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: forge build (ci profile)
+        run: forge build --skip script
+      - name: forge fmt check
+        run: forge fmt --check src test script
+
+  unit:
+    name: forge test (unit + integration)
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: forge test (excluding fork)
+        run: forge test --no-match-path 'test/fork/*' -vv
+
+  invariant:
+    name: forge test (invariant)
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: forge test (stateful invariants — 100 runs × 50 depth)
+        # Invariant tests are tagged invariant_INV_*; the ci profile pins
+        # `fuzz.runs = 100` so this completes deterministically.
+        run: forge test --match-test 'invariant_INV_' -vv
