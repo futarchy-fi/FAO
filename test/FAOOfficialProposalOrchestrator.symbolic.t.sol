@@ -130,7 +130,8 @@ contract ExposedFAOOfficialProposalOrchestrator is FAOOfficialProposalOrchestrat
             currencyToken,
             feeTier,
             5,
-            IFAOFutarchyTwapResolver(address(0x1234))
+            IFAOFutarchyTwapResolver(address(0x1234)),
+            true
         )
     {}
 
