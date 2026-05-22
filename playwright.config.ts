@@ -42,7 +42,13 @@ const FORK_STORAGE_STATE = {
 export default defineConfig({
   testDir: './tests-e2e',
   timeout: 90_000,
-  expect: { timeout: 10_000 },
+  expect: {
+    timeout: 10_000,
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.005,
+      pathTemplate: '{testDir}/__snapshots__/{testFileName}-snapshots/{arg}{ext}',
+    },
+  },
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : 1,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['github']] : [['list'], ['html', { open: 'never' }]],
