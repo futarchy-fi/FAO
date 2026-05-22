@@ -14,11 +14,11 @@
 (() => {
   'use strict';
 
-  const REGISTRY_ADDR = '0x45F1F8Bb80539cddFfB945dBe4C53A65d98296C0';
+  const REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C'; // v5
   const ZERO = '0x0000000000000000000000000000000000000000';
 
   const REGISTRY_ABI = [
-    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialPriceWeiPerToken, uint256 minInitialPhaseSold, uint256 initialPhaseDuration, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
+    'function createFutarchyPart1(string name, string symbol, string description, uint256 initialPriceWeiPerToken, uint256 minInitialPhaseSold, uint256 initialPhaseDuration, uint32 timeout, uint32 twapWindow, uint256 baseBondX) returns (uint256)',
     'function createFutarchyPart2(uint256 id)',
     'function instancesCount() view returns (uint256)',
     'event FutarchyPart1Created(uint256 indexed id, address indexed creator, string name, string symbol, address token, address sale, address arbitration)',
@@ -35,18 +35,6 @@
     if (!el) return;
     el.innerHTML = html;
     el.className = `create-instance-status create-instance-status-${kind || 'info'}`;
-  }
-
-  /// Convert a price float (1 token = X ETH) into a sqrtPriceX96 (in the
-  /// convention price = WETH per token). Mirrors the registry's storage
-  /// orientation: callers can normalize later if needed.
-  function priceToSqrtPriceX96(priceFloat) {
-    if (!isFinite(priceFloat) || priceFloat <= 0) throw new Error('Price must be > 0');
-    // sqrt(price) * 2^96 — work in higher-precision to avoid float drift.
-    const sqrt = Math.sqrt(priceFloat);
-    // Multiply via BigInt by scaling. Use 1e9 then square back as text.
-    const scaled = BigInt(Math.floor(sqrt * 1e18));
-    return (scaled * (1n << 96n)) / (10n ** 18n);
   }
 
   async function onSubmit(ev) {
@@ -80,23 +68,15 @@
     if (!isFinite(timeoutMin) || timeoutMin <= 0) { setStatus('Timeout must be > 0 min.', 'error'); return; }
     if (!isFinite(twapMin) || twapMin <= 0) { setStatus('TWAP window must be > 0 min.', 'error'); return; }
 
-    let priceFloat;
-    try { priceFloat = parseFloat(priceStr); }
-    catch (_) { setStatus(`Invalid price: ${escapeHtml(priceStr)}`, 'error'); return; }
-    if (!isFinite(priceFloat) || priceFloat <= 0) { setStatus('Sale price must be > 0.', 'error'); return; }
-
     let initialPriceWei;
     try { initialPriceWei = ethers.parseEther(priceStr); }
     catch (_) { setStatus(`Invalid price: ${escapeHtml(priceStr)}`, 'error'); return; }
+    if (initialPriceWei <= 0n) { setStatus('Sale price must be > 0.', 'error'); return; }
 
     let minInitialSold;
     try { minInitialSold = BigInt(minSoldStr); }
     catch (_) { setStatus(`Invalid min-sold: ${escapeHtml(minSoldStr)}`, 'error'); return; }
     if (minInitialSold <= 0n) { setStatus('Min initial sold must be > 0.', 'error'); return; }
-
-    let sqrtPriceX96;
-    try { sqrtPriceX96 = priceToSqrtPriceX96(priceFloat); }
-    catch (err) { setStatus(`Price conversion failed: ${escapeHtml(err.message)}`, 'error'); return; }
 
     let bondWei;
     try { bondWei = ethers.parseEther(baseBondStr); }
@@ -115,7 +95,7 @@
       const tx1 = await reg.createFutarchyPart1(
         name, symbol, description,
         initialPriceWei, minInitialSold, BigInt(initialPhaseSec),
-        sqrtPriceX96, timeoutSec, twapSec, bondWei,
+        timeoutSec, twapSec, bondWei,
       );
       setStatus(
         `Step 1/2: tx sent <a href="${explorerTx(tx1.hash)}" target="_blank" rel="noopener">${tx1.hash.slice(0, 10)}…</a>. Waiting confirmation…`,

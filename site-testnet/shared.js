@@ -20,7 +20,7 @@
   'use strict';
 
   // ─── Config ──────────────────────────────────────────────────────────
-  const REGISTRY_ADDR = '0x05d6c186E5004d36D99258574712BA7A66ca0a73'; // v4 (ragequit + fLP)
+  const REGISTRY_ADDR = '0x18D1f4e57412b48436C7825B9018437C235bBC5C'; // v5 (sqrtPriceX96 derived from sale)
   const RPC = 'https://ethereum-sepolia.publicnode.com';
   const STORAGE_KEY = 'faoActiveInstanceId';
   const SEPOLIA_CHAIN_ID = 11155111n;
@@ -32,8 +32,8 @@
 
   const REGISTRY_ABI = [
     'function instancesCount() view returns (uint256)',
-    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow))',
-    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint160 initialSqrtPriceX96, uint32 timeout, uint32 twapWindow)[])',
+    'function instances(uint256 id) view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint32 timeout, uint32 twapWindow))',
+    'function allInstances() view returns (tuple(string name, string symbol, string description, address creator, address token, address sale, address arbitration, address resolver, address factory, address orchestrator, address spotPool, uint256 createdAt, uint8 status, uint32 timeout, uint32 twapWindow)[])',
   ];
 
   // ─── Utilities ───────────────────────────────────────────────────────
@@ -53,6 +53,8 @@
   }
 
   function unpackInstance(id, raw) {
+    // v5 FutarchyInstance layout (15 fields). initialSqrtPriceX96 dropped —
+    // the contract derives it from sale.INITIAL_PRICE_WEI_PER_TOKEN.
     return {
       id,
       name:         raw.name         ?? raw[0],
@@ -68,7 +70,6 @@
       spotPool:     raw.spotPool     ?? raw[10],
       createdAt:    Number(raw.createdAt ?? raw[11] ?? 0),
       status:       Number(raw.status ?? raw[12] ?? 2),
-      bootstrap:    false,
     };
   }
 

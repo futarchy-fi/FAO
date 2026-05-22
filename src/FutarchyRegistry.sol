@@ -11,6 +11,12 @@ import {IUniswapV3FactoryLike} from "./interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "./interfaces/IUniswapV3PoolLike.sol";
 import {IWrapped1155FactoryLike} from "./interfaces/IWrapped1155FactoryLike.sol";
 
+/// @dev Minimal view into InstanceSale — Part2 reads the immutable initial
+/// price to compute the spot pool's sqrtPriceX96.
+interface IInstanceSalePriceLike {
+    function INITIAL_PRICE_WEI_PER_TOKEN() external view returns (uint256);
+}
+
 /// @title FutarchyRegistry
 /// @notice Meta-factory that lets anyone spin up a fully-wired FAO futarchy
 /// instance. Shared chain-level infrastructure (CTF, Wrapped1155Factory,
@@ -72,11 +78,13 @@ contract FutarchyRegistry {
         address spotPool;            // address(0) until Part2
         uint256 createdAt;
         InstanceStatus status;
-        // Cached params so Part2 doesn't need them as args.
-        uint160 initialSqrtPriceX96;
+        // Cached params so Part2 doesn't need them as args. sqrtPriceX96 is
+        // derived from `sale.INITIAL_PRICE_WEI_PER_TOKEN` inside Part2, so
+        // the user can't pass an inconsistent value at create time.
         uint32 timeout;
         uint32 twapWindow;
     }
+
 
     // ═══════════════════════════════════════════════════════
     //  Immutables
@@ -147,7 +155,6 @@ contract FutarchyRegistry {
 
     error EmptyName();
     error EmptySymbol();
-    error ZeroSqrtPrice();
     error InvalidResolverConfig();
     error InvalidBaseBond();
     error InvalidConstructor();
@@ -198,7 +205,9 @@ contract FutarchyRegistry {
     /// @notice Phase 1: deploys token + sale + arbitration + registers a
     ///         pending slot. Token starts at 0 supply; the sale holds
     ///         MINTER_ROLE so all supply originates from public buys.
-    /// @dev    Gas budget: ≤ 13M. Measured ~4M with sale included.
+    /// @dev    The spot pool's sqrtPriceX96 is NOT passed by the caller —
+    ///         Part2 derives it from `sale.INITIAL_PRICE_WEI_PER_TOKEN` so
+    ///         it can never disagree with the sale's economic price.
     function createFutarchyPart1(
         string calldata name,
         string calldata symbol,
@@ -206,29 +215,23 @@ contract FutarchyRegistry {
         uint256 initialPriceWeiPerToken,
         uint256 minInitialPhaseSold,
         uint256 initialPhaseDuration,
-        uint160 initialSqrtPriceX96,
         uint32 timeout,
         uint32 twapWindow,
         uint256 baseBondX
     ) external returns (uint256 id) {
-        _validate(name, symbol, initialSqrtPriceX96, timeout, twapWindow, baseBondX);
+        _validate(name, symbol, timeout, twapWindow, baseBondX);
 
         address creator = msg.sender;
 
-        // Deploy token + sale atomically; sale gets MINTER_ROLE on the token,
-        // the deployer renounces its temporary admin role, creator is left as
-        // the token's DEFAULT_ADMIN.
         (address token, address sale) = TOKEN_ARB_DEPLOYER.deployTokenAndSale(
             name, symbol, creator,
             initialPriceWeiPerToken, minInitialPhaseSold, initialPhaseDuration
         );
 
-        // Parameterized arbitration (creator is admin/owner).
         address arb = TOKEN_ARB_DEPLOYER.deployArbitration(
             creator, WETH, baseBondX, DEFAULT_MAX_QUEUE, timeout
         );
 
-        // Reserve registry slot.
         id = _instances.length;
         _instances.push(
             FutarchyInstance({
@@ -245,7 +248,6 @@ contract FutarchyRegistry {
                 spotPool: address(0),
                 createdAt: block.timestamp,
                 status: InstanceStatus.PENDING_PART2,
-                initialSqrtPriceX96: initialSqrtPriceX96,
                 timeout: timeout,
                 twapWindow: twapWindow
             })
@@ -271,7 +273,12 @@ contract FutarchyRegistry {
         address creator = inst.creator;
         uint32 timeout = inst.timeout;
         uint32 twapWindow = inst.twapWindow;
-        uint160 initialSqrtPriceX96 = inst.initialSqrtPriceX96;
+
+        // Derive the pool's initial sqrtPriceX96 from the sale's economic
+        // price. Single source of truth — the user can't pass a value that
+        // disagrees with the sale and leave the pool degenerate at price=1.
+        uint256 priceWei = IInstanceSalePriceLike(inst.sale).INITIAL_PRICE_WEI_PER_TOKEN();
+        uint160 initialSqrtPriceX96 = _sqrtPriceX96FromWeiPrice(priceWei);
 
         // Spot UniV3 pool (token / WETH at FEE_TIER).
         address spotPool = _createAndInitSpotPool(token, initialSqrtPriceX96);
@@ -348,16 +355,54 @@ contract FutarchyRegistry {
     function _validate(
         string calldata name,
         string calldata symbol,
-        uint160 initialSqrtPriceX96,
         uint32 timeout,
         uint32 twapWindow,
         uint256 baseBondX
     ) internal pure {
         if (bytes(name).length == 0) revert EmptyName();
         if (bytes(symbol).length == 0) revert EmptySymbol();
-        if (initialSqrtPriceX96 == 0) revert ZeroSqrtPrice();
         if (timeout == 0 || twapWindow == 0 || twapWindow > timeout) revert InvalidResolverConfig();
         if (baseBondX == 0) revert InvalidBaseBond();
+    }
+
+    /// @dev sqrtPriceX96 = sqrt(priceWei / 1e18) * 2^96
+    ///                  = sqrt(priceWei) * 2^96 / sqrt(1e18)
+    ///                  = sqrt(priceWei) * 2^96 / 1e9    (since sqrt(1e18) = 1e9)
+    /// `priceWei` is the sale's `INITIAL_PRICE_WEI_PER_TOKEN` — wei of ETH
+    /// per 1 whole token (1e18 base units), so dividing by 1e18 converts to
+    /// the dimensionless WETH/TOKEN ratio UniV3 stores. Uses an inline
+    /// Babylonian sqrt to avoid an OZ import.
+    function _sqrtPriceX96FromWeiPrice(uint256 priceWei) internal pure returns (uint160) {
+        require(priceWei > 0, "priceWei=0");
+        uint256 s = (_sqrt(priceWei) * (uint256(1) << 96)) / 1e9;
+        require(s <= type(uint160).max, "sqrtPriceX96 overflow");
+        require(s > 0, "sqrtPriceX96=0");
+        return uint160(s);
+    }
+
+    /// @dev Integer sqrt via Babylonian iteration. Returns floor(sqrt(x)).
+    /// Borrowed from Uniswap's `FullMath` flavour; precision loss at most
+    /// 1 unit (off-by-one), which is fine for sqrtPriceX96 scaling.
+    function _sqrt(uint256 x) internal pure returns (uint256) {
+        if (x == 0) return 0;
+        uint256 xx = x;
+        uint256 r = 1;
+        if (xx >= 0x100000000000000000000000000000000) { xx >>= 128; r <<= 64; }
+        if (xx >= 0x10000000000000000) { xx >>= 64; r <<= 32; }
+        if (xx >= 0x100000000) { xx >>= 32; r <<= 16; }
+        if (xx >= 0x10000) { xx >>= 16; r <<= 8; }
+        if (xx >= 0x100) { xx >>= 8; r <<= 4; }
+        if (xx >= 0x10) { xx >>= 4; r <<= 2; }
+        if (xx >= 0x8) { r <<= 1; }
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        r = (r + x / r) >> 1;
+        uint256 r1 = x / r;
+        return r < r1 ? r : r1;
     }
 
     /// @dev Create the (token, WETH, FEE_TIER) UniV3 pool, initialize it at
