@@ -61,8 +61,7 @@ cat > "$OUT" <<HTML
 $CSS_CONTENT
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script>window.__FAO_DATA__ = $DATA; window.__FAO_BUILD_TS__ = "$(date -u +%Y-%m-%dT%H:%M:%SZ)";</script>
   <script defer>
 $JS_PATCHED

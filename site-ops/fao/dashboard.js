@@ -132,8 +132,8 @@ function renderMinChart(allTopicRounds) {
         y: { min: 0, max: 10, ticks: { stepSize: 2, color: '#8892a4' }, grid: { color: '#1e2230' } },
         x: {
           type: 'time',
-          time: { tooltipFormat: 'MMM d HH:mm', displayFormats: { hour: 'MMM d HH:mm', minute: 'HH:mm' } },
-          ticks: { color: '#8892a4', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          time: { tooltipFormat: 'MMM d HH:mm', displayFormats: { hour: 'MMM d HH:mm', minute: 'HH:mm', second: 'HH:mm:ss' } },
+          ticks: { color: '#8892a4', maxRotation: 0, autoSkip: true, maxTicksLimit: 8, source: 'auto' },
           grid: { color: '#1e2230' },
         },
       },
