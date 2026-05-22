@@ -134,6 +134,40 @@ names against this table.
 |---|---|
 | `tests-e2e/journeys/home.read-only.spec.ts` | D1 partial (browse persona), D7 (journey-map presence). |
 | `tests-e2e/journeys/failure-modes.read-only.spec.ts` | D4 (failure modes: missing deployments.json, malformed JSON, zero-address registry, RPC down, blocked deployments fetch, sale-empty-state). |
+| `tests-e2e/journeys/fork-state.read-only.spec.ts` | D3 fork realism: starts/uses Anvil on `8545`, reads `instancesCount()` via viem, mutates the fork with `cast send`, reloads `/`, and asserts `data-testid="rankings-rows"` reflects `N + 1`. |
+
+## Fork-state local-dev cycle
+
+The fork-state read-only spec proves the no-wallet path: browser reads come
+from `localStorage.faoForkMode=1`, chain assertions read the same fork via
+viem, and state mutations happen with `cast send`.
+
+1. Start the local static site:
+
+   ```bash
+   cd site-testnet
+   python3 -m http.server 8766
+   ```
+
+2. Run the fork project from the repo root:
+
+   ```bash
+   FAO_SITE_URL=http://127.0.0.1:8766 \
+     npx playwright test --project=fork tests-e2e/journeys/fork-state.read-only.spec.ts
+   ```
+
+3. Optional deterministic fork pin:
+
+   ```bash
+   ANVIL_FORK_BLOCK_NUMBER=<sepolia-block> \
+   FAO_SITE_URL=http://127.0.0.1:8766 \
+     npx playwright test --project=fork tests-e2e/journeys/fork-state.read-only.spec.ts
+   ```
+
+The spec setup ensures Anvil is reachable at `http://127.0.0.1:8545`. If a
+previous local run left a dirty txpool, reset it with
+`bash scripts/anvil-fork.sh --stop` before rerunning; the next spec run starts a
+fresh fork. No wallet or Synpress profile is required.
 
 ## How this might be wrong
 
