@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Buy — FAO v0 testnet</title>
+  <title>Trade — FAO v0 testnet</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" defer></script>
   <script src="shared.js" defer></script>
@@ -14,7 +14,7 @@
 <div id="topbar-root"></div>
 
 <section id="sale" class="section sale-page">
-  <!-- Hero strip: token identity + price + phase. -->
+  <!-- Hero strip: token identity + current sale price + phase. -->
   <div class="sale-hero">
     <div class="sale-hero-left">
       <div class="sale-hero-symbol" id="sale-hero-symbol">…</div>
@@ -29,13 +29,13 @@
       </div>
     </div>
     <div class="sale-hero-right">
-      <div class="sale-hero-price-label">Current price</div>
+      <div class="sale-hero-price-label">Sale price</div>
       <div class="sale-hero-price" id="sale-hero-price">…</div>
       <div class="sale-hero-price-sub" id="sale-hero-price-sub">per token</div>
     </div>
   </div>
 
-  <!-- Initial-phase progress (hidden once finalized). -->
+  <!-- Initial-phase progress bar (hidden once finalized). -->
   <div class="sale-progress-block" id="sale-progress-block" hidden>
     <div class="sale-progress-head">
       <span>Initial-phase progress</span>
@@ -47,98 +47,120 @@
     <div class="sale-progress-foot" id="sale-progress-foot">Ends —</div>
   </div>
 
-  <!-- Buy module + key sale stats side-by-side. -->
-  <div class="sale-buy-grid">
-    <div class="sale-buy-card">
-      <h3 class="sale-card-title">Buy tokens</h3>
-      <p class="sale-card-note" id="sale-buy-note">
-        All token supply originates from this sale. Pay ETH on Sepolia, receive
-        freshly-minted tokens to your wallet.
-      </p>
+  <!-- Comparison banner: "Uniswap is X% cheaper" or "Sale is X% better". -->
+  <div id="trade-compare-banner" class="trade-compare-banner" hidden></div>
 
-      <div class="sale-quick-buy">
-        <span class="sale-quick-buy-label">Quick:</span>
-        <button class="sale-quick-btn" data-quick-buy="1" type="button">1</button>
-        <button class="sale-quick-btn" data-quick-buy="10" type="button">10</button>
-        <button class="sale-quick-btn" data-quick-buy="100" type="button">100</button>
-        <button class="sale-quick-btn" data-quick-buy="1000" type="button">1000</button>
-      </div>
+  <!-- Trade grid: Buy column + Sell column. -->
+  <div class="trade-grid">
 
-      <label class="sale-input-wrap-big">
-        <span class="sale-input-label">Amount</span>
-        <input id="sale-input" type="number" min="1" step="1" value="1" />
-        <span class="sale-input-suffix" id="sale-input-suffix">tokens</span>
-      </label>
+    <!-- ─── BUY column ─────────────────────────────────────────────── -->
+    <div class="trade-col">
+      <h3 class="trade-col-title">Buy</h3>
 
-      <div class="sale-cost-preview">
-        <div class="sale-cost-row">
+      <div class="trade-card trade-card-active">
+        <div class="trade-card-head">
+          <span class="trade-card-label">via sale</span>
+          <span class="trade-card-price" id="trade-buy-sale-price">—</span>
+        </div>
+        <div class="trade-quick-bar">
+          <span class="trade-quick-bar-label">Quick:</span>
+          <button class="sale-quick-btn" data-qb-amt="1" type="button">1</button>
+          <button class="sale-quick-btn" data-qb-amt="10" type="button">10</button>
+          <button class="sale-quick-btn" data-qb-amt="100" type="button">100</button>
+          <button class="sale-quick-btn" data-qb-amt="1000" type="button">1000</button>
+        </div>
+        <label class="trade-amount-wrap">
+          <span class="trade-amount-label">Amount</span>
+          <input id="trade-buy-amount" type="number" min="1" step="1" value="1" />
+          <span class="trade-amount-sfx" id="trade-buy-suffix">tokens</span>
+        </label>
+        <div class="trade-cost-row">
           <span>Cost</span>
-          <strong id="sale-cost">—</strong>
+          <strong id="trade-buy-cost">—</strong>
         </div>
-        <div class="sale-cost-row sale-cost-row-sub">
-          <span>Your ETH</span>
-          <span id="sale-eth">—</span>
-        </div>
+        <button id="trade-buy-sale-btn" class="btn btn-primary trade-btn-primary" type="button">Buy via sale</button>
       </div>
 
-      <button id="sale-buy" class="btn btn-primary sale-buy-btn" type="button">Buy</button>
-
-      <!-- Pre-wallet confirmation card: appears when the user clicks Buy.
-           Renders a human-readable summary so the user can sanity-check
-           BEFORE MetaMask's opaque hex popup. -->
-      <div id="sale-confirm-card" class="sale-confirm-card" hidden>
-        <div class="sale-confirm-head">You're about to:</div>
-        <div class="sale-confirm-row"><span>Buy</span><strong id="sale-confirm-buy">—</strong></div>
-        <div class="sale-confirm-row"><span>Pay</span><strong id="sale-confirm-pay">—</strong></div>
-        <div class="sale-confirm-row"><span>To sale</span><strong id="sale-confirm-sale">—</strong></div>
-        <div class="sale-confirm-row"><span>Receive at</span><strong id="sale-confirm-recv">—</strong></div>
-        <div class="sale-confirm-actions">
-          <button id="sale-confirm-cancel" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="sale-confirm-go" class="btn btn-primary" type="button">Confirm in wallet →</button>
+      <div class="trade-card trade-card-uni">
+        <div class="trade-card-head">
+          <span class="trade-card-label">via Uniswap (spot pool)</span>
+          <span class="trade-card-price" id="trade-buy-uni-price">—</span>
         </div>
+        <p class="trade-card-note" id="trade-buy-uni-note">Cross-check the spot price before swapping — slippage and pool depth matter.</p>
+        <a id="trade-buy-uni-btn" class="btn btn-secondary trade-btn-secondary" href="#" target="_blank" rel="noopener">Open Uniswap →</a>
       </div>
-
-      <p id="sale-buy-status" class="sale-buy-status"></p>
     </div>
 
-    <div class="sale-stats-card">
-      <h3 class="sale-card-title">Sale stats</h3>
-      <div class="sale-stats-grid">
-        <div class="sale-stat">
-          <span class="sale-stat-label">Total raised</span>
-          <span class="sale-stat-value" id="sale-raised">…</span>
+    <!-- ─── SELL column ────────────────────────────────────────────── -->
+    <div class="trade-col">
+      <h3 class="trade-col-title">Sell</h3>
+
+      <div class="trade-card trade-card-active">
+        <div class="trade-card-head">
+          <span class="trade-card-label">via ragequit</span>
+          <span class="trade-card-price" id="trade-sell-rq-price">—</span>
         </div>
-        <div class="sale-stat">
-          <span class="sale-stat-label">Initial-phase sold</span>
-          <span class="sale-stat-value" id="sale-initial-sold">…</span>
+        <div class="trade-quick-bar">
+          <span class="trade-quick-bar-label">Quick:</span>
+          <button class="sale-quick-btn" data-qs-pct="25" type="button">25%</button>
+          <button class="sale-quick-btn" data-qs-pct="50" type="button">50%</button>
+          <button class="sale-quick-btn" data-qs-pct="100" type="button">100%</button>
         </div>
-        <div class="sale-stat">
-          <span class="sale-stat-label">Bonding-curve sold</span>
-          <span class="sale-stat-value" id="sale-curve-sold">…</span>
+        <label class="trade-amount-wrap">
+          <span class="trade-amount-label">Amount</span>
+          <input id="trade-sell-amount" type="number" min="1" step="1" value="1" />
+          <span class="trade-amount-sfx" id="trade-sell-suffix">tokens</span>
+        </label>
+        <div class="trade-cost-row">
+          <span>You get</span>
+          <strong id="trade-sell-rq-out">—</strong>
         </div>
-        <div class="sale-stat">
-          <span class="sale-stat-label">Initial phase ends</span>
-          <span class="sale-stat-value" id="sale-phase-end">…</span>
-        </div>
-        <div class="sale-stat">
-          <span class="sale-stat-label">Your token balance</span>
-          <span class="sale-stat-value" id="sale-balance">—</span>
-        </div>
-        <div class="sale-stat">
-          <span class="sale-stat-label">Remaining initial-phase capacity</span>
-          <span class="sale-stat-value" id="sale-remaining">—</span>
-        </div>
+        <p class="trade-card-note">Plus pro-rata of each ragequit-listed treasury ERC20 (e.g. fLP).</p>
+        <button id="trade-sell-rq-btn" class="btn btn-primary trade-btn-primary" type="button">Ragequit</button>
       </div>
+
+      <div class="trade-card trade-card-uni">
+        <div class="trade-card-head">
+          <span class="trade-card-label">via Uniswap (spot pool)</span>
+          <span class="trade-card-price" id="trade-sell-uni-price">—</span>
+        </div>
+        <p class="trade-card-note">Cross-check the spot price before swapping — slippage and pool depth matter.</p>
+        <a id="trade-sell-uni-btn" class="btn btn-secondary trade-btn-secondary" href="#" target="_blank" rel="noopener">Open Uniswap →</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Pre-confirm card: reused for Buy + Ragequit. Populated dynamically. -->
+  <div id="sale-confirm-card" class="sale-confirm-card" hidden>
+    <div class="sale-confirm-head" id="sale-confirm-head">You're about to:</div>
+    <div class="sale-confirm-rows" id="sale-confirm-rows"></div>
+    <div class="sale-confirm-actions">
+      <button id="sale-confirm-cancel" class="btn btn-secondary" type="button">Cancel</button>
+      <button id="sale-confirm-go" class="btn btn-primary" type="button">Confirm in wallet →</button>
     </div>
   </div>
 
-  <!-- Contract info, deemphasized. -->
+  <p id="sale-buy-status" class="sale-buy-status"></p>
+
+  <!-- Stats + contract addresses (collapsed). -->
   <details class="sale-contract-details">
-    <summary>Contract addresses</summary>
+    <summary>Sale stats + contract info</summary>
+    <div class="sale-stats-grid">
+      <div class="sale-stat"><span class="sale-stat-label">Total raised</span><span class="sale-stat-value" id="sale-raised">…</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Initial-phase sold</span><span class="sale-stat-value" id="sale-initial-sold">…</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Bonding-curve sold</span><span class="sale-stat-value" id="sale-curve-sold">…</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Initial phase ends</span><span class="sale-stat-value" id="sale-phase-end">…</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Your token balance</span><span class="sale-stat-value" id="sale-balance">—</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Your fLP balance</span><span class="sale-stat-value" id="sale-flp-balance">—</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Your ETH balance</span><span class="sale-stat-value" id="sale-eth">—</span></div>
+      <div class="sale-stat"><span class="sale-stat-label">Spot pool liquidity</span><span class="sale-stat-value" id="sale-pool-liq">—</span></div>
+    </div>
     <table class="sale-addr-table">
       <tr><td>Sale</td><td class="addr" id="sale-addr-table-sale">…</td></tr>
       <tr><td>Token</td><td class="addr" id="sale-addr-table-token">…</td></tr>
       <tr><td>Spot pool</td><td class="addr" id="sale-addr-table-pool">…</td></tr>
+      <tr><td>fLP seeder</td><td class="addr" id="sale-addr-table-seeder">…</td></tr>
     </table>
   </details>
 </section>

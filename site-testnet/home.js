@@ -7,11 +7,10 @@
   const REFRESH_INTERVAL = 30_000;
   const ZERO = '0x0000000000000000000000000000000000000000';
 
-  // Long-lived addresses for the "Live stats" panel.
-  const FUTARCHY_FACTORY = '0x208d0760c742a4fb46932811ec843f08752f6ab3'; // v3 stack
-  const RESOLVER         = '0xC17408966d424A3fc8fAf9F007413FA842bDB479';
-  const ORCHESTRATOR     = '0xc17D88Bf0c16c0c2F1dEBd375163Fc538aB5aBF5';
-  const OPERATOR         = '0x693E3FB46Bb36eE43C702FE94f9463df0691b43d';
+  // The Live stats panel reads from whichever instance is currently active.
+  // No hardcoded factory/resolver/orchestrator — each instance brings its own
+  // and shared.js publishes the addresses on window.activeInstance.
+  const OPERATOR = '0x693E3FB46Bb36eE43C702FE94f9463df0691b43d';
 
   const SALE_ABI = [
     'function totalAmountRaised() view returns (uint256)',
@@ -98,7 +97,7 @@
     const tbody = $$('#rankings-rows');
     if (!tbody) return;
     const all = window.allInstances || [];
-    let visible = all.filter(i => i.bootstrap || (i.sale && !isZero(i.sale)));
+    let visible = all.filter(i => i.sale && !isZero(i.sale));
     if (rankFilter === 'initial-sale')  visible = visible.filter(i => i.salePhase === 'initial-sale' || i.salePhase === 'phase-ended');
     if (rankFilter === 'bonding-curve') visible = visible.filter(i => i.salePhase === 'bonding-curve');
 
@@ -179,20 +178,29 @@
 
   // ─── Stack live stats ─────────────────────────────────────────────────
   async function refreshStackStats() {
-    const factory = new ethers.Contract(FUTARCHY_FACTORY, FACTORY_ABI, provider);
-    const resolver = new ethers.Contract(RESOLVER, RESOLVER_ABI, provider);
+    const inst = window.activeInstance;
     const [block, markets, opBal, resolverOrch] = await Promise.all([
       safe(() => provider.getBlockNumber(), null),
-      safe(() => factory.marketsCount(), null),
+      inst?.factory
+        ? safe(() => new ethers.Contract(inst.factory, FACTORY_ABI, provider).marketsCount(), null)
+        : Promise.resolve(null),
       safe(() => provider.getBalance(OPERATOR), null),
-      safe(() => resolver.orchestrator(), null),
+      inst?.resolver
+        ? safe(() => new ethers.Contract(inst.resolver, RESOLVER_ABI, provider).orchestrator(), null)
+        : Promise.resolve(null),
     ]);
     if ($$('#sep-block'))         $$('#sep-block').textContent = block ?? '—';
     if ($$('#sep-markets-count')) $$('#sep-markets-count').textContent = markets == null ? '—' : String(markets);
     if ($$('#sep-op-balance'))    $$('#sep-op-balance').textContent = opBal == null ? '—' : `${(+ethers.formatEther(opBal)).toFixed(4)} ETH`;
-    if ($$('#sep-oracle-ok'))     $$('#sep-oracle-ok').innerHTML = resolverOrch && resolverOrch.toLowerCase() === ORCHESTRATOR.toLowerCase()
-      ? '<span style="color:#56e88f">wired ✓</span>'
-      : `<span style="color:#f6c560">${fmtAddr(resolverOrch)}</span>`;
+    if ($$('#sep-oracle-ok')) {
+      if (!inst?.orchestrator || resolverOrch == null) {
+        $$('#sep-oracle-ok').textContent = '—';
+      } else {
+        $$('#sep-oracle-ok').innerHTML = resolverOrch.toLowerCase() === inst.orchestrator.toLowerCase()
+          ? '<span style="color:#56e88f">wired ✓</span>'
+          : `<span style="color:#f6c560">${fmtAddr(resolverOrch)}</span>`;
+      }
+    }
     if ($$('#sep-updated'))       $$('#sep-updated').textContent = new Date().toLocaleTimeString();
   }
 
