@@ -89,6 +89,7 @@
   const fmtToken = (units, sym) => `${(+ethers.formatUnits(units, 18)).toFixed(2)} ${sym}`;
   const fmtAddr  = (a) => (!a || isZero(a)) ? '—' : `${a.slice(0, 6)}…${a.slice(-4)}`;
   const explorerAddr = (a) => `https://sepolia.etherscan.io/address/${a}`;
+  const explorerTx = (h) => `https://sepolia.etherscan.io/tx/${h}`;
 
   async function safe(fn, fallback) { try { return await fn(); } catch (_) { return fallback; } }
 
@@ -200,6 +201,20 @@
     el.className = `sale-buy-status${kind ? ' sale-buy-status-' + kind : ''}`;
   }
 
+  function setTxStatus(text, txHash, kind) {
+    const el = $$('#sale-buy-status');
+    if (!el) return;
+    el.textContent = '';
+    el.className = `sale-buy-status${kind ? ' sale-buy-status-' + kind : ''}`;
+    el.append(document.createTextNode(`${text} `));
+    const link = document.createElement('a');
+    link.href = explorerTx(txHash);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = `${txHash.slice(0, 10)}…`;
+    el.append(link);
+  }
+
   function showConfirmCard(action, rows) {
     ctx.confirmAction = action;
     const head = $$('#sale-confirm-head');
@@ -217,12 +232,12 @@
     $$('#trade-sell-rq-btn').disabled = true;
   }
 
-  function closeConfirmCard() {
+  function closeConfirmCard(opts = {}) {
     ctx.confirmAction = null;
     $$('#sale-confirm-card').hidden = true;
     $$('#trade-buy-sale-btn').disabled = false;
     $$('#trade-sell-rq-btn').disabled = false;
-    setStatus('');
+    if (!opts.preserveStatus) setStatus('');
   }
 
   // ─── Phase helpers ───────────────────────────────────────────────────
@@ -671,10 +686,10 @@
     setStatus(`Waiting for wallet approval · up to ${fmtEth(maxIn)} for exactly ${n} ${ctx.sym}…`, 'pending');
     const router = new ethers.Contract(UNI_SWAP_ROUTER, SWAP_ROUTER_ABI, signer);
     const tx = await router.multicall([callSwap, callRefund], { value: maxIn });
-    setStatus('Mining…', 'pending');
+    setTxStatus('Mining Uniswap buy tx', tx.hash, 'pending');
     await tx.wait();
-    setStatus(`Bought ${n} ${ctx.sym} via Uniswap ✓ (unused ETH refunded)`, 'ok');
-    closeConfirmCard();
+    setTxStatus(`Bought ${n} ${ctx.sym} via Uniswap; unused ETH refunded`, tx.hash, 'ok');
+    closeConfirmCard({ preserveStatus: true });
     await refresh();
   }
 
@@ -747,10 +762,10 @@
 
     setStatus(`Waiting for wallet approval · expect ${expectedOut == null ? '—' : fmtEth(expectedOut)}…`, 'pending');
     const tx = await router.multicall([callSwap, callUnwrap]);
-    setStatus('Mining…', 'pending');
+    setTxStatus('Mining Uniswap sell tx', tx.hash, 'pending');
     await tx.wait();
-    setStatus(`Sold ${n} ${ctx.sym} via Uniswap ✓`, 'ok');
-    closeConfirmCard();
+    setTxStatus(`Sold ${n} ${ctx.sym} via Uniswap`, tx.hash, 'ok');
+    closeConfirmCard({ preserveStatus: true });
     await refresh();
   }
 
@@ -766,10 +781,10 @@
     setStatus(`Waiting for wallet approval · ${fmtEth(cost)}…`, 'pending');
     const sale = new ethers.Contract(inst.sale, SALE_ABI, signer);
     const tx = await sale.buy(n, { value: cost });
-    setStatus('Mining…', 'pending');
+    setTxStatus('Mining sale buy tx', tx.hash, 'pending');
     await tx.wait();
-    setStatus(`Bought ${n} ${ctx.sym} for ${fmtEthShort(cost)} ✓`, 'ok');
-    closeConfirmCard();
+    setTxStatus(`Bought ${n} ${ctx.sym} for ${fmtEthShort(cost)}`, tx.hash, 'ok');
+    closeConfirmCard({ preserveStatus: true });
     await refresh();
   }
 
@@ -792,9 +807,10 @@
     setStatus(`Burning ${n} ${ctx.sym}…`, 'pending');
     const sale = new ethers.Contract(inst.sale, SALE_ABI, signer);
     const txR = await sale.ragequit(n);
+    setTxStatus('Mining ragequit tx', txR.hash, 'pending');
     await txR.wait();
-    setStatus(`Burned ${n} ${ctx.sym}; treasury share sent to your wallet ✓`, 'ok');
-    closeConfirmCard();
+    setTxStatus(`Burned ${n} ${ctx.sym}; treasury share sent to your wallet`, txR.hash, 'ok');
+    closeConfirmCard({ preserveStatus: true });
     await refresh();
   }
 
