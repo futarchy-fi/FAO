@@ -17,6 +17,27 @@ const TOPICS = [
 ];
 const TARGET = 8.0;
 
+// Minimum dims a row must have to count as a "canonical" full evaluator
+// entry. Partial-dim entries (multimodal: 3 dims; worker self-scores: 1 dim)
+// would otherwise pollute the trend chart and mean computation.
+//
+// Per rubric:
+//   T1.v1=6, T1.v2=8, T2.v1=7, T2.v2=10, T3=8, T4=6, T5=6, T6=6
+// 5 dims is a permissive floor that filters out 1-3-dim partial rows but
+// keeps every real evaluator entry.
+const MIN_CANONICAL_DIMS = 5;
+
+// Evaluator names that are NOT canonical (don't count toward the trend).
+const NON_CANONICAL_EVALUATORS = new Set(['multimodal']);
+
+function isCanonicalRow(d) {
+  // Worker self-scores leak through with evaluator="worker-*".
+  const ev = (d.evaluator || 'codex').toLowerCase();
+  if (ev.startsWith('worker-')) return false;
+  if (NON_CANONICAL_EVALUATORS.has(ev)) return false;
+  return (d.scores || []).length >= MIN_CANONICAL_DIMS;
+}
+
 async function loadTopic(id) {
   // Pages-relative path: the deployed dashboard lives at /fao/index.html
   // with JSONL files at /fao/evaluations/. The dev-mode local dashboard at
@@ -26,9 +47,13 @@ async function loadTopic(id) {
   const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) return [];
   const txt = await r.text();
-  return txt.trim().split('\n').filter(Boolean).map((l) => {
+  const rows = txt.trim().split('\n').filter(Boolean).map((l) => {
     try { return JSON.parse(l); } catch (_) { return null; }
   }).filter(Boolean);
+  // Keep ONLY canonical full-evaluator rows for the trend chart.
+  // Partial rows (multimodal D5/D6/D8 only, worker self-scores) are
+  // dropped — they show a misleading mean.
+  return rows.filter(isCanonicalRow);
 }
 
 function scoreColorClass(s) {
