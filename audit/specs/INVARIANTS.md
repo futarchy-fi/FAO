@@ -197,7 +197,7 @@ _queuedCount() == k ∧ yesBond[p].amount >= baseX * (2 ^ k) ⇒ canGraduate(p) 
 
 **Cite.** `src/FutarchyArbitration.sol:227-271, 355-358`.
 
-**Status:** STATED.
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_005_graduationReachableAtThreshold`).
 
 ---
 
@@ -325,7 +325,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-ARB-002 | ✓ | ✓ (`invariant_INV_ARB_002_settledIrreversible`) | — |
 | INV-ARB-003 | ✓ | ✓ (`invariant_INV_ARB_003_bondTreasuryConserved`) | — |
 | INV-ARB-004 | ✓ | ✓ (`invariant_INV_ARB_004_strictNoBondMatching`) | — |
-| INV-ARB-005 | ✓ | — | — |
+| INV-ARB-005 | ✓ | ✓ (`invariant_INV_ARB_005_graduationReachableAtThreshold`) | — |
 | INV-ARB-006 | ✓ | ✓ (`invariant_INV_ARB_006_safetyModeThresholdGating`) | — |
 | INV-ORCH-001 | ✓ | ✓ (`invariant_INV_ORCH_001_atomicRollbackEnvelope`) | — |
 | INV-ORCH-002 | ✓ | ✓ (`invariant_INV_ORCH_002_refusesPreInitializedPool`) | — |

@@ -77,6 +77,8 @@ contract WETHMock is IERC20 {
         bool public sawAutoCreateStepViolation;
         bool public sawSettledRegression;
         bool public sawNoBondMismatch;
+        bool public sawGraduationReachabilityViolation;
+        uint256 public graduationReachabilityChecks;
 
         constructor(FutarchyArbitration arb_, address[] memory actors_) {
             ARB = arb_;
@@ -293,6 +295,64 @@ contract WETHMock is IERC20 {
             _observeSettledProposals();
         }
 
+        function graduateFromNoAtThreshold(uint256 yesActorSeed, uint256 noActorSeed) external {
+            if (ARB.activeEvaluationProposalId() != 0) return;
+
+            uint256 queuedCount = _observedQueuedCount();
+            if (queuedCount >= ARB.MAX_QUEUE()) return;
+
+            uint256 threshold = ARB.requiredYes(queuedCount);
+            uint256 oversizedNoBond = threshold * 2 + 1;
+            uint256 proposalId;
+
+            try ARB.createProposal(1) returns (uint256 createdId) {
+                proposalId = createdId;
+                proposalIds.push(proposalId);
+            } catch {
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(yesActorSeed));
+            try ARB.placeYesBond(proposalId, oversizedNoBond) {}
+            catch {
+                sawGraduationReachabilityViolation = true;
+                _observeProposal(proposalId);
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(noActorSeed));
+            try ARB.placeNoBond(proposalId) {}
+            catch {
+                sawGraduationReachabilityViolation = true;
+                _observeProposal(proposalId);
+                _observeNextProposalId();
+                _observeSettledProposals();
+                return;
+            }
+
+            vm.prank(_actor(yesActorSeed));
+            try ARB.placeYesBond(proposalId, threshold) {
+                graduationReachabilityChecks += 1;
+                FutarchyArbitration.Proposal memory p = _proposal(proposalId);
+                if (
+                    p.state != FutarchyArbitration.ProposalState.QUEUED
+                        || p.queuePosition != queuedCount + 1
+                ) {
+                    sawGraduationReachabilityViolation = true;
+                }
+            } catch {
+                sawGraduationReachabilityViolation = true;
+            }
+
+            _observeProposal(proposalId);
+            _observeNextProposalId();
+            _observeSettledProposals();
+        }
+
         function withdraw(uint256 actorSeed) external {
             address actor = _actor(actorSeed);
 
@@ -374,9 +434,18 @@ contract WETHMock is IERC20 {
                 }
             }
         }
+
+        function _observedQueuedCount() internal view returns (uint256 count) {
+            for (uint256 i = 0; i < proposalIds.length; i++) {
+                FutarchyArbitration.Proposal memory p = ARB.getProposal(proposalIds[i]);
+                if (p.state == FutarchyArbitration.ProposalState.QUEUED) {
+                    count += 1;
+                }
+            }
+        }
     }
 
-    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003, INV-ARB-004, INV-ARB-006
+    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003, INV-ARB-004, INV-ARB-005, INV-ARB-006
     /// — see audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
@@ -407,9 +476,10 @@ contract WETHMock is IERC20 {
             handler = new FutarchyArbitrationHandler(arb, actors);
             handler.settleNoByTimeout(0, 1, 1);
             handler.settleYesByTimeout(2, 1);
+            handler.graduateFromNoAtThreshold(3, 4);
             targetContract(address(handler));
 
-            bytes4[] memory selectors = new bytes4[](10);
+            bytes4[] memory selectors = new bytes4[](11);
             selectors[0] = FutarchyArbitrationHandler.createProposal.selector;
             selectors[1] = FutarchyArbitrationHandler.createExplicitProposal.selector;
             selectors[2] = FutarchyArbitrationHandler.placeYesBond.selector;
@@ -420,6 +490,7 @@ contract WETHMock is IERC20 {
             selectors[7] = FutarchyArbitrationHandler.settleNoByTimeout.selector;
             selectors[8] = FutarchyArbitrationHandler.withdraw.selector;
             selectors[9] = FutarchyArbitrationHandler.activateSafetyModeWithMatureYes.selector;
+            selectors[10] = FutarchyArbitrationHandler.graduateFromNoAtThreshold.selector;
             targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         }
 
@@ -535,6 +606,30 @@ contract WETHMock is IERC20 {
                         p.noBond.amount,
                         p.yesBond.amount,
                         "INV-ARB-004 violated: NO-state bond mismatch"
+                    );
+                }
+            }
+        }
+
+        /// @custom:spec INV-ARB-005 — YES at the current graduation threshold queues a
+        /// NO-state proposal regardless of the active NO bond size.
+        function invariant_INV_ARB_005_graduationReachableAtThreshold() public view {
+            assertGt(handler.graduationReachabilityChecks(), 0, "INV-ARB-005 not exercised");
+            assertFalse(
+                handler.sawGraduationReachabilityViolation(),
+                "INV-ARB-005 violated: threshold YES did not graduate"
+            );
+
+            uint256 proposalCount = handler.proposalCount();
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                if (p.state == FutarchyArbitration.ProposalState.QUEUED) {
+                    assertGt(p.queuePosition, 0, "INV-ARB-005 violated: queued without position");
+                    assertGe(
+                        p.yesBond.amount,
+                        arb.requiredYes(uint256(p.queuePosition) - 1),
+                        "INV-ARB-005 violated: queued below required threshold"
                     );
                 }
             }
