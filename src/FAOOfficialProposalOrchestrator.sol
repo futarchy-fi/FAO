@@ -118,6 +118,7 @@ contract FAOOfficialProposalOrchestrator {
     /// @param builderTip Wei to forward to block.coinbase on success (0 to skip).
     /// @return proposalId Index assigned by FAOFutarchyFactory.
     /// @return proposal Address of the cloned FAOFutarchyProposal contract.
+    /// @custom:spec INV-ORCH-001 — atomic 8-phase create+migrate. See audit/specs/INVARIANTS.md.
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
@@ -201,6 +202,7 @@ contract FAOOfficialProposalOrchestrator {
 
     /// @param companyWrap Wrapper derived from COMPANY_TOKEN side of the condition.
     /// @param currencyWrap Wrapper derived from CURRENCY_TOKEN side.
+    /// @custom:spec INV-ORCH-002 — refuse pre-initialized pool. See audit/specs/INVARIANTS.md.
     function _maybeCreatePoolAndInit(
         address companyWrap,
         address currencyWrap,

@@ -1,1 +1,22 @@
 # JSON Lines changelog for audit/wiki. Rows after this header use {"page","action","timestamp","lines","citations"}.
+{"page":"audit/wiki/README.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":57,"citations":28}
+{"page":"audit/wiki/_meta/how-this-wiki-is-maintained.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":58,"citations":21}
+{"page":"audit/wiki/_meta/source-of-truth-map.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":67,"citations":66}
+{"page":"audit/wiki/_meta/changelog.jsonl","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":22,"citations":0}
+{"page":"audit/wiki/00-what-is-futarchy/README.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":55,"citations":24}
+{"page":"audit/wiki/00-what-is-futarchy/prior-art.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":61,"citations":24}
+{"page":"audit/wiki/00-what-is-futarchy/why-onchain.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":63,"citations":27}
+{"page":"audit/wiki/10-fao-repo/README.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":55,"citations":33}
+{"page":"audit/wiki/10-fao-repo/architecture.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":63,"citations":35}
+{"page":"audit/wiki/10-fao-repo/lifecycle/00-create-instance.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":59,"citations":27}
+{"page":"audit/wiki/10-fao-repo/lifecycle/10-sale.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":63,"citations":25}
+{"page":"audit/wiki/10-fao-repo/lifecycle/20-spot-liquidity.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":63,"citations":30}
+{"page":"audit/wiki/10-fao-repo/lifecycle/30-proposal.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":59,"citations":26}
+{"page":"audit/wiki/10-fao-repo/lifecycle/40-promote.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":67,"citations":25}
+{"page":"audit/wiki/10-fao-repo/lifecycle/50-resolve.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":69,"citations":24}
+{"page":"audit/wiki/10-fao-repo/lifecycle/60-arbitration.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":77,"citations":31}
+{"page":"audit/wiki/10-fao-repo/invariants.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":67,"citations":40}
+{"page":"audit/wiki/10-fao-repo/deployment-history.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":69,"citations":29}
+{"page":"audit/wiki/10-fao-repo/glossary.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":17,"citations":1}
+{"page":"audit/wiki/20-agents-vision/README.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":17,"citations":3}
+{"page":"audit/wiki/30-cross-cutting/threat-model.md","action":"created","timestamp":"2026-05-22T14:05:04Z","lines":17,"citations":1}

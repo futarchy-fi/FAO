@@ -224,6 +224,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     ///      guaranteeing graduation is always reachable.
     ///      On NO → YES flip, if the bond meets the graduation threshold, the proposal
     ///      enters the evaluation queue.
+    /// @custom:spec INV-ARB-005 — graduation reachability. See audit/specs/INVARIANTS.md.
     function placeYesBond(uint256 proposalId, uint256 amount) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
@@ -275,6 +276,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     ///      First activation must be YES (INACTIVE → NO is not allowed).
     ///      Implicitly capped: any YES >= graduation threshold graduates immediately,
     ///      so NO can never match a bond at or above the threshold.
+    /// @custom:spec INV-ARB-004 — NO-bond strict matching. See audit/specs/INVARIANTS.md.
     function placeNoBond(uint256 proposalId) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
@@ -309,6 +311,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice Finalize a proposal by timeout (72h unchallenged).
     /// @dev The current leading side wins and receives both bonds.
     ///      In safety mode, YES-by-timeout is blocked to prevent low-liquidity attacks.
+    /// @custom:spec INV-ARB-002 — settlement irreversibility; INV-ARB-006 — safety-mode equivalence. See audit/specs/INVARIANTS.md.
     function finalizeByTimeout(uint256 proposalId) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
@@ -493,6 +496,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     // ═══════════════════════════════════════════════════════
     //  Internals
     // ═══════════════════════════════════════════════════════
+    /// @custom:spec INV-ARB-001 — proposal-id monotonicity; this is the only writer of exists := true. See audit/specs/INVARIANTS.md.
 
     function _initProposal(uint256 proposalId, uint256 minActivationBond)
         internal

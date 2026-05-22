@@ -29,6 +29,7 @@ contract GenericFutarchyToken is ERC20, ERC20Burnable, AccessControl {
 
     /// @notice Mint new tokens.
     /// @dev Caller must have the MINTER_ROLE.
+    /// @custom:spec INV-TOKEN-001 — totalSupply changes only via mint/burn. See audit/specs/INVARIANTS.md.
     function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         _mint(to, amount);
     }

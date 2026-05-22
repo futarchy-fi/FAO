@@ -126,6 +126,7 @@ contract InstanceSale is ReentrancyGuard {
     ///         balance is excluded so freshly-minted-for-LP tokens (held by
     ///         the sale right before they leave via `seedLiquidityManager`)
     ///         don't dilute the per-token ETH share.
+    /// @custom:spec INV-SALE-001 — see `audit/specs/INVARIANTS.md`.
     function effectiveSupply() public view returns (uint256) {
         uint256 totalSupply = TOKEN.totalSupply();
         uint256 saleBal = TOKEN.balanceOf(address(this));
@@ -167,6 +168,9 @@ contract InstanceSale is ReentrancyGuard {
         emit Purchase(msg.sender, numTokens, costWei);
     }
 
+    /// @custom:spec INV-SALE-004 — see `audit/specs/INVARIANTS.md`. initialPhaseFinalized
+    ///       is set exactly once (false → true). initialNetSale is frozen on
+    ///       the same write.
     function _finalizeInitialPhaseIfNeeded() internal {
         if (
             !initialPhaseFinalized
@@ -185,6 +189,8 @@ contract InstanceSale is ReentrancyGuard {
     ///         whitelisted ERC20 in `ragequitTokens[]`.
     /// @dev    Caller must `token.approve(sale, numTokens * 1e18)` first.
     ///         The sale `transferFrom`s the user's tokens, then burns them.
+    /// @custom:spec INV-SALE-002 (pro-rata payout) + INV-SALE-003 (guards) —
+    ///         see `audit/specs/INVARIANTS.md`.
     function ragequit(uint256 numTokens) external nonReentrant {
         if (numTokens == 0) revert ZeroNumTokens();
         if (msg.sender == address(this)) revert CannotRagequitSelf();

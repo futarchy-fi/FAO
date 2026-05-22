@@ -88,6 +88,7 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     }
 
     /// @inheritdoc IFAOFutarchyTwapResolver
+    /// @custom:spec INV-TWAP-001 — anchor set exactly once; window fixity. See audit/specs/INVARIANTS.md.
     function bindProposal(
         address proposal,
         address yesPool,
@@ -115,6 +116,7 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     }
 
     /// @inheritdoc IFAOFutarchyOracle
+    /// @custom:spec INV-TWAP-002 — resolution determinism. See audit/specs/INVARIANTS.md.
     function resolve(address proposal) external {
         Binding storage b = bindings[proposal];
         if (b.anchorTimestamp == 0) revert NotBound(proposal);
