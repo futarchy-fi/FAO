@@ -326,7 +326,7 @@ contract WETHMock is IERC20 {
         }
     }
 
-    /// @custom:spec INV-ARB-001, INV-ARB-002 — see audit/specs/INVARIANTS.md.
+    /// @custom:spec INV-ARB-001, INV-ARB-002, INV-ARB-003 — see audit/specs/INVARIANTS.md.
     contract FutarchyArbitrationInvariantTest is StdInvariant, Test {
         address internal constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
@@ -442,15 +442,28 @@ contract WETHMock is IERC20 {
             assertEq(sum, initialWethSupply);
         }
 
-        /// @dev Existing weaker accounting check for INV-ARB-003 until the equality invariant
-        /// lands.
-        function invariant_contract_balance_equals_escrow_plus_withdrawable() public view {
-            uint256 totalWithdrawable;
+        /// @custom:spec INV-ARB-003 — WETH balance equals withdrawables plus unsettled bonds.
+        function invariant_INV_ARB_003_bondTreasuryConserved() public view {
+            uint256 expectedBalance;
+
             uint256 actorCount = handler.actorCount();
             for (uint256 i = 0; i < actorCount; i++) {
-                totalWithdrawable += arb.withdrawable(handler.actorAt(i));
+                expectedBalance += arb.withdrawable(handler.actorAt(i));
             }
 
-            assertGe(weth.balanceOf(address(arb)), totalWithdrawable);
+            uint256 proposalCount = handler.proposalCount();
+            for (uint256 i = 0; i < proposalCount; i++) {
+                uint256 proposalId = handler.proposalIdAt(i);
+                FutarchyArbitration.Proposal memory p = arb.getProposal(proposalId);
+                if (!p.settled) {
+                    expectedBalance += p.yesBond.amount + p.noBond.amount;
+                }
+            }
+
+            assertEq(
+                weth.balanceOf(address(arb)),
+                expectedBalance,
+                "INV-ARB-003 violated: WETH balance != escrow + withdrawable"
+            );
         }
     }

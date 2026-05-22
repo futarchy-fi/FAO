@@ -164,9 +164,9 @@ WETH.balanceOf(arbitration)
    + Σ_{p unsettled} (yesBond[p].amount + noBond[p].amount)
 ```
 
-**Cite.** `src/FutarchyArbitration.sol` + `test/FutarchyArbitration.invariants.t.sol:170-183`.
+**Cite.** `src/FutarchyArbitration.sol` + `test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_003_bondTreasuryConserved`.
 
-**Status:** TESTED (currently as `>=`; the spec strengthens it to `==`).
+**Status:** TESTED (`test/FutarchyArbitration.invariants.t.sol::invariant_INV_ARB_003_bondTreasuryConserved`).
 
 ---
 
@@ -323,7 +323,7 @@ A worker pass in Phase 6 will sweep `src/` and `test/` and attach these tags.
 | INV-SALE-004 | ✓ | partial | — |
 | INV-ARB-001 | ✓ | ✓ (`invariant_INV_ARB_001_nextProposalIdMonotonic`) | — |
 | INV-ARB-002 | ✓ | ✓ (`invariant_INV_ARB_002_settledIrreversible`) | — |
-| INV-ARB-003 | ✓ | ✓ (`test/FutarchyArbitration.invariants.t.sol`, currently as `>=`) | — |
+| INV-ARB-003 | ✓ | ✓ (`invariant_INV_ARB_003_bondTreasuryConserved`) | — |
 | INV-ARB-004 | ✓ | — | — |
 | INV-ARB-005 | ✓ | — | — |
 | INV-ARB-006 | ✓ | — | — |
