@@ -1,0 +1,82 @@
+name: Symbolic checks
+
+# Runs the SMTChecker (built into solc, slow) + Halmos (Foundry-test-shaped
+# symbolic executor) on a nightly cadence + on demand. Failures are
+# informational on schedule, blocking on the `pull_request` event for any
+# PR that touches an `INV-*`-tagged contract.
+#
+# Topic-4 D6 (tooling diversity) lift — adds two execution engines beyond
+# the Foundry-fuzz default.
+
+permissions: {}
+
+on:
+  schedule:
+    - cron: "23 4 * * *"          # daily 04:23 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/InstanceSale.sol"
+      - "src/FAOTwapResolver.sol"
+      - "src/FAOOfficialProposalOrchestrator.sol"
+      - "src/GenericFutarchyToken.sol"
+      - "src/FutarchyArbitration.sol"
+
+jobs:
+  smtchecker:
+    name: solc SMTChecker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build (smtchecker profile)
+        env:
+          FOUNDRY_PROFILE: smtchecker
+        # solc emits warnings on SMTChecker reachability failures — we
+        # tee + fail on the explicit "Assertion violation" lines.
+        run: |
+          set -o pipefail
+          forge build --skip script 2>&1 | tee smt.log
+          if grep -qE "Assertion violation|CHC: Counterexample" smt.log; then
+            echo "SMTChecker found a violation"
+            exit 1
+          fi
+
+  halmos:
+    name: Halmos symbolic
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Halmos
+        run: pip install --upgrade halmos
+
+      - name: Run Halmos on invariant tests
+        env:
+          FOUNDRY_PROFILE: halmos
+        # Halmos picks up `--match-test` patterns like forge.
+        # We narrow to the INV_* invariants so the symbolic engine doesn't
+        # try to explore the entire test suite on every run.
+        run: |
+          halmos --match-test 'invariant_INV_' --solver-timeout-assertion 30000 --loop 3

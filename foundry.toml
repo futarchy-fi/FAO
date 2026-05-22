@@ -40,6 +40,24 @@ fuzz = { runs = 1000 }                          # default 256; CI gets more cycl
 invariant = { runs = 100, depth = 50 }          # exercise the invariant suites
 fail_on_revert = true                            # surface unhandled reverts as failures
 
+# Verifier-friendly profile: opts into solc's built-in SMTChecker for the
+# top-level invariant pass. Slower; intended as a nightly job + manual
+# investigation aid, not per-PR. Lifts Topic 3 D7 (verifiability hooks).
+[profile.smtchecker]
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+model_checker = { engine = "chc", timeout = 30_000, targets = ["assert", "underflow", "overflow", "divByZero", "balance"], contracts = { "src/InstanceSale.sol" = ["InstanceSale"], "src/FAOTwapResolver.sol" = ["FAOTwapResolver"] } }
+
+# Halmos symbolic test profile. Halmos transpiles Foundry tests to
+# symbolic execution. Run with: `halmos --match-test invariant_*`.
+# (Halmos itself is invoked outside foundry; this profile is here so the
+# regular forge build emits the artifacts halmos consumes.)
+[profile.halmos]
+via_ir = true
+optimizer = false                             # halmos prefers unoptimized bytecode
+optimizer_runs = 0
+
 [rpc_endpoints]
 gnosis = "https://rpc.gnosischain.com"
 
