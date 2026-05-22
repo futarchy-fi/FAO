@@ -18,8 +18,12 @@ on:
       - "deployments.schema.json"
       - "site-testnet/deployments.json"
       - "site-testnet/abis/**"
+      - "site-ops/**"
+      - "audit/evaluations/**"
       - "scripts/check-deployments-sync.sh"
+      - "scripts/check-ops-sync.sh"
       - "scripts/sync-abis.sh"
+      - "scripts/sync-ops-dashboard.sh"
       - "scripts/validate-deployments.sh"
       - ".github/workflows/static-analysis.yml"
   pull_request:
@@ -44,6 +48,18 @@ jobs:
         run: bash scripts/check-deployments-sync.sh
       - name: Assert ABI bindings match forge output
         run: bash scripts/sync-abis.sh --check
+
+  ops-dashboard-sync:
+    name: ops dashboard sync (T5.D4)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Assert ops dashboard data copy matches audit source
+        run: bash scripts/check-ops-sync.sh
 
   slither:
     name: Slither
