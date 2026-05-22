@@ -1,18 +1,103 @@
 {
-  "generatedAt": "2026-05-22T17:54:31Z",
+  "generatedAt": "2026-05-22T17:59:04Z",
+  "renderer": "playwright-chromium",
   "siteUrl": "http://127.0.0.1:8770",
   "screenshots": [
-    {"label":"docs","viewport":"desktop","url":"http://127.0.0.1:8770/docs","file":"audit/screenshots/docs-desktop.png","sha":"c8bbd79ca24893456425f06f24768831d32812b04266100d179956c58938ff08","bytes":3693180},
-    {"label":"docs","viewport":"mobile","url":"http://127.0.0.1:8770/docs","file":"audit/screenshots/docs-mobile.png","sha":"a3361fb1f3add09ee23d2066357d136352696344adfd26b96ecc3a8bfacbca6a","bytes":1319709},
-    {"label":"contracts","viewport":"desktop","url":"http://127.0.0.1:8770/contracts","file":"audit/screenshots/contracts-desktop.png","sha":"12e1f92717a47719fd31938b6db40e615371d8690064fdf28587fb6cf74864d5","bytes":3693180},
-    {"label":"contracts","viewport":"mobile","url":"http://127.0.0.1:8770/contracts","file":"audit/screenshots/contracts-mobile.png","sha":"ddc776424033bf188d0a5e99d061b676195fc50a6f79d6424d4f98a9abf5e022","bytes":1319709},
-    {"label":"proposals","viewport":"desktop","url":"http://127.0.0.1:8770/proposals","file":"audit/screenshots/proposals-desktop.png","sha":"eb79be679b19646fa26ca5b5012937f0b04c6f0fe57c64547a4ab4a2f21fdf78","bytes":3693180},
-    {"label":"proposals","viewport":"mobile","url":"http://127.0.0.1:8770/proposals","file":"audit/screenshots/proposals-mobile.png","sha":"6b83243b844f75c7371b2df95e693c7f4467702ddf147c6c58e9c0755b8fceaa","bytes":1319709},
-    {"label":"sale","viewport":"desktop","url":"http://127.0.0.1:8770/sale","file":"audit/screenshots/sale-desktop.png","sha":"f7df07c7516ecb73b288459da154a422db6525a7bd00623cb1db0ad00b8f5412","bytes":3693180},
-    {"label":"sale","viewport":"mobile","url":"http://127.0.0.1:8770/sale","file":"audit/screenshots/sale-mobile.png","sha":"a188d9fcc16922bafc4da5f13e8a6ecbb3ebbdfb589ec6078fdb40f60d714359","bytes":1319709},
-    {"label":"home","viewport":"desktop","url":"http://127.0.0.1:8770/","file":"audit/screenshots/home-desktop.png","sha":"ee0f866c65e1ee20fbd74d7d494740cbc950794c04ba19798cbf33842b0f97ee","bytes":3693180},
-    {"label":"home","viewport":"mobile","url":"http://127.0.0.1:8770/","file":"audit/screenshots/home-mobile.png","sha":"50ef70fdf9f6f990bf0ee1c39289a32123a01eaae2bd1fb6b52cf27b833d85bc","bytes":1319709},
-    {"label":"create","viewport":"desktop","url":"http://127.0.0.1:8770/create","file":"audit/screenshots/create-desktop.png","sha":"f799e7876f86f91c42c2ca6194ce5e8442d27f49af9a3863677771f4979b167d","bytes":3693180},
-    {"label":"create","viewport":"mobile","url":"http://127.0.0.1:8770/create","file":"audit/screenshots/create-mobile.png","sha":"655cb4236b602e939b038da0455a4e546bcac24390ca6aa273a933b0b95f9f95","bytes":1319709}
+    {
+      "label": "home",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/",
+      "file": "audit/screenshots/home-desktop.png",
+      "sha": "3c3f16abe8895eed2086bf57fd091cd6ec39d8066a6ba31139b34db4c26921a6",
+      "bytes": 58452
+    },
+    {
+      "label": "home",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/",
+      "file": "audit/screenshots/home-mobile.png",
+      "sha": "93ff43e66833313245708a20b8944577e7d707e1dc88d2b79ad7778bca7087a2",
+      "bytes": 48846
+    },
+    {
+      "label": "sale",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/sale",
+      "file": "audit/screenshots/sale-desktop.png",
+      "sha": "1058ffaa6b4432992676b9c2ca6ee35d22ff7c7f5333c4bd6d409d076c8f958f",
+      "bytes": 55893
+    },
+    {
+      "label": "sale",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/sale",
+      "file": "audit/screenshots/sale-mobile.png",
+      "sha": "bbb2e257f753a74b001471d8ca7774db8066863fb1c83b78e1b00dd9bf970dd0",
+      "bytes": 37920
+    },
+    {
+      "label": "proposals",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/proposals",
+      "file": "audit/screenshots/proposals-desktop.png",
+      "sha": "0e5cc37cfe7f83cc2fc5c0bf6f5b7d382afbdbd086581de66942782e5c531677",
+      "bytes": 67905
+    },
+    {
+      "label": "proposals",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/proposals",
+      "file": "audit/screenshots/proposals-mobile.png",
+      "sha": "e6c5ac8f51544f1d07a965578e2e105c7c3c3875fa64b0c41c1b2db6099c71db",
+      "bytes": 55209
+    },
+    {
+      "label": "create",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/create",
+      "file": "audit/screenshots/create-desktop.png",
+      "sha": "d096248ccc79e3526d8684245a6846cb7d404e4c59159edf60ca221812e5bb13",
+      "bytes": 55359
+    },
+    {
+      "label": "create",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/create",
+      "file": "audit/screenshots/create-mobile.png",
+      "sha": "a35cdbd716a5e4d104389c2866fb9b0a83b2452eaa64aef861ff2f8aee9c610c",
+      "bytes": 41978
+    },
+    {
+      "label": "contracts",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/contracts",
+      "file": "audit/screenshots/contracts-desktop.png",
+      "sha": "334d80f76154189a109982d0f4331eb17dbfb19dc0f19f6cd30e5e7cc6d3190d",
+      "bytes": 62505
+    },
+    {
+      "label": "contracts",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/contracts",
+      "file": "audit/screenshots/contracts-mobile.png",
+      "sha": "2dfd9a1c5909f47daa8d1ffb1b677d7d247bef0f63b252131e56107fb8e052b2",
+      "bytes": 56102
+    },
+    {
+      "label": "docs",
+      "viewport": "desktop",
+      "url": "http://127.0.0.1:8770/docs",
+      "file": "audit/screenshots/docs-desktop.png",
+      "sha": "70ea0d0c9fb1c43584272edea552191d990a50ad2d3d561bc19cbe5a579c8053",
+      "bytes": 48090
+    },
+    {
+      "label": "docs",
+      "viewport": "mobile",
+      "url": "http://127.0.0.1:8770/docs",
+      "file": "audit/screenshots/docs-mobile.png",
+      "sha": "9e0353eeac9afd60666c1bdf8226eaaccf1390f570ff01f1fcf55722e13c1d87",
+      "bytes": 40307
+    }
   ]
 }
