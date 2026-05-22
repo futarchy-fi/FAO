@@ -62,3 +62,9 @@
 [2026-05-22T14:29:07-03:00] F2-buy-via-sale happy path now passes against a persistent Anvil fork: the spec creates a fresh instance through the UI, buys 1 token through the sale page using the shared Anvil wallet fixture, and asserts totalAmountRaised plus buyer ERC20 balance deltas. Command: npm run e2e -- --project=wallet --grep "F2-buy-via-sale happy path" -> 1 passed.
 
 [2026-05-22T14:29:20-03:00] Targeted Forge verification for F2 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
+
+[2026-05-22T14:29:54-03:00] Committed F2 sale-buy wallet path as 43074d0. Continuing to F3-ragequit with the shared Anvil wallet fixture.
+
+[2026-05-22T14:31:34-03:00] F3-ragequit happy path now passes against the persistent Anvil fork: the spec creates a fresh instance through the UI, buys 2 tokens, ragequits 1, and asserts token balance, totalSupply, and sale ETH deltas. Command: npm run e2e -- --project=wallet --grep "F3-ragequit happy path" -> 1 passed.
+
+[2026-05-22T14:31:46-03:00] Targeted Forge verification for F3 commit passed: PATH=/home/kelvin/.foundry/bin:$PATH forge test --match-contract FAOSmokeTest ran 1 suite / 1 test, 0 failed.
