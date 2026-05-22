@@ -64,11 +64,89 @@ jobs:
           path: audit/axe/
           retention-days: 14
 
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts-read-only
+          path: test-results/
+          retention-days: 14
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-read-only
+          path: playwright-report/
+          retention-days: 14
+
+  visual-snapshots:
+    name: e2e (visual snapshots)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --package-lock=false
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start testnet static site
+        run: |
+          nohup npm run dev > /tmp/fao-site.log 2>&1 &
+          node <<'NODE'
+          const url = 'http://127.0.0.1:8766/';
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline) {
+            try {
+              const res = await fetch(url);
+              if (res.ok) process.exit(0);
+            } catch (_) {}
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+          console.error(`Timed out waiting for ${url}`);
+          process.exit(1);
+          NODE
+
+      - name: Run visual snapshot suite
+        run: npx playwright test --project=read-only tests-e2e/journeys/snapshots.read-only.spec.ts --reporter=github,html
+        env:
+          FAO_ENABLE_VISUAL_SNAPSHOTS: '1'
+          FAO_SITE_URL: http://127.0.0.1:8766
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts-visual-snapshots
+          path: test-results/
+          retention-days: 14
+
+      - name: Upload static site log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fao-site-log-visual-snapshots
+          path: /tmp/fao-site.log
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-visual-snapshots
           path: playwright-report/
           retention-days: 14
 

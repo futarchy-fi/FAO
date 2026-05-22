@@ -5,6 +5,8 @@
  */
 import { expect, test } from '@playwright/test';
 
+test.skip(process.env.FAO_ENABLE_VISUAL_SNAPSHOTS !== '1', 'Visual snapshots run in the dedicated local-site CI gate.');
+
 const PAGES = [
   { label: 'home', path: '/', readyTestId: 'rankings-rows' },
   { label: 'sale', path: '/sale.html', readyTestId: 'sale-decision-strip' },

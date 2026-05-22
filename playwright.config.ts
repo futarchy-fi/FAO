@@ -2,9 +2,11 @@
 /**
  * Playwright config for the FAO testnet site.
  *
- * Targets two contexts:
+ * Targets three contexts:
  *   - `read-only` — visits the live deploy, no wallet, no transactions.
  *     Covers UI invariants visible without signing.
+ *   - `fork` — runs read-only specs against a local Anvil fork by seeding
+ *     localStorage.faoForkMode before navigation.
  *   - `wallet` — drives MetaMask via Synpress against an Anvil fork of
  *     Sepolia. Required for any test that needs to sign a tx
  *     (buy, ragequit, create-proposal, place-bond, etc).
@@ -14,9 +16,9 @@
  * against the same Anvil RPC — never trust only DOM toasts.
  */
 
-import { defineConfig, devices } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { defineConfig, devices } from '@playwright/test';
 
 const SITE_URL = process.env.FAO_SITE_URL || 'https://fao-testnet.pages.dev';
 const RPC_URL  = process.env.FAO_RPC_URL  || 'http://127.0.0.1:8545';   // Anvil fork
@@ -66,6 +68,18 @@ export default defineConfig({
       name: 'read-only',
       use: { ...devices['Desktop Chrome'] },
       testMatch: /.*\.read-only\.spec\.ts/,
+    },
+    {
+      name: 'fork',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: FORK_STORAGE_STATE,
+      },
+      testMatch: /.*\.read-only\.spec\.ts/,
+      testIgnore: [
+        /.*failure-modes\.read-only\.spec\.ts/,
+        /.*snapshots\.read-only\.spec\.ts/,
+      ],
     },
     {
       name: 'wallet',
