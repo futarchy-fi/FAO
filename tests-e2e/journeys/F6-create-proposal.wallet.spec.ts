@@ -31,7 +31,7 @@ async function createInstanceThroughUi(page, metamask) {
   const suffix = Date.now().toString(36).slice(-6).toUpperCase();
   const symbol = `F6${suffix}`.slice(0, 10);
 
-  await page.goto('/create');
+  await page.goto('/create.html');
   await expect(page).toHaveURL(/\/create/);
   await expect(createField(page, 'create-name', 'ci-name')).toBeVisible();
 
@@ -49,6 +49,10 @@ async function createInstanceThroughUi(page, metamask) {
 
   const status = createStatus(page);
   await page.getByTestId('create-submit').or(page.getByRole('button', { name: /^create futarchy$/i })).first().click();
+  await expect(page.getByTestId('confirm-card-create').or(page.locator('#confirm-card-create')).first()).toBeVisible();
+  await confirmOneTransaction(page, metamask, () => (
+    page.getByTestId('confirm-card-create-confirm').or(page.locator('#confirm-card-create-confirm')).first().click()
+  ));
   await expect(status).toContainText(/Step 1\/2/i, { timeout: 15_000 });
   await expect(status).toContainText(/Step 2\/2/i, { timeout: 120_000 });
   await expect(status).toContainText(/Done/i, { timeout: 180_000 });
@@ -78,8 +82,12 @@ test('F6-create-proposal happy path', async ({ page, metamask }) => {
   const suffix = Date.now().toString(36).slice(-6).toUpperCase();
   const proposalName = `E2E proposal ${suffix}`;
 
-  await page.goto(`/proposals?inst=${instanceId}`);
+  await page.goto(`/proposals.html?inst=${instanceId}`);
   await expect(page.locator('#sep-proposals')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(
+    () => page.evaluate(() => window.activeInstance?.id ?? null),
+    { timeout: 30_000, message: 'proposals page should load the newly-created active instance before submitting' },
+  ).toBe(instanceId);
 
   await connectTopbarWallet(page, metamask);
   if (!(await page.locator('#create-submit').isEnabled().catch(() => false))) {
@@ -92,11 +100,10 @@ test('F6-create-proposal happy path', async ({ page, metamask }) => {
 
   await page.locator('#create-submit').click();
   const confirmCard = page.getByTestId('confirm-card-proposal').or(page.locator('#confirm-card-proposal')).first();
-  if (await confirmCard.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await confirmOneTransaction(page, metamask, () => (
-      page.getByTestId('confirm-card-proposal-confirm').or(page.locator('#confirm-card-proposal-confirm')).first().click()
-    ));
-  }
+  await expect(confirmCard).toBeVisible({ timeout: 15_000 });
+  await confirmOneTransaction(page, metamask, () => (
+    page.getByTestId('confirm-card-proposal-confirm').or(page.locator('#confirm-card-proposal-confirm')).first().click()
+  ));
 
   await expect.poll(() => readContract({
     address: inst.factory,

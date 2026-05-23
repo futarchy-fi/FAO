@@ -1,18 +1,85 @@
 /**
- * F8-place-no-bond scaffold — see audit/rubrics/topic-2-interface-testing.md.
+ * F8 — Place a NO bond to flip a YES proposal.
  *
- * Counter-bond NO, exactly 2× the current YES. Persona: a NO voter. Asserts noBond.amount == 2 * yesBond.amount (INV-ARB-004).
- *
- * Currently `test.fixme()` until Synpress is wired into the project. Once
- * wired, the body asserts both the DOM result AND on-chain effect via
- * viem's createPublicClient.
+ * Persona: counter-bonder matching the current YES bond in WETH.
  */
-// @ts-nocheck — runs only after npm install.
-import { test, expect } from '@playwright/test';
 
-test.fixme('F8-place-no-bond happy path', async ({ page }) => {
-  await page.goto('/');
-  // TODO: implement happy path per the description above.
+// @ts-nocheck — runs only after npm install.
+import {
+  activeInstance,
+  arbitrationAbi,
+  ensureWalletCache,
+  expect,
+  readContract,
+  test,
+  unpackArbitrationProposal,
+  ZERO,
+} from '../wallet.fixture';
+import {
+  createInstanceThroughUi,
+  createProposalThroughUi,
+  placeNoBondThroughUi,
+  placeYesBondThroughUi,
+  proposalCard,
+} from './wallet-journey-helpers';
+
+test.setTimeout(420_000);
+
+test.beforeAll(async () => {
+  await ensureWalletCache();
+});
+
+test('F8-place-no-bond happy path', async ({ page, metamask }) => {
+  const { id } = await createInstanceThroughUi(page, metamask, 'F8');
+  const inst = {
+    id,
+    ...(await activeInstance(id)),
+  };
+  expect(inst.arbitration.toLowerCase()).not.toBe(ZERO);
+
+  const { proposalName, proposalId } = await createProposalThroughUi(page, metamask, inst, 'F8');
+  await placeYesBondThroughUi(page, metamask, proposalName);
+
+  await expect.poll(async () => unpackArbitrationProposal(await readContract({
+    address: inst.arbitration,
+    abi: arbitrationAbi,
+    functionName: 'getProposal',
+    args: [proposalId],
+  })), {
+    timeout: 60_000,
+    message: 'setup YES bond should land before placing NO',
+  }).toMatchObject({
+    state: 1,
+    exists: true,
+  });
+  const afterYes = unpackArbitrationProposal(await readContract({
+    address: inst.arbitration,
+    abi: arbitrationAbi,
+    functionName: 'getProposal',
+    args: [proposalId],
+  }));
+
+  await placeNoBondThroughUi(page, metamask, proposalName);
+
+  await expect.poll(async () => unpackArbitrationProposal(await readContract({
+    address: inst.arbitration,
+    abi: arbitrationAbi,
+    functionName: 'getProposal',
+    args: [proposalId],
+  })), {
+    timeout: 60_000,
+    message: 'arbitration proposal should move to NO with a matching bond',
+  }).toMatchObject({
+    state: 2,
+    exists: true,
+    noBond: {
+      amount: afterYes.yesBond.amount,
+    },
+  });
+
+  const card = proposalCard(page, proposalName);
+  await expect(card.locator('.bond-state')).toContainText(/NO/i, { timeout: 30_000 });
+  await expect(card.locator('.bond-panel')).toContainText('NO bond');
 });
 
 test.fixme('F8-place-no-bond — wallet rejection', async ({ page }) => {

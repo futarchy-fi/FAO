@@ -1,18 +1,71 @@
 /**
- * F7-place-yes-bond scaffold — see audit/rubrics/topic-2-interface-testing.md.
+ * F7 — Place a YES bond on a proposal.
  *
- * Place a YES bond on a proposal, escalating queue if needed. Persona: a YES voter. Asserts yesBond.amount + ensure-WETH-balance wrap path.
- *
- * Currently `test.fixme()` until Synpress is wired into the project. Once
- * wired, the body asserts both the DOM result AND on-chain effect via
- * viem's createPublicClient.
+ * Persona: bonder escalating a candidate proposal through the bond panel.
  */
-// @ts-nocheck — runs only after npm install.
-import { test, expect } from '@playwright/test';
 
-test.fixme('F7-place-yes-bond happy path', async ({ page }) => {
-  await page.goto('/');
-  // TODO: implement happy path per the description above.
+// @ts-nocheck — runs only after npm install.
+import {
+  activeInstance,
+  arbitrationAbi,
+  ensureWalletCache,
+  expect,
+  readContract,
+  test,
+  unpackArbitrationProposal,
+  ZERO,
+} from '../wallet.fixture';
+import {
+  createInstanceThroughUi,
+  createProposalThroughUi,
+  placeYesBondThroughUi,
+  proposalCard,
+} from './wallet-journey-helpers';
+
+test.setTimeout(360_000);
+
+test.beforeAll(async () => {
+  await ensureWalletCache();
+});
+
+test('F7-place-yes-bond happy path', async ({ page, metamask }) => {
+  const { id } = await createInstanceThroughUi(page, metamask, 'F7');
+  const inst = {
+    id,
+    ...(await activeInstance(id)),
+  };
+  expect(inst.arbitration.toLowerCase()).not.toBe(ZERO);
+
+  const { proposalName, proposal, proposalId } = await createProposalThroughUi(page, metamask, inst, 'F7');
+  const baseX = await readContract({
+    address: inst.arbitration,
+    abi: arbitrationAbi,
+    functionName: 'baseX',
+  });
+
+  await placeYesBondThroughUi(page, metamask, proposalName);
+
+  await expect.poll(async () => unpackArbitrationProposal(await readContract({
+    address: inst.arbitration,
+    abi: arbitrationAbi,
+    functionName: 'getProposal',
+    args: [proposalId],
+  })), {
+    timeout: 60_000,
+    message: 'arbitration proposal should move to YES with the base bond',
+  }).toMatchObject({
+    state: 1,
+    exists: true,
+    yesBond: {
+      amount: baseX,
+    },
+  });
+
+  const card = proposalCard(page, proposalName);
+  await expect(card.locator('.bond-state')).toContainText(/YES/i, { timeout: 30_000 });
+  await expect(card.locator('.bond-panel')).toContainText('YES bond');
+  await expect(card.locator('.bond-panel')).toContainText('0.001 WETH');
+  await expect(card.locator('.sep-card-title a')).toHaveAttribute('href', new RegExp(proposal.slice(2), 'i'));
 });
 
 test.fixme('F7-place-yes-bond — wallet rejection', async ({ page }) => {

@@ -48,6 +48,11 @@ export const factoryAbi = parseAbi([
   'function proposals(uint256 id) view returns (address)',
 ]);
 
+export const arbitrationAbi = parseAbi([
+  'function baseX() view returns (uint256)',
+  'function getProposal(uint256 proposalId) view returns ((uint256 minActivationBond, (address bidder, uint256 amount) yesBond, (address bidder, uint256 amount) noBond, uint8 state, uint64 lastStateChangeAt, bool settled, bool accepted, uint32 queuePosition, bool exists))',
+]);
+
 async function routeJsonRpcToFork(route) {
   const request = route.request();
   const postData = request.postData();
@@ -127,6 +132,24 @@ export function unpackInstance(instance) {
   };
 }
 
+export function unpackArbitrationProposal(proposal) {
+  const yesBond = proposal.yesBond ?? proposal[1];
+  const noBond = proposal.noBond ?? proposal[2];
+  return {
+    minActivationBond: proposal.minActivationBond ?? proposal[0],
+    yesBond: {
+      bidder: yesBond.bidder ?? yesBond[0],
+      amount: yesBond.amount ?? yesBond[1],
+    },
+    noBond: {
+      bidder: noBond.bidder ?? noBond[0],
+      amount: noBond.amount ?? noBond[1],
+    },
+    state: Number(proposal.state ?? proposal[3]),
+    exists: proposal.exists ?? proposal[8],
+  };
+}
+
 export async function activeInstance(id = 0) {
   return unpackInstance(await readInstance(id));
 }
@@ -135,6 +158,12 @@ async function injectAnvilWallet(page) {
   await page.addInitScript(({ rpcUrl, account }) => {
     window.__faoInstallAnvilWallet = ({ rpcUrl: nextRpcUrl, account: nextAccount }) => {
       const listeners = new Map();
+      const providerInfo = {
+        uuid: 'fao:anvil-wallet',
+        rdns: 'fi.futarchy.anvil',
+        name: 'Anvil Test Wallet',
+        icon: '',
+      };
       const emit = (event, payload) => {
         for (const listener of listeners.get(event) || []) listener(payload);
       };
@@ -155,6 +184,7 @@ async function injectAnvilWallet(page) {
       };
       const provider = {
         isMetaMask: true,
+        isFaoAnvilWallet: true,
         selectedAddress: nextAccount,
         chainId: '0xaa36a7',
         request: async ({ method, params = [] }) => {
@@ -183,7 +213,16 @@ async function injectAnvilWallet(page) {
         },
       };
 
+      const announceProvider = () => {
+        window.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
+          detail: { info: providerInfo, provider },
+        }));
+      };
+
       try {
+        localStorage.removeItem('faoWalletSession');
+        localStorage.setItem('faoSelectedWalletProvider', JSON.stringify(providerInfo));
+        localStorage.setItem('faoForkMode', '1');
         delete window.ethereum;
       } catch (_) {}
       try {
@@ -195,7 +234,11 @@ async function injectAnvilWallet(page) {
       } catch (_) {
         window.ethereum = provider;
       }
+      window.addEventListener('eip6963:requestProvider', announceProvider);
       window.dispatchEvent(new Event('ethereum#initialized'));
+      announceProvider();
+      setTimeout(announceProvider, 0);
+      setTimeout(announceProvider, 100);
       return provider.selectedAddress;
     };
 

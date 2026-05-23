@@ -38,7 +38,7 @@ async function createInstanceThroughUi(page, metamask) {
   const suffix = Date.now().toString(36).slice(-6).toUpperCase();
   const symbol = `F3${suffix}`.slice(0, 10);
 
-  await page.goto('/create');
+  await page.goto('/create.html');
   await expect(page).toHaveURL(/\/create/);
   await expect(createField(page, 'create-name', 'ci-name')).toBeVisible();
 
@@ -56,6 +56,10 @@ async function createInstanceThroughUi(page, metamask) {
 
   const status = createStatus(page);
   await page.getByTestId('create-submit').or(page.getByRole('button', { name: /^create futarchy$/i })).first().click();
+  await expect(page.getByTestId('confirm-card-create').or(page.locator('#confirm-card-create')).first()).toBeVisible();
+  await confirmOneTransaction(page, metamask, () => (
+    page.getByTestId('confirm-card-create-confirm').or(page.locator('#confirm-card-create-confirm')).first().click()
+  ));
   await expect(status).toContainText(/Step 1\/2/i, { timeout: 15_000 });
   await expect(status).toContainText(/Step 2\/2/i, { timeout: 120_000 });
   await expect(status).toContainText(/Done/i, { timeout: 180_000 });
@@ -100,7 +104,7 @@ test('F3-ragequit happy path', async ({ page, metamask }) => {
   const instanceId = process.env.FAO_TEST_INSTANCE_ID == null ? await createInstanceThroughUi(page, metamask) : INSTANCE_ID;
   const inst = await activeInstance(instanceId);
 
-  await page.goto(`/sale?inst=${instanceId}`);
+  await page.goto(`/sale.html?inst=${instanceId}`);
   await expect(page.locator('#sale-hero-symbol')).toContainText(inst.symbol, { timeout: 30_000 });
 
   const wallet = await connectTopbarWallet(page, metamask);
