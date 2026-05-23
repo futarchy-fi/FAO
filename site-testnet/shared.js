@@ -594,7 +594,7 @@
           </a>
           <ul class="topbar-links">
             ${links.map(l => `
-              <li><a href="${l.href}" data-topbar-link="${l.key}" class="${l.active ? 'topbar-link-active' : ''}">${l.label}</a></li>
+              <li><a href="${l.href}" data-topbar-link="${l.key}"${l.active ? ' aria-current="page"' : ''} class="${l.active ? 'topbar-link-active' : ''}">${l.label}</a></li>
             `).join('')}
           </ul>
 
@@ -629,6 +629,8 @@
       if (!el) continue;
       el.href = link.href;
       el.classList.toggle('topbar-link-active', link.active);
+      if (link.active) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     }
 
     renderProviderChip();
