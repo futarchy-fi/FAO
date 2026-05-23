@@ -213,4 +213,68 @@ test.describe('failure modes — fork-driven read-only state', () => {
     await expect(page.getByTestId('sale-decision-sold').or(page.locator('#sale-decision-sold')).first())
       .toContainText(`1 / 1 ${symbol}`);
   });
+
+  test('page reload during pending cast transaction re-renders the sale cleanly', async ({ page }) => {
+    const symbol = uniqueSymbol('PND');
+    const { id, inst } = await createPart1Instance({
+      name: `Pending Reload ${symbol}`,
+      symbol,
+      description: 'Pending reload target created by failure-modes.read-only.spec.ts.',
+    });
+
+    await page.goto(`/sale.html?inst=${id}`);
+    await expect(page.locator('#sale-hero-symbol')).toContainText(symbol, { timeout: 30_000 });
+    await expect(page.getByTestId('trade-buy-sale-btn').or(page.locator('#trade-buy-sale-btn')).first())
+      .toBeEnabled();
+
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+
+    const before = await readSaleSnapshot(inst.sale);
+    const amount = 2n;
+    let txHash = '';
+
+    await publicClient.request({ method: 'evm_setAutomine', params: [false] });
+    try {
+      txHash = castSend(
+        inst.sale,
+        'buy(uint256)',
+        [amount.toString()],
+        {
+          value: (before.priceWei * amount).toString(),
+          gasLimit: '250000',
+          async: true,
+        },
+      );
+      expect(txHash, 'cast send --async should return a transaction hash').toMatch(/^0x[a-fA-F0-9]{64}$/);
+      await expect.poll(async () => Boolean(await publicClient.request({
+        method: 'eth_getTransactionByHash',
+        params: [txHash],
+      })), {
+        timeout: 10_000,
+        message: 'buy transaction should be pending before the reload',
+      }).toBe(true);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      await expect(page.locator('#sale-hero-symbol')).toContainText(symbol, { timeout: 30_000 });
+      await expect(page.getByTestId('sale-decision-strip').or(page.locator('.sale-decision-strip')).first())
+        .toBeVisible();
+      await expect(page.getByTestId('trade-buy-amount').or(page.locator('#trade-buy-amount')).first())
+        .toHaveValue('1');
+      await expect(page.getByTestId('trade-buy-sale-btn').or(page.locator('#trade-buy-sale-btn')).first())
+        .toBeEnabled();
+      await expect(page.getByTestId('sale-decision-sold').or(page.locator('#sale-decision-sold')).first())
+        .toContainText(`${before.initialSold.toString()} / ${before.minInitialSold.toString()} ${symbol}`);
+      expect(errors, errors.join('\n')).toEqual([]);
+    } finally {
+      await publicClient.request({ method: 'evm_mine', params: [] }).catch(() => {});
+      await publicClient.request({ method: 'evm_setAutomine', params: [true] }).catch(() => {});
+    }
+
+    await expect.poll(async () => (await readSaleSnapshot(inst.sale)).initialSold, {
+      timeout: 30_000,
+      message: 'pending buy should mine after cleanup resumes the fork',
+    }).toBe(before.initialSold + amount);
+  });
 });
