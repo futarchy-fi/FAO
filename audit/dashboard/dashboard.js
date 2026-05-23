@@ -56,14 +56,14 @@ async function loadChartLibs() {
 // keeps every real evaluator entry.
 const MIN_CANONICAL_DIMS = 5;
 
-// Evaluator names that are NOT canonical (don't count toward the trend).
-const NON_CANONICAL_EVALUATORS = new Set(['multimodal']);
-
+// Worker self-scores leak through with evaluator="worker-*". Drop those —
+// workers commit code, they don't evaluate. Everything else (codex, multimodal,
+// evaluator-1, etc.) counts AS LONG AS the row is full-dim (≥ MIN_CANONICAL_DIMS).
+// Originally multimodal was filtered because it only scored 3 dims, but it now
+// emits all 8 v2 dims so it qualifies as canonical.
 function isCanonicalRow(d) {
-  // Worker self-scores leak through with evaluator="worker-*".
   const ev = (d.evaluator || 'codex').toLowerCase();
   if (ev.startsWith('worker-')) return false;
-  if (NON_CANONICAL_EVALUATORS.has(ev)) return false;
   return (d.scores || []).length >= MIN_CANONICAL_DIMS;
 }
 
