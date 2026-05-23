@@ -141,6 +141,7 @@ names against this table.
 | Axis | Spec |
 |---|---|
 | Wallet rejection | `tests-e2e/journeys/wallet-rejection.wallet.spec.ts` rejects the MetaMask sale-buy transaction popup, asserts the `sale-buy-status` cancelled DOM state, and verifies `totalAmountRaised` is unchanged. |
+| Wrong chain signing | `tests-e2e/journeys/wrong-chain.wallet.spec.ts` switches MetaMask to mainnet, triggers the sale-buy path, rejects the Sepolia switch prompt, asserts the `topbar-switch-sepolia` banner, and verifies no sale funds moved. |
 
 ## Fork-state local-dev cycle
 
