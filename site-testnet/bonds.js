@@ -321,6 +321,12 @@
     if (btn) btn.addEventListener('click', () => onWithdraw());
   }
 
+  function setWithdrawStatus(html, kind = 'info') {
+    const mount = $$('#sep-bonds-mount');
+    if (!mount) return;
+    mount.innerHTML = `<p class="bond-status bond-status-${kind}" role="status" aria-live="polite" aria-atomic="true">${html}</p>`;
+  }
+
   /**
    * Walk the cards rendered by sepolia.js, extract proposal addresses, and inject
    * (or replace) a bond panel inside each card.
@@ -618,16 +624,34 @@
   async function onWithdraw() {
     try {
       const sig = await ensureSigner();
-      const writeArb = new ethers.Contract(arbitrationAddr(), ARBITRATION_ABI, sig);
+      const wallet = connectedWallet || await sig.getAddress();
+      const arbAddress = arbitrationAddr();
+      const readArb = new ethers.Contract(arbAddress, ARBITRATION_ABI, provider);
+      const amount = await safe(() => readArb.withdrawable(wallet), 0n);
+      if (amount === 0n) throw new Error('No withdrawable WETH refund.');
+
+      const writeArb = new ethers.Contract(arbAddress, ARBITRATION_ABI, sig);
+      const gasEstimate = await safe(() => writeArb.withdraw.estimateGas(), null);
+      const ok = await showBondConfirm([
+        { label: 'Action', value: 'Withdraw arbitration refund' },
+        { label: 'Recipient', value: fmtAddr(wallet) },
+        { label: 'WETH amount', value: fmtWeth(amount) },
+        { label: 'Arbitration', value: fmtAddr(arbAddress) },
+        { label: 'Gas estimate', value: fmtGas(gasEstimate) },
+      ], 'Confirm withdraw');
+      if (!ok) {
+        setWithdrawStatus('Cancelled before wallet confirmation.', 'info');
+        return;
+      }
+
+      setWithdrawStatus(`Withdrawing ${escapeHtml(fmtWeth(amount))}…`, 'pending');
       const tx = await writeArb.withdraw();
-      const mount = $$('#sep-bonds-mount');
-      if (mount) mount.innerHTML = `<p class="bond-status bond-status-pending" role="status" aria-live="polite" aria-atomic="true">Withdraw tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a></p>`;
-      await tx.wait();
-      await refreshWithdrawBanner();
+      setWithdrawStatus(`Withdraw tx: <a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${tx.hash.slice(0,10)}…</a>`, 'pending');
+      const rec = await tx.wait();
+      setWithdrawStatus(`✓ Withdrawn in block ${rec.blockNumber}.`, 'ok');
     } catch (err) {
       console.error('[bonds] onWithdraw failed', err);
-      const mount = $$('#sep-bonds-mount');
-      if (mount) mount.innerHTML = `<p class="bond-status bond-status-error" role="status" aria-live="polite" aria-atomic="true">Withdraw failed: ${escapeHtml(err.shortMessage || err.message || String(err))}</p>`;
+      setWithdrawStatus(`Withdraw failed: ${escapeHtml(err.shortMessage || err.message || String(err))}`, 'error');
     }
   }
 
