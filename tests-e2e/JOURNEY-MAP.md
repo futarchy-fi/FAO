@@ -142,6 +142,7 @@ names against this table.
 |---|---|
 | Wallet rejection | `tests-e2e/journeys/wallet-rejection.wallet.spec.ts` rejects the MetaMask sale-buy transaction popup, asserts the `sale-buy-status` cancelled DOM state, and verifies `totalAmountRaised` is unchanged. |
 | Wrong chain signing | `tests-e2e/journeys/wrong-chain.wallet.spec.ts` switches MetaMask to mainnet, triggers the sale-buy path, rejects the Sepolia switch prompt, asserts the `topbar-switch-sepolia` banner, and verifies no sale funds moved. |
+| Insufficient funds | `tests-e2e/journeys/insufficient-funds.wallet.spec.ts` drains the connected wallet to 0 ETH via `anvil_setBalance`, clicks buy via sale, asserts `sale-buy-status` surfaces an insufficient/error state, and verifies `totalAmountRaised` is unchanged. |
 | Sale already ended | `tests-e2e/journeys/failure-modes.read-only.spec.ts` finalizes an instance sale with fork `cast send` calls, reloads `/sale.html`, and asserts the sale-buy button is disabled with a finalized phase state. |
 | Page reload during pending tx | `tests-e2e/journeys/failure-modes.read-only.spec.ts` disables Anvil automine, submits a pending `cast send --async` sale buy, reloads `/sale.html`, asserts the sale UI re-renders without page errors, then mines the pending tx and verifies `initialTokensSold` increments. |
 
