@@ -15,8 +15,70 @@
 
 // @ts-nocheck — runs only after `npm install`.
 import { test, expect } from '@playwright/test';
+import {
+  castSend,
+  createPart1Instance,
+  ensureAnvilFork,
+  publicClient,
+  readSaleSnapshot,
+  resetAnvilFork,
+  routePublicRpcToFork,
+  stopSpawnedAnvil,
+} from '../fork-utils';
+
+function uniqueSymbol(prefix) {
+  return `${prefix}${Date.now().toString(36).slice(-6).toUpperCase()}`.slice(0, 10);
+}
+
+async function advanceForkTime(seconds) {
+  await publicClient.request({ method: 'evm_increaseTime', params: [seconds] });
+  await publicClient.request({ method: 'evm_mine', params: [] });
+}
+
+async function createFinalizedSaleInstance() {
+  const symbol = uniqueSymbol('END');
+  const { id, inst } = await createPart1Instance({
+    name: `Ended Sale ${symbol}`,
+    symbol,
+    description: 'Sale already ended target created by failure-modes.read-only.spec.ts.',
+    minInitialSold: '1',
+    initialSaleDuration: '1',
+  });
+
+  const first = await readSaleSnapshot(inst.sale);
+  castSend(
+    inst.sale,
+    'buy(uint256)',
+    ['1'],
+    { value: first.priceWei.toString(), gasLimit: '250000' },
+  );
+  await expect.poll(async () => (await readSaleSnapshot(inst.sale)).initialSold, {
+    timeout: 30_000,
+    message: 'setup buy should satisfy the initial-sale threshold',
+  }).toBe(1n);
+
+  await advanceForkTime(2);
+
+  const second = await readSaleSnapshot(inst.sale);
+  castSend(
+    inst.sale,
+    'buy(uint256)',
+    ['1'],
+    { value: second.priceWei.toString(), gasLimit: '250000' },
+  );
+  await expect.poll(async () => (await readSaleSnapshot(inst.sale)).finalized, {
+    timeout: 30_000,
+    message: 'second setup buy should finalize the initial sale',
+  }).toBe(true);
+
+  return { id, inst, symbol };
+}
 
 test.describe('failure modes — read-only, deterministic via route mocking', () => {
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name === 'fork', 'route-mocked read-only cases run under the read-only project');
+  });
+
   test('deployments.json missing → fallback constant keeps UI alive', async ({ page }) => {
     // Block the deployments.json fetch entirely.
     await page.route('**/deployments.json', (route) => route.fulfill({
@@ -104,5 +166,51 @@ test.describe('failure modes — read-only, deterministic via route mocking', ()
     // they show "—" placeholders, not blank elements that would suggest
     // the page is broken.
     await expect(page.locator('.trade-col-title')).toHaveCount(2);
+  });
+});
+
+test.describe('failure modes — fork-driven read-only state', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  let forkBlockNumber = '';
+
+  test.beforeAll(async ({}, testInfo) => {
+    if (testInfo.project.name !== 'fork') return;
+    forkBlockNumber = await ensureAnvilFork();
+  });
+
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'fork', 'fork-driven failure-mode specs require the Playwright fork project');
+    await resetAnvilFork(forkBlockNumber);
+    await page.addInitScript(() => {
+      localStorage.setItem('faoForkMode', '1');
+    });
+    await routePublicRpcToFork(page);
+  });
+
+  test.afterAll(async ({}, testInfo) => {
+    if (testInfo.project.name !== 'fork') return;
+    await stopSpawnedAnvil();
+  });
+
+  test('sale already finalized disables sale buy and shows finalized state', async ({ page }) => {
+    const { id, inst, symbol } = await createFinalizedSaleInstance();
+    await expect.poll(async () => (await readSaleSnapshot(inst.sale)).finalized, {
+      timeout: 30_000,
+      message: 'sale should be finalized before loading the UI',
+    }).toBe(true);
+
+    await page.goto(`/sale.html?inst=${id}`);
+
+    await expect(page.locator('#sale-hero-symbol')).toContainText(symbol, { timeout: 30_000 });
+    await expect(page.getByTestId('sale-phase-badge').or(page.locator('#sale-phase-badge')).first())
+      .toContainText(/bonding curve/i);
+    await expect(page.getByTestId('trade-buy-sale-btn').or(page.locator('#trade-buy-sale-btn')).first())
+      .toBeDisabled();
+    await expect(page.getByTestId('trade-buy-sale-btn').or(page.locator('#trade-buy-sale-btn')).first())
+      .toContainText(/finalized/i);
+    await expect(page.locator('#sale-progress-block')).toBeHidden();
+    await expect(page.getByTestId('sale-decision-sold').or(page.locator('#sale-decision-sold')).first())
+      .toContainText(`1 / 1 ${symbol}`);
   });
 });

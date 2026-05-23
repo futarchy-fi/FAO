@@ -108,6 +108,7 @@
     poolHasLiquidity: false,
     seederAddr: null,      // first entry of sale.ragequitTokens, if any
     userBalance: 0n,       // token balance of connected wallet
+    saleFinalized: false,
     confirmAction: null,   // 'buy' | 'ragequit' | 'uniBuy' | 'uniSell'
   };
 
@@ -271,9 +272,18 @@
   function closeConfirmCard(opts = {}) {
     ctx.confirmAction = null;
     $$('#sale-confirm-card').hidden = true;
-    $$('#trade-buy-sale-btn').disabled = false;
+    setSaleBuyFinalizedState(ctx.saleFinalized);
     $$('#trade-sell-rq-btn').disabled = false;
     if (!opts.preserveStatus) setStatus('');
+  }
+
+  function setSaleBuyFinalizedState(finalized) {
+    ctx.saleFinalized = !!finalized;
+    const buyBtn = $$('#trade-buy-sale-btn');
+    if (!buyBtn) return;
+    buyBtn.disabled = ctx.saleFinalized;
+    buyBtn.setAttribute('aria-disabled', ctx.saleFinalized ? 'true' : 'false');
+    buyBtn.textContent = ctx.saleFinalized ? 'Sale finalized' : 'Buy via sale';
   }
 
   // ─── Phase helpers ───────────────────────────────────────────────────
@@ -398,6 +408,7 @@
     const sym = tokenSymbol;
     ctx.sym = sym;
     ctx.salePriceWei = BigInt(salePriceWei);
+    setSaleBuyFinalizedState(finalized === true);
 
     // Seeder (= first ragequit-list entry, by convention).
     const seederAddr = Number(rqCount) > 0
@@ -591,6 +602,7 @@
   async function onBuyPreview() {
     const inst = ctx.inst;
     if (!inst || !inst.sale) { setStatus('No sale on active instance.', 'error'); return; }
+    if (ctx.saleFinalized) { setStatus('Sale already finalized; sale buys are disabled.', 'error'); return; }
 
     const n = parseInt($$('#trade-buy-amount')?.value || '', 10);
     if (!Number.isFinite(n) || n <= 0) { setStatus('Enter a positive whole number.', 'error'); return; }
