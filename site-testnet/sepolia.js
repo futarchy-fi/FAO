@@ -27,6 +27,7 @@
 
   // Public RPC with permissive CORS; drpc.org returns 503 sometimes.
   const RPC = 'https://ethereum-sepolia.publicnode.com';
+  const FORK_RPC = 'http://127.0.0.1:8545';
   const REFRESH_INTERVAL = 30_000;
 
   // Shared infra — identical for every futarchy instance on Sepolia.
@@ -117,6 +118,9 @@
   async function safe(fn, fallback) {
     try { return await fn(); } catch (_) { return fallback; }
   }
+  function isForkMode() { try { return localStorage.faoForkMode === '1'; } catch (_) { return false; } }
+  function rpcUrl() { return window.faoRpcUrl || (isForkMode() ? FORK_RPC : RPC); }
+  async function ensureEthers() { if (window.loadFaoEthers) await window.loadFaoEthers(); }
 
   let provider;
 
@@ -133,7 +137,8 @@
   }
 
   async function init() {
-    provider = new ethers.JsonRpcProvider(RPC);
+    await ensureEthers();
+    provider = new ethers.JsonRpcProvider(rpcUrl());
 
     // Listen for instance switches from shared.js. Clear + refresh.
     window.addEventListener('fao:activeInstanceChanged', () => {

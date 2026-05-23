@@ -15,6 +15,10 @@ import { createPublicClient, defineChain, http, parseAbi } from 'viem';
 
 const RPC_URL = process.env.FAO_RPC_URL || 'http://127.0.0.1:8545';
 const PUBLIC_SEPOLIA_RPC = 'https://ethereum-sepolia.publicnode.com';
+const SEPOLIA_FORK_RPC = process.env.SEPOLIA_RPC || PUBLIC_SEPOLIA_RPC;
+const ENV_FORK_BLOCK_NUMBER = process.env.ANVIL_FORK_BLOCK_NUMBER
+  || process.env.FORK_BLOCK_NUMBER
+  || '';
 const REGISTRY = '0x18D1f4e57412b48436C7825B9018437C235bBC5C';
 const WETH = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14';
 const FOUNDRY_BIN_DIR = `${homedir()}/.foundry/bin`;
@@ -26,6 +30,9 @@ const ANVIL_BIN = process.env.ANVIL_BIN || (existsSync(DEFAULT_ANVIL_BIN) ? DEFA
 const ANVIL_PRIVATE_KEY = process.env.ANVIL_PRIVATE_KEY
   || '0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6';
 const ANVIL_ADDRESS = process.env.ANVIL_ADDRESS || '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720';
+let anvilProcess = null;
+let startedAnvilWithScript = false;
+let forkBlockNumber = ENV_FORK_BLOCK_NUMBER;
 
 const sepoliaFork = defineChain({
   id: 11155111,
@@ -62,6 +69,10 @@ const arbitrationAbi = parseAbi([
 const publicClient = createPublicClient({
   chain: sepoliaFork,
   transport: http(RPC_URL),
+});
+const sourceClient = createPublicClient({
+  chain: sepoliaFork,
+  transport: http(SEPOLIA_FORK_RPC),
 });
 const PUBLIC_SEPOLIA_RPC_HOST = new URL(PUBLIC_SEPOLIA_RPC).host;
 
@@ -186,9 +197,18 @@ async function canReadForkBlock() {
   }
 }
 
-function startAnvilFork() {
+async function resolveForkBlockNumber() {
+  if (forkBlockNumber) return forkBlockNumber;
+  forkBlockNumber = (await sourceClient.getBlockNumber()).toString();
+  return forkBlockNumber;
+}
+
+function startAnvilFork(blockNumber) {
   const env = {
     ...process.env,
+    ANVIL_FORK_BLOCK_NUMBER: blockNumber,
+    FORK_BLOCK_NUMBER: blockNumber,
+    SEPOLIA_RPC: SEPOLIA_FORK_RPC,
     PATH: `${FOUNDRY_BIN_DIR}:${process.env.PATH || ''}`,
   };
 
@@ -199,30 +219,81 @@ function startAnvilFork() {
       timeout: 30_000,
       env,
     });
+    startedAnvilWithScript = true;
     return;
   }
 
-  const args = ['--fork-url', process.env.SEPOLIA_RPC || 'https://ethereum-sepolia.publicnode.com', '--port', '8545'];
-  const forkBlock = process.env.ANVIL_FORK_BLOCK_NUMBER || process.env.FORK_BLOCK_NUMBER;
-  if (forkBlock) args.push('--fork-block-number', forkBlock);
+  const args = ['--fork-url', SEPOLIA_FORK_RPC, '--port', '8545', '--fork-block-number', blockNumber];
 
-  const child = spawn(ANVIL_BIN, args, {
-    detached: true,
-    stdio: 'ignore',
-    env,
-  });
-  child.unref();
+  anvilProcess = spawn(ANVIL_BIN, args, { stdio: 'ignore', env });
 }
 
 async function ensureAnvilFork() {
+  const blockNumber = await resolveForkBlockNumber();
   if (!(await canReadForkBlock())) {
-    startAnvilFork();
+    startAnvilFork(blockNumber);
   }
 
-  await expect.poll(async () => Number(await publicClient.getBlockNumber()), {
+  await expect.poll(async () => {
+    try {
+      return Number(await publicClient.getBlockNumber());
+    } catch (_) {
+      return 0;
+    }
+  }, {
     timeout: 30_000,
     message: 'Anvil fork must be running on http://127.0.0.1:8545',
   }).toBeGreaterThan(0);
+
+  await resetAnvilFork(blockNumber);
+}
+
+async function resetAnvilFork(blockNumber) {
+  await publicClient.request({
+    method: 'anvil_reset',
+    params: [{
+      forking: {
+        jsonRpcUrl: SEPOLIA_FORK_RPC,
+        blockNumber: Number(blockNumber),
+      },
+    }],
+  });
+
+  await expect.poll(async () => Number(await readInstancesCount()), {
+    timeout: 30_000,
+    message: `Anvil fork should reset to Sepolia block ${blockNumber}`,
+  }).toBeGreaterThanOrEqual(0);
+}
+
+async function stopSpawnedAnvil() {
+  if (startedAnvilWithScript) {
+    startedAnvilWithScript = false;
+    if (existsSync(ANVIL_FORK_SCRIPT)) {
+      execFileSync('bash', [ANVIL_FORK_SCRIPT, '--stop'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 30_000,
+        env: {
+          ...process.env,
+          PATH: `${FOUNDRY_BIN_DIR}:${process.env.PATH || ''}`,
+        },
+      });
+    }
+  }
+
+  if (!anvilProcess) return;
+  const child = anvilProcess;
+  anvilProcess = null;
+  if (child.exitCode != null || child.signalCode != null) return;
+  await new Promise((resolve) => {
+    const done = () => resolve();
+    child.once('exit', done);
+    child.kill('SIGTERM');
+    setTimeout(() => {
+      if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL');
+      resolve();
+    }, 5_000).unref();
+  });
 }
 
 function runCast(args, description, timeout = 120_000) {
@@ -422,7 +493,15 @@ test.describe('fork state — read-only UI over cast mutations', () => {
   });
 
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('faoForkMode', '1');
+    });
     await routePublicRpcToFork(page);
+  });
+
+  test.afterAll(async ({}, testInfo) => {
+    if (testInfo.project.name !== 'fork') return;
+    await stopSpawnedAnvil();
   });
 
   test('home page reflects instancesCount after cast-created instance', async ({ page }, testInfo) => {
@@ -432,7 +511,7 @@ test.describe('fork state — read-only UI over cast mutations', () => {
 
     const beforeCount = await readInstancesCount();
     const expectedBeforeRows = Number(beforeCount);
-    const rows = page.getByTestId('rankings-rows').locator('[data-rank-instance-id]');
+    const rows = page.locator('#rankings-rows [data-rank-instance-id]');
 
     await expect.poll(() => rows.count(), {
       timeout: 30_000,
@@ -456,7 +535,7 @@ test.describe('fork state — read-only UI over cast mutations', () => {
       message: 'home table should show the cast-created instance after reload',
     }).toBe(expectedBeforeRows + 1);
 
-    const newRow = page.getByTestId('rankings-rows').locator(`[data-rank-instance-id="${newId}"]`);
+    const newRow = page.locator(`#rankings-rows [data-rank-instance-id="${newId}"]`);
     await expect(newRow).toBeVisible();
     await expect(newRow).toContainText(symbol);
   });
@@ -477,7 +556,7 @@ test.describe('fork state — read-only UI over cast mutations', () => {
     });
 
     await page.goto(`/sale.html?inst=${id}`);
-    await expect(page.getByTestId('trade-buy-amount')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#trade-buy-amount')).toBeVisible({ timeout: 30_000 });
 
     const before = await readSaleSnapshot(inst.sale);
     const beforeBalance = await readTokenBalance(inst.token, ANVIL_ADDRESS);
@@ -501,7 +580,7 @@ test.describe('fork state — read-only UI over cast mutations', () => {
     }).toBe(beforeBalance + amount * 10n ** 18n);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('trade-buy-amount')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#trade-buy-amount')).toBeVisible({ timeout: 30_000 });
 
     const expectedSold = `${before.initialSold + amount} / ${before.minInitialSold} ${symbol}`;
     await expect.poll(() => page.locator('#sale-initial-sold').textContent(), {

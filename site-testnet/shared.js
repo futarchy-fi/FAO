@@ -34,6 +34,8 @@
     try { return localStorage.faoForkMode === '1'; } catch (_) { return false; }
   }
   const RPC = isForkMode() ? FORK_RPC : DEFAULT_RPC;
+  window.faoRpcUrl = RPC;
+  window.faoForkMode = isForkMode();
   const STORAGE_KEY = 'faoActiveInstanceId';
   const WALLET_PROVIDER_STORAGE_KEY = 'faoSelectedWalletProvider';
   const WALLET_SESSION_STORAGE_KEY = 'faoWalletSession';

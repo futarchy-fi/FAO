@@ -4,6 +4,7 @@
   'use strict';
 
   const RPC = 'https://ethereum-sepolia.publicnode.com';
+  const FORK_RPC = 'http://127.0.0.1:8545';
   const REFRESH_INTERVAL = 30_000;
   const ZERO = '0x0000000000000000000000000000000000000000';
 
@@ -30,6 +31,9 @@
   const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const fmtAddr = (a) => (!a || isZero(a)) ? '—' : `${a.slice(0, 6)}…${a.slice(-4)}`;
   async function safe(fn, fallback) { try { return await fn(); } catch (_) { return fallback; } }
+  function isForkMode() { try { return localStorage.faoForkMode === '1'; } catch (_) { return false; } }
+  function rpcUrl() { return window.faoRpcUrl || (isForkMode() ? FORK_RPC : RPC); }
+  async function ensureEthers() { if (window.loadFaoEthers) await window.loadFaoEthers(); }
 
   let provider;
   let rankSortKey = 'mcap';
@@ -37,8 +41,9 @@
   let rankingsWired = false;
 
   // ─── Boot ────────────────────────────────────────────────────────────
-  function start() {
-    provider = new ethers.JsonRpcProvider(RPC);
+  async function start() {
+    await ensureEthers();
+    provider = new ethers.JsonRpcProvider(rpcUrl());
     wireRankingsControls();
     refreshAll();
     setInterval(refreshAll, REFRESH_INTERVAL);

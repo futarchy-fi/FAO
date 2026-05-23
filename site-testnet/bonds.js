@@ -30,6 +30,7 @@
   'use strict';
 
   const RPC = 'https://ethereum-sepolia.publicnode.com';
+  const FORK_RPC = 'http://127.0.0.1:8545';
   const REFRESH_INTERVAL = 30_000;
 
   // WETH is shared infra across every futarchy instance on Sepolia.
@@ -116,6 +117,9 @@
   async function safe(fn, fallback) {
     try { return await fn(); } catch (_) { return fallback; }
   }
+  function isForkMode() { try { return localStorage.faoForkMode === '1'; } catch (_) { return false; } }
+  function rpcUrl() { return window.faoRpcUrl || (isForkMode() ? FORK_RPC : RPC); }
+  async function ensureEthers() { if (window.loadFaoEthers) await window.loadFaoEthers(); }
 
   function fmtGas(gas) {
     return gas == null ? 'Estimate unavailable' : `${gas.toString()} gas`;
@@ -659,7 +663,8 @@
   }
 
   async function init() {
-    provider = new ethers.JsonRpcProvider(RPC);
+    await ensureEthers();
+    provider = new ethers.JsonRpcProvider(rpcUrl());
 
     // Wait for shared.js to publish window.activeInstance.
     if (!window.activeInstance) {

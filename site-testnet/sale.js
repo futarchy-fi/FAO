@@ -17,6 +17,7 @@
   'use strict';
 
   const RPC = 'https://ethereum-sepolia.publicnode.com';
+  const FORK_RPC = 'http://127.0.0.1:8545';
   const REFRESH_INTERVAL = 30_000;
   const ZERO = '0x0000000000000000000000000000000000000000';
   const WETH = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14';
@@ -92,6 +93,9 @@
   const explorerTx = (h) => `https://sepolia.etherscan.io/tx/${h}`;
 
   async function safe(fn, fallback) { try { return await fn(); } catch (_) { return fallback; } }
+  function isForkMode() { try { return localStorage.faoForkMode === '1'; } catch (_) { return false; } }
+  function rpcUrl() { return window.faoRpcUrl || (isForkMode() ? FORK_RPC : RPC); }
+  async function ensureEthers() { if (window.loadFaoEthers) await window.loadFaoEthers(); }
 
   let provider;
   // Per-refresh cache that the action handlers read so they don't refetch.
@@ -109,7 +113,8 @@
 
   // ─── Boot ────────────────────────────────────────────────────────────
   async function init() {
-    provider = new ethers.JsonRpcProvider(RPC);
+    await ensureEthers();
+    provider = new ethers.JsonRpcProvider(rpcUrl());
     wireControls();
 
     window.addEventListener('fao:activeInstanceChanged', () => { refresh().catch(console.error); });

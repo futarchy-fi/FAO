@@ -75,11 +75,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         storageState: FORK_STORAGE_STATE,
       },
-      testMatch: /.*\.read-only\.spec\.ts/,
-      testIgnore: [
-        /.*failure-modes\.read-only\.spec\.ts/,
-        /.*snapshots\.read-only\.spec\.ts/,
-      ],
+      testMatch: /.*fork-state\.read-only\.spec\.ts/,
     },
     {
       name: 'wallet',
