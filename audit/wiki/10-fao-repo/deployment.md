@@ -46,6 +46,14 @@ The sync script diffs the root and site copy and emits `::error::deployments.jso
 
 The static-analysis workflow runs the sync job when `deployments.json`, `deployments.schema.json`, the site copy, `site-testnet/abis/**`, either deployment check script, the ABI sync script, or the workflow itself changes. `.github/workflows/static-analysis.yml@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::deployments-sync`
 
+## Coupling Checks
+
+`test/Coupling.t.sol` is the fork-side SC/artifact check. With `RUN_SEPOLIA_FORK_TESTS=1`, it reads `deployments.json::active`, asserts the active contract entries contain bytecode on Sepolia, asserts `operator` remains an EOA, and checks the active registry getters for proposal implementation, deployers, WETH, CTF, and Wrapped1155 against the manifest. `test/Coupling.t.sol@f96ced010f19032837e96094c935572a2320230f::testFork_activeManifestContractAddressesContainBytecode`, `test/Coupling.t.sol@f96ced010f19032837e96094c935572a2320230f::testFork_activeRegistryWiringMatchesManifest`
+
+The bytecode match path is explicit because it requires Foundry FFI. With `RUN_SEPOLIA_FORK_TESTS=1 RUN_COUPLING_BYTECODE_FFI=1` and `forge test --ffi`, `testFork_activeContractBytecodeMatchesLocalForgeArtifacts` runs `scripts/check-coupling-bytecode.js`, reads live bytecode with `cast code`, normalizes compiler/deployment-specific regions, and compares normalized runtime hashes against local forge artifacts. Known source-vs-deploy drift is recorded in `audit/state/COUPLING-NOTES.md`; the check must not be weakened to hide a mismatch. `scripts/check-coupling-bytecode.js@5eeb05b53a9cb7adea713be0675724541388da0e::ACTIVE_CONTRACTS`, `audit/state/COUPLING-NOTES.md@5eeb05b53a9cb7adea713be0675724541388da0e::#active-bytecode-comparison`
+
+`tests-e2e/coupling.read-only.spec.ts` is the browser-side UI/artifact check. It reads the active registry from `deployments.json`, opens the live site with `?inst=N`, and asserts `window.activeInstance` plus the rendered token and sale address links match the registry-returned `token`, `sale`, and `arbitration` addresses for that instance. `tests-e2e/coupling.read-only.spec.ts@eba3449c9feab3e7154220f68de80ae5501d6dab::expectAddressLink`
+
 ## Boundary With History
 
 This page is current-manifest architecture, not historical evidence. Deployment history still records v0, v1, v2, v3, v4, and v5 reasons and smoke-test evidence; this page records how the current site chooses which registry to read. `audit/wiki/10-fao-repo/deployment-history.md@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::#deployment-history`, `site-testnet/shared.js@89a6f9f710320ae59adb1ac358a8bf8e687f4bf6::loadDeployments`
