@@ -11,7 +11,8 @@ import {
   connectWithMetaMask,
   ensureWalletCache,
   expect,
-  switchMetaMaskNetwork,
+  rejectSwitchNetworkRequest,
+  setMetaMaskChain,
   test,
 } from '../real-metamask.fixture';
 import {
@@ -25,32 +26,13 @@ function byTestIdOrId(page, testId, id) {
   return page.getByTestId(testId).or(page.locator(`#${id}`)).first();
 }
 
-async function switchToMainnet(metamask) {
-  const errors = [];
-  for (const name of ['Ethereum Mainnet', 'Ethereum']) {
-    try {
-      await switchMetaMaskNetwork(metamask, name, false);
-      return;
-    } catch (error) {
-      errors.push(`${name}: ${error?.message || error}`);
-    }
-  }
-  throw new Error(`Could not switch MetaMask to mainnet:\n${errors.join('\n')}`);
-}
-
 test.setTimeout(240_000);
 
 test.beforeAll(async () => {
   await ensureWalletCache();
 });
 
-test.afterEach(async ({ metamask }) => {
-  await switchMetaMaskNetwork(metamask, 'Sepolia', true).catch(() => {});
-});
-
 test('wrong chain — sale buy shows Sepolia switch banner and does not dispatch', async ({ page, metamask }) => {
-  await switchMetaMaskNetwork(metamask, 'Sepolia', true).catch(() => {});
-
   const suffix = Date.now().toString(36).slice(-6).toUpperCase();
   const symbol = `WRG${suffix}`.slice(0, 10);
   const { id, inst } = await createPart1Instance({
@@ -64,9 +46,9 @@ test('wrong chain — sale buy shows Sepolia switch banner and does not dispatch
   await expect(page.locator('#sale-hero-symbol')).toContainText(symbol, { timeout: 30_000 });
 
   await connectWithMetaMask(page, metamask);
-  await switchToMainnet(metamask);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(byTestIdOrId(page, 'trade-buy-amount', 'trade-buy-amount')).toBeVisible({ timeout: 30_000 });
+  await setMetaMaskChain(page, '0x1');
+  await expect(page.getByTestId('topbar-connect').or(page.getByRole('button', { name: /^connect/i })).first())
+    .toContainText(/connect/i, { timeout: 30_000 });
 
   const before = await readSaleSnapshot(inst.sale);
   const status = page.getByTestId('sale-buy-status').or(page.locator('#sale-buy-status')).first();
@@ -74,10 +56,7 @@ test('wrong chain — sale buy shows Sepolia switch banner and does not dispatch
   const switchButton = page.getByTestId('topbar-switch-sepolia').or(page.locator('[data-testid="topbar-switch-sepolia"]')).first();
 
   await byTestIdOrId(page, 'trade-buy-amount', 'trade-buy-amount').fill('1');
-  await Promise.all([
-    metamask.rejectSwitchNetwork(),
-    byTestIdOrId(page, 'trade-buy-sale-btn', 'trade-buy-sale-btn').click(),
-  ]);
+  await rejectSwitchNetworkRequest(page, metamask, () => byTestIdOrId(page, 'trade-buy-sale-btn', 'trade-buy-sale-btn').click());
 
   await expect(banner).toContainText(/not on Sepolia/i, { timeout: 30_000 });
   await expect(switchButton).toBeVisible();

@@ -11,7 +11,7 @@ import {
   connectWithMetaMask,
   ensureWalletCache,
   expect,
-  switchMetaMaskNetwork,
+  rejectWalletTransaction,
   test,
 } from '../real-metamask.fixture';
 import {
@@ -32,8 +32,6 @@ test.beforeAll(async () => {
 });
 
 test('wallet rejection — sale buy reports tx cancelled and does not mutate sale state', async ({ page, metamask }) => {
-  await switchMetaMaskNetwork(metamask, 'Sepolia', true).catch(() => {});
-
   const suffix = Date.now().toString(36).slice(-6).toUpperCase();
   const symbol = `REJ${suffix}`.slice(0, 10);
   const { id, inst } = await createPart1Instance({
@@ -56,10 +54,7 @@ test('wallet rejection — sale buy reports tx cancelled and does not mutate sal
   await byTestIdOrId(page, 'trade-buy-sale-btn', 'trade-buy-sale-btn').click();
   await expect(confirmCard).toBeVisible({ timeout: 15_000 });
 
-  await Promise.all([
-    metamask.rejectTransaction(),
-    byTestIdOrId(page, 'sale-confirm-go', 'sale-confirm-go').click(),
-  ]);
+  await rejectWalletTransaction(page, metamask, () => byTestIdOrId(page, 'sale-confirm-go', 'sale-confirm-go').click());
 
   await expect(status).toContainText(/tx cancelled/i, { timeout: 30_000 });
   await expect(status).toHaveClass(/sale-buy-status-error/);
