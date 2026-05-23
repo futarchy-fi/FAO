@@ -220,6 +220,14 @@
     el.append(link);
   }
 
+  function transactionErrorText(e) {
+    const msg = e?.shortMessage || e?.message || String(e || 'Unknown wallet error');
+    if (e?.code === 4001 || /reject|denied|cancel/i.test(msg)) {
+      return 'Tx cancelled in wallet.';
+    }
+    return `Failed: ${msg}`;
+  }
+
   function showConfirmCard(action, rows) {
     ctx.confirmAction = action;
     const head = $$('#sale-confirm-head');
@@ -666,7 +674,7 @@
       else if (ctx.confirmAction === 'uniSell')   await executeUniSell();
     } catch (e) {
       console.error(e);
-      setStatus(`Failed: ${e?.shortMessage || e?.message || e}`, 'error');
+      setStatus(transactionErrorText(e), 'error');
     } finally {
       if (goBtn) goBtn.disabled = false;
       if (cancelBtn) cancelBtn.disabled = false;

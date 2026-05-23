@@ -136,6 +136,12 @@ names against this table.
 | `tests-e2e/journeys/failure-modes.read-only.spec.ts` | D4 (failure modes: missing deployments.json, malformed JSON, zero-address registry, RPC down, blocked deployments fetch, sale-empty-state). |
 | `tests-e2e/journeys/fork-state.read-only.spec.ts` | D3 fork realism: starts/uses Anvil on `8545`, reads chain state via viem, mutates the fork with `cast send`, and reloads the UI to prove `/`, `/sale.html`, and `/proposals.html` reflect the fork state without a wallet. |
 
+## Failure-mode axes
+
+| Axis | Spec |
+|---|---|
+| Wallet rejection | `tests-e2e/journeys/wallet-rejection.wallet.spec.ts` rejects the MetaMask sale-buy transaction popup, asserts the `sale-buy-status` cancelled DOM state, and verifies `totalAmountRaised` is unchanged. |
+
 ## Fork-state local-dev cycle
 
 The fork-state read-only spec proves the no-wallet path: browser reads come
@@ -184,6 +190,6 @@ fresh fork. No wallet or Synpress profile is required.
 
 ## How this might be wrong
 
-- Wallet-driven specs (F1-F10) are scaffolded with `test.fixme()` pending Synpress. The journey contract here is the spec; converting `test.fixme()` to `test()` is the D2/D3 lift (test signal density + realism).
+- Some wallet-driven specs (F4/F5/F7-F10) are still scaffolded with `test.fixme()` pending Synpress. The journey contract here is the spec; converting `test.fixme()` to `test()` is the D2/D3 lift (test signal density + realism).
 - Some invariants are exercised by multiple journeys (e.g. INV-SALE-002 by F3). A future evaluator may want a reverse index (per-invariant → which journey covers it) — not yet built.
 - The "Failure modes" column lists what the UI **should** do; the present `failure-modes.read-only.spec.ts` only covers the deployments.json + RPC fault paths. Form-validation + insufficient-balance assertions still need executable coverage.
