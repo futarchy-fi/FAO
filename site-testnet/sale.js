@@ -237,6 +237,29 @@
     $$('#trade-sell-rq-btn').disabled = true;
   }
 
+  function formatGasEstimate(gas) {
+    const units = typeof gas === 'bigint' ? gas : BigInt(gas.toString());
+    return `${units.toLocaleString()} gas`;
+  }
+
+  async function estimateSaleGas(saleAddress, fn, args, overrides = {}) {
+    const fallback = 'Wallet will estimate before signing';
+    try {
+      if (!provider || !saleAddress || !overrides.from) return fallback;
+      const iface = new ethers.Interface(SALE_ABI);
+      const tx = {
+        to: saleAddress,
+        from: overrides.from,
+        data: iface.encodeFunctionData(fn, args),
+      };
+      if (overrides.value != null) tx.value = overrides.value;
+      return formatGasEstimate(await provider.estimateGas(tx));
+    } catch (e) {
+      console.warn(`Gas estimate failed for sale.${fn}`, e);
+      return fallback;
+    }
+  }
+
   function closeConfirmCard(opts = {}) {
     ctx.confirmAction = null;
     $$('#sale-confirm-card').hidden = true;
@@ -565,18 +588,25 @@
     if (!Number.isFinite(n) || n <= 0) { setStatus('Enter a positive whole number.', 'error'); return; }
 
     try {
-      if (!window.activeSigner) { setStatus('Connecting wallet…', 'pending'); await window.connectWallet(); }
+      let signer = window.activeSigner;
+      if (!signer) {
+        setStatus('Connecting wallet…', 'pending');
+        signer = await window.connectWallet();
+      }
+      const wallet = window.connectedWallet || await signer.getAddress();
 
       const sale = new ethers.Contract(inst.sale, SALE_ABI, provider);
       const priceWei = await sale.currentPriceWeiPerToken();
       const cost = BigInt(priceWei) * BigInt(n);
+      const gasEstimate = await estimateSaleGas(inst.sale, 'buy', [n], { from: wallet, value: cost });
 
       showConfirmCard('buy', [
         { label: 'Action', value: 'Buy via sale' },
         { label: 'Buy',    value: `${n} ${ctx.sym}` },
         { label: 'Pay',    value: fmtEth(cost) },
+        { label: 'Gas estimate (≈)', value: gasEstimate },
         { label: 'Sale',   value: inst.sale },
-        { label: 'Receive at', value: window.connectedWallet || '—' },
+        { label: 'Receive at', value: wallet || '—' },
       ]);
       setStatus('Review the summary, then confirm in your wallet.', 'pending');
     } catch (e) {
@@ -594,18 +624,25 @@
     if (!Number.isFinite(n) || n <= 0) { setStatus('Enter a positive whole number.', 'error'); return; }
 
     try {
-      if (!window.activeSigner) { setStatus('Connecting wallet…', 'pending'); await window.connectWallet(); }
+      let signer = window.activeSigner;
+      if (!signer) {
+        setStatus('Connecting wallet…', 'pending');
+        signer = await window.connectWallet();
+      }
+      const wallet = window.connectedWallet || await signer.getAddress();
 
       const sale = new ethers.Contract(inst.sale, SALE_ABI, provider);
       const ethOut = await sale.quoteRagequit(n);
+      const gasEstimate = await estimateSaleGas(inst.sale, 'ragequit', [n], { from: wallet });
 
       showConfirmCard('ragequit', [
         { label: 'Action',  value: 'Ragequit' },
         { label: 'Burn',    value: `${n} ${ctx.sym}` },
         { label: 'You get', value: fmtEth(ethOut) },
+        { label: 'Gas estimate (≈)', value: gasEstimate },
         { label: 'Plus',    value: 'pro-rata fLP and any treasury ERC20s' },
         { label: 'Sale',    value: inst.sale },
-        { label: 'To',      value: window.connectedWallet || '—' },
+        { label: 'To',      value: wallet || '—' },
       ]);
       setStatus('Review the summary. We\'ll request token approval, then ragequit.', 'pending');
     } catch (e) {
