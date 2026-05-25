@@ -1,93 +1,113 @@
 {
-  "generatedAt": "2026-05-22T18:27:33Z",
+  "generatedAt": "2026-05-24T08:18:44Z",
   "target": 8.0,
-  "totalDimensions": 39,
-  "atTarget": 7,
-  "min": 2.0,
-  "mean": 5.797435897435897,
-  "latestRound": 34,
+  "totalDimensions": 44,
+  "atTarget": 17,
+  "min": 3.0,
+  "mean": 6.83409090909091,
+  "latestRound": 875,
   "topics": [
     {
       "id": 1,
       "label": "Web3 UX",
-      "rounds": 24,
-      "timestamp": "2026-05-22T17:32:54Z",
-      "min": 5.0,
-      "mean": 6.466666666666668,
-      "atTarget": 0,
-      "total": 6,
+      "rounds": 35,
+      "timestamp": "2026-05-23T03:57:20Z",
+      "min": 7.5,
+      "mean": 8.4375,
+      "atTarget": 7,
+      "total": 8,
       "scores": [
         {
           "dimension": "D1 \u2014 Primary-action surface",
-          "score": 5.0
+          "score": 8
         },
         {
-          "dimension": "D2 \u2014 Wallet-state handling",
-          "score": 7.0
+          "dimension": "D2 \u2014 Wallet-state + EIP-6963",
+          "score": 9
         },
         {
-          "dimension": "D3 \u2014 Pre-confirm / pending / success / error affordances",
-          "score": 6.6
+          "dimension": "D3 \u2014 Pre-confirm / pending / success / error",
+          "score": 8
         },
         {
           "dimension": "D4 \u2014 Information density vs noise",
-          "score": 6.8
+          "score": 9
         },
         {
-          "dimension": "D5 \u2014 Mobile responsiveness + accessibility (a11y)",
-          "score": 6.4
+          "dimension": "D5 \u2014 Accessibility",
+          "score": 9
         },
         {
           "dimension": "D6 \u2014 Visual hierarchy + minimalism",
-          "score": 7.0
+          "score": 8
+        },
+        {
+          "dimension": "D7 \u2014 Performance budget",
+          "score": 9
+        },
+        {
+          "dimension": "D8 \u2014 Visual regression coverage",
+          "score": 7.5
         }
       ]
     },
     {
       "id": 2,
       "label": "Interface testing",
-      "rounds": 28,
-      "timestamp": "2026-05-22T18:15:38Z",
-      "min": 2.0,
-      "mean": 3.7142857142857144,
-      "atTarget": 0,
-      "total": 7,
+      "rounds": 875,
+      "timestamp": "2026-05-24T08:18:44Z",
+      "min": 6.0,
+      "mean": 7.15,
+      "atTarget": 3,
+      "total": 10,
       "scores": [
         {
           "dimension": "D1 \u2014 User-flow coverage breadth",
-          "score": 3
-        },
-        {
-          "dimension": "D2 \u2014 Test signal density (% non-useless tests)",
-          "score": 2
-        },
-        {
-          "dimension": "D3 \u2014 Realism (fork vs mock)",
-          "score": 4
-        },
-        {
-          "dimension": "D4 \u2014 Failure-mode coverage",
-          "score": 3
-        },
-        {
-          "dimension": "D5 \u2014 Selector & maintainability quality",
-          "score": 5
-        },
-        {
-          "dimension": "D6 \u2014 Performance & developer cycle time",
-          "score": 3
-        },
-        {
-          "dimension": "D7 \u2014 Specification & journey-map fidelity",
           "score": 6
+        },
+        {
+          "dimension": "D2 \u2014 Test signal density",
+          "score": 6.9
+        },
+        {
+          "dimension": "D3 \u2014 Realism",
+          "score": 6.2
+        },
+        {
+          "dimension": "D4 \u2014 Failure-mode coverage axes",
+          "score": 7
+        },
+        {
+          "dimension": "D5 \u2014 Selector & maintainability",
+          "score": 6
+        },
+        {
+          "dimension": "D6 \u2014 Performance & CI integration",
+          "score": 7
+        },
+        {
+          "dimension": "D7 \u2014 Journey-map fidelity",
+          "score": 7.4
+        },
+        {
+          "dimension": "D8 \u2014 Visual regression coverage",
+          "score": 8
+        },
+        {
+          "dimension": "D9 \u2014 Accessibility test coverage",
+          "score": 9
+        },
+        {
+          "dimension": "D10 \u2014 Performance budget enforcement",
+          "score": 8
         }
       ]
     },
     {
       "id": 3,
       "label": "Spec formalization",
-      "rounds": 32,
-      "timestamp": "2026-05-22T18:23:04Z",
+      "rounds": 43,
+      "timestamp": "2026-05-23T02:54:22Z",
       "min": 4.0,
       "mean": 6.625,
       "atTarget": 3,
@@ -130,10 +150,10 @@
     {
       "id": 4,
       "label": "SC test infra",
-      "rounds": 34,
-      "timestamp": "2026-05-22T18:24:19Z",
+      "rounds": 39,
+      "timestamp": "2026-05-23T03:12:27Z",
       "min": 4.5,
-      "mean": 7.0,
+      "mean": 7.033333333333334,
       "atTarget": 3,
       "total": 6,
       "scores": [
@@ -151,11 +171,11 @@
         },
         {
           "dimension": "Fork realism",
-          "score": 5.7
+          "score": 6.1
         },
         {
           "dimension": "CI gating & reproducibility",
-          "score": 6
+          "score": 5.8
         },
         {
           "dimension": "Tooling diversity (single-tool risk)",
@@ -166,10 +186,10 @@
     {
       "id": 5,
       "label": "Holistic arch",
-      "rounds": 26,
-      "timestamp": "2026-05-22T17:50:43Z",
+      "rounds": 27,
+      "timestamp": "2026-05-23T02:55:48Z",
       "min": 3.0,
-      "mean": 4.1499999999999995,
+      "mean": 4.183333333333333,
       "atTarget": 0,
       "total": 6,
       "scores": [
@@ -191,7 +211,7 @@
         },
         {
           "dimension": "D5 \u2014 Maintainability and freshness (docs \u2194 code; dead code; CI gating)",
-          "score": 4.7
+          "score": 4.9
         },
         {
           "dimension": "D6 \u2014 Supply-chain risk (npm pin, foundry submodule pin, RPC, CDN, verification)",

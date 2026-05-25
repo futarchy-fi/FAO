@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Futarchy wiki</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --bg-alt: #141720;
+      --border: #1e2230;
+      --text: #e0e4ec;
+      --text-muted: #8892a4;
+      --accent: #3effb0;
+      --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font: 15px/1.6 var(--sans); display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    aside { background: var(--bg-alt); border-right: 1px solid var(--border); padding: 24px 16px; overflow-y: auto; height: 100vh; position: sticky; top: 0; }
+    aside h1 { font-size: 16px; color: var(--accent); margin-bottom: 16px; }
+    aside ul { list-style: none; }
+    aside li { margin: 2px 0; }
+    aside a { color: var(--text-muted); text-decoration: none; font-size: 13px; display: block; padding: 4px 8px; border-radius: 4px; }
+    aside a:hover, aside a.active { background: var(--border); color: var(--text); }
+    aside .group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 14px 8px 4px; font-weight: 600; }
+    main { padding: 32px 48px; max-width: 980px; }
+    main h1 { font-size: 28px; margin-bottom: 12px; }
+    main h2 { font-size: 22px; margin: 24px 0 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+    main h3 { font-size: 17px; margin: 18px 0 6px; color: var(--accent); }
+    main p { margin: 8px 0; }
+    main code { background: var(--bg-alt); padding: 1px 5px; border-radius: 3px; font: 0.92em var(--mono); }
+    main pre { background: var(--bg-alt); padding: 12px 16px; border-radius: 6px; overflow-x: auto; margin: 12px 0; }
+    main pre code { background: none; padding: 0; }
+    main a { color: var(--accent); }
+    main ul, main ol { margin: 8px 0 8px 22px; }
+    main table { border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    main th, main td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+    main th { background: var(--bg-alt); font-weight: 600; }
+    main blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: 12px 0; color: var(--text-muted); }
+    .meta { color: var(--text-muted); font-size: 12px; font-family: var(--mono); margin-bottom: 18px; }
+    .loading { color: var(--text-muted); padding: 24px; }
+  </style>
+</head>
+<body>
+
+<aside>
+  <h1>Futarchy wiki</h1>
+  <ul id="nav"><li class="loading">Loading index…</li></ul>
+</aside>
+
+<main>
+  <article id="content"><p class="loading">Pick a page from the sidebar.</p></article>
+</main>
+
+<script>
+// Hardcoded TOC — kept simple. Rebuild this script (or fetch a manifest) if pages change.
+const PAGES = [
+  { group: 'Intro', items: [
+    ['README.md', 'Wiki home'],
+    ['_OUTLINE.md', 'Outline'],
+  ]},
+  { group: 'What is Futarchy', items: [
+    ['00-what-is-futarchy/README.md', 'Overview'],
+    ['00-what-is-futarchy/prior-art.md', 'Prior art'],
+    ['00-what-is-futarchy/why-onchain.md', 'Why on-chain'],
+  ]},
+  { group: 'FAO repo', items: [
+    ['10-fao-repo/README.md', 'Repo overview'],
+    ['10-fao-repo/architecture.md', 'Architecture'],
+    ['10-fao-repo/glossary.md', 'Glossary'],
+    ['10-fao-repo/invariants.md', 'Invariants'],
+    ['10-fao-repo/deployment.md', 'Deployment'],
+    ['10-fao-repo/deployment-history.md', 'Deployment history'],
+  ]},
+  { group: 'Lifecycle', items: [
+    ['10-fao-repo/lifecycle/00-create-instance.md', 'Create instance'],
+    ['10-fao-repo/lifecycle/10-sale.md', 'Sale'],
+    ['10-fao-repo/lifecycle/20-spot-liquidity.md', 'Spot liquidity'],
+    ['10-fao-repo/lifecycle/30-proposal.md', 'Proposal'],
+    ['10-fao-repo/lifecycle/40-promote.md', 'Promote'],
+    ['10-fao-repo/lifecycle/50-resolve.md', 'Resolve'],
+    ['10-fao-repo/lifecycle/60-arbitration.md', 'Arbitration'],
+  ]},
+  { group: 'Agents vision', items: [
+    ['20-agents-vision/README.md', 'futarchy-fi/agents vision'],
+  ]},
+  { group: 'Cross-cutting', items: [
+    ['30-cross-cutting/security.md', 'Security'],
+    ['30-cross-cutting/threat-model.md', 'Threat model'],
+    ['30-cross-cutting/deployment.md', 'Deploy patterns'],
+    ['30-cross-cutting/deprecations.md', 'Deprecations'],
+    ['30-cross-cutting/supply-chain.md', 'Supply chain'],
+    ['30-cross-cutting/ops.md', 'Ops'],
+  ]},
+  { group: 'Themes', items: [
+    ['30-themes/ui-architecture.md', 'UI architecture'],
+  ]},
+  { group: 'Verification', items: [
+    ['40-verification/decidability.md', 'Decidability'],
+  ]},
+  { group: 'Meta', items: [
+    ['_meta/how-this-wiki-is-maintained.md', 'How it\'s maintained'],
+    ['_meta/source-of-truth-map.md', 'Source-of-truth map'],
+    ['_meta/changelog.jsonl', 'Changelog (jsonl)'],
+  ]},
+];
+
+const navEl = document.getElementById('nav');
+navEl.innerHTML = PAGES.map(group =>
+  `<li class="group">${group.group}</li>` +
+  group.items.map(([path, label]) =>
+    `<li><a href="#${path}" data-path="${path}">${label}</a></li>`).join('')
+).join('');
+
+async function loadPage(path) {
+  const el = document.getElementById('content');
+  el.innerHTML = `<p class="loading">Loading ${path}…</p>`;
+  document.querySelectorAll('aside a').forEach(a => a.classList.toggle('active', a.dataset.path === path));
+  try {
+    const r = await fetch(path, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const text = await r.text();
+    // Render markdown. .jsonl files are NOT markdown — show as <pre>.
+    if (path.endsWith('.jsonl') || path.endsWith('.json')) {
+      el.innerHTML = `<div class="meta">${path}</div><pre><code>${text.replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' })[c])}</code></pre>`;
+    } else {
+      el.innerHTML = `<div class="meta">${path}</div>` + marked.parse(text);
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  } catch (e) {
+    el.innerHTML = `<p class="loading">Failed to load ${path}: ${e.message}</p>`;
+  }
+}
+
+function routeFromHash() {
+  const path = location.hash.replace(/^#/, '') || 'README.md';
+  loadPage(path);
+}
+window.addEventListener('hashchange', routeFromHash);
+routeFromHash();
+</script>
+
+</body>
+</html>

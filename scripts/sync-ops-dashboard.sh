@@ -109,3 +109,13 @@ out.write_text(json.dumps(summary, indent=2, ensure_ascii=True) + "\n")
 PY
 
 echo "[ok] synced JSONL + dashboard assets (index.html, dashboard.{js,css}, summary.json) into site-ops/fao/"
+
+# 3. Wiki — mirror audit/wiki/ into site-ops/wiki/ so ops.futarchy.ai/wiki/ stays fresh.
+SRC_WIKI="$ROOT/audit/wiki"
+DST_WIKI="$ROOT/site-ops/wiki"
+if [[ -d "$SRC_WIKI" ]]; then
+  mkdir -p "$DST_WIKI"
+  # Sync — preserve site-ops/wiki/index.html (our renderer wrapper) by name.
+  rsync -a --exclude='index.html' --delete "$SRC_WIKI/" "$DST_WIKI/" 2>/dev/null || cp -r "$SRC_WIKI/"* "$DST_WIKI/" 2>/dev/null
+fi
+echo "[ok] wiki synced audit/wiki → site-ops/wiki"
