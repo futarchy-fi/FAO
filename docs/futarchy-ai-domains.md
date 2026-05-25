@@ -8,9 +8,10 @@ Restored 2026-05-22 after the AWS Route53 → Cloudflare migration.
 |---|---|---|---|
 | `futarchy.ai` (apex) | `fao-site` | `site/` in this repo | Cloudflare Pages |
 | `www.futarchy.ai` | `fao-site` | `site/` | Cloudflare Pages |
-| `fao.futarchy.ai` | `fao-site` | `site/` | Cloudflare Pages |
-| `testnet.fao.futarchy.ai` | `fao-testnet` | (separate deploy — see project) | Cloudflare Pages |
-| `ops.futarchy.ai` | `fao-ops` | `site-ops/` (incl. `/fao/` audit dashboard) | Cloudflare Pages |
+| `fao.futarchy.ai` | `fao-site` | `site/` (FAO production landing — treasury, FAO contracts, audit dashboard) | Cloudflare Pages |
+| `testnet.fao.futarchy.ai` | `fao-testnet` | `site-testnet/` (Sepolia testnet UI) | Cloudflare Pages |
+| **`ops.futarchy.ai`** | **`fao-ops-react`** (NEW) | `/home/kelvin/futarchy/fleet/apps/dashboard/dist/` (React/Vite slimmed dashboard — Personal, LifeQuadrants, Settings) | Cloudflare Pages |
+| (legacy) `fao-ops.pages.dev` | `fao-ops` | `site-ops/` — kept for direct-link access to FAO audit dashboard `/fao/` + wiki `/wiki/` while migrating those to fao.futarchy.ai | Cloudflare Pages |
 | `azzas.futarchy.ai` | `azzas-portal` | (separate project) | Cloudflare Pages |
 | `polsia.futarchy.ai` | — | (Render service `srv-d88cji57vvec738ktl90` — "futarchyos") | Render |
 | `api.bond.futarchy.ai` | — | — | GCP raw IP `34.88.170.88` |
