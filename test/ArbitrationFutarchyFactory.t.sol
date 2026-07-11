@@ -11,6 +11,10 @@ import {MockWrapped1155Factory} from "./mocks/MockWrapped1155Factory.sol";
 import {MockERC20Symbol} from "./mocks/MockERC20Symbol.sol";
 
 contract ArbitrationFutarchyFactoryTest is Test {
+    event NewProposal(
+        address indexed proposal, string marketName, bytes32 conditionId, bytes32 questionId
+    );
+
     MockConditionalTokensFull ctf;
     MockWrapped1155Factory w1155;
     MockERC20Symbol faoToken;
@@ -126,7 +130,7 @@ contract ArbitrationFutarchyFactoryTest is Test {
             keccak256(abi.encodePacked(oracle, expectedQuestionId, uint256(2)));
 
         vm.expectEmit(false, false, false, true);
-        emit ArbitrationFutarchyFactory.NewProposal(
+        emit NewProposal(
             address(0), // we don't know the clone address yet
             "Test Market",
             expectedConditionId,

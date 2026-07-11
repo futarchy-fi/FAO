@@ -9,7 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 
 /// @dev Minimal ERC20 used for invariant testing.
-/// We etch this runtime code into the canonical WXDAI address used by FutarchyArbitration.
+/// We etch this runtime code into the Gnosis WXDAI address configured for this test.
 contract WXDAIMock is IERC20 {
     string public constant name = "WXDAI";
     string public constant symbol = "WXDAI";
@@ -131,11 +131,11 @@ contract WXDAIMock is IERC20 {
         uint256 initialSupply;
 
         function setUp() public {
-            // Install a real ERC20 into the canonical immutable WXDAI address.
+            // Install a real ERC20 into the explicitly configured Gnosis WXDAI address.
             WXDAIMock impl = new WXDAIMock();
             vm.etch(WXDAI, address(impl).code);
 
-            arb = new FutarchyArbitration();
+            arb = new FutarchyArbitration(IERC20(WXDAI), 100e18, 72 hours);
 
             // Create a small actor set and fund them.
             for (uint256 i = 0; i < 6; i++) {

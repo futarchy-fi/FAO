@@ -4,6 +4,8 @@ out = "out"
 libs = ["lib"]
 optimizer = true
 optimizer_runs = 200
+solc = "0.8.20"
+auto_detect_solc = false
 
 remappings = [
     # Use SnapshotX-pinned OpenZeppelin versions (v4.x) to avoid OZ v5 init signature mismatches
@@ -14,9 +16,9 @@ remappings = [
 
     # Snapshot X EVM (vendored as a Foundry lib)
     "sx/=lib/sx-evm/src/",
-    # Local src/ shims resolve "src/types.sol" etc. for sx-evm internal imports.
-    # The "src/=lib/sx-evm/src/" remapping was removed to avoid ambiguous import
-    # errors with newer Forge/Solc; vendored shim files in src/ serve the same role.
+    # Resolve sx-evm's legacy absolute "src/..." imports to the vendored local shims.
+    # Scoping the remapping keeps Forge from discarding it as an identity remapping.
+    "lib/sx-evm/src/:src/=src/",
     "forge-gas-snapshot/=lib/sx-evm/lib/forge-gas-snapshot/src/",
     "@prb/test/=lib/sx-evm/lib/prb-test/src/",
     "@zodiac/=lib/sx-evm/lib/zodiac/contracts/",
@@ -35,4 +37,3 @@ gnosis = "https://rpc.gnosischain.com"
 line_length = 100
 number_underscore = "thousands"
 wrap_comments = true
-

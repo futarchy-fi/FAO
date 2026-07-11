@@ -14,11 +14,8 @@ contract FutarchyTWAPOracleTest is Test {
     event ProposalResolved(
         address indexed proposal, bool accepted, int56 yesAvgTick, int56 noAvgTick
     );
-    event ConfigUpdated(uint32 tradingPeriod, uint32 twapWindow, int24 thresholdTicks);
-
     FutarchyTWAPOracle oracle;
 
-    address dao = address(0xDA0);
     address binderAddr = address(0xB1);
     address proposal = address(0xCAFE);
 
@@ -36,7 +33,7 @@ contract FutarchyTWAPOracleTest is Test {
     int24 constant THRESHOLD = 0;
 
     function setUp() public {
-        oracle = new FutarchyTWAPOracle(dao, binderAddr, TRADING_PERIOD, TWAP_WINDOW, THRESHOLD);
+        oracle = new FutarchyTWAPOracle(binderAddr, TRADING_PERIOD, TWAP_WINDOW, THRESHOLD);
 
         // YES pool: yesCompany < yesCurrency, so token0 = yesCompany.
         // Normal ordering: company is token0 → sign = +1.
@@ -49,31 +46,25 @@ contract FutarchyTWAPOracleTest is Test {
     // ═══════════════════════════════════════════════════════
 
     function testConstructorSetsState() public view {
-        assertEq(oracle.dao(), dao);
         assertEq(oracle.binder(), binderAddr);
         assertEq(oracle.tradingPeriod(), TRADING_PERIOD);
         assertEq(oracle.twapWindow(), TWAP_WINDOW);
         assertEq(oracle.thresholdTicks(), THRESHOLD);
     }
 
-    function testConstructorRevertsZeroDAO() public {
-        vm.expectRevert(FutarchyTWAPOracle.ZeroAddress.selector);
-        new FutarchyTWAPOracle(address(0), binderAddr, TRADING_PERIOD, TWAP_WINDOW, THRESHOLD);
-    }
-
     function testConstructorRevertsZeroBinder() public {
         vm.expectRevert(FutarchyTWAPOracle.ZeroAddress.selector);
-        new FutarchyTWAPOracle(dao, address(0), TRADING_PERIOD, TWAP_WINDOW, THRESHOLD);
+        new FutarchyTWAPOracle(address(0), TRADING_PERIOD, TWAP_WINDOW, THRESHOLD);
     }
 
     function testConstructorRevertsInvalidConfig() public {
         vm.expectRevert(abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 100, 200));
-        new FutarchyTWAPOracle(dao, binderAddr, 100, 200, THRESHOLD);
+        new FutarchyTWAPOracle(binderAddr, 100, 200, THRESHOLD);
     }
 
     function testConstructorRevertsZeroWindow() public {
         vm.expectRevert(abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 100, 0));
-        new FutarchyTWAPOracle(dao, binderAddr, 100, 0, THRESHOLD);
+        new FutarchyTWAPOracle(binderAddr, 100, 0, THRESHOLD);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -284,7 +275,7 @@ contract FutarchyTWAPOracleTest is Test {
     function testResolveNoAtThresholdBoundary() public {
         // Deploy oracle with threshold = 10
         FutarchyTWAPOracle oracleT =
-            new FutarchyTWAPOracle(dao, binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
+            new FutarchyTWAPOracle(binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
 
         vm.prank(binderAddr);
         oracleT.bind(
@@ -310,7 +301,7 @@ contract FutarchyTWAPOracleTest is Test {
 
     function testResolveYesAboveThreshold() public {
         FutarchyTWAPOracle oracleT =
-            new FutarchyTWAPOracle(dao, binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
+            new FutarchyTWAPOracle(binderAddr, TRADING_PERIOD, TWAP_WINDOW, 10);
 
         vm.prank(binderAddr);
         oracleT.bind(
@@ -518,47 +509,6 @@ contract FutarchyTWAPOracleTest is Test {
         (bool resolved, bool accepted) = oracle.getDecision(address(0xDEAD));
         assertFalse(resolved);
         assertFalse(accepted);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  setConfig()
-    // ═══════════════════════════════════════════════════════
-
-    function testSetConfigFromDAO() public {
-        vm.prank(dao);
-        oracle.setConfig(14 days, 2 days, 5);
-
-        assertEq(oracle.tradingPeriod(), 14 days);
-        assertEq(oracle.twapWindow(), 2 days);
-        assertEq(oracle.thresholdTicks(), 5);
-    }
-
-    function testSetConfigEmitsEvent() public {
-        vm.prank(dao);
-        vm.expectEmit(false, false, false, true);
-        emit ConfigUpdated(14 days, 2 days, 5);
-        oracle.setConfig(14 days, 2 days, 5);
-    }
-
-    function testSetConfigRevertsFromNonDAO() public {
-        vm.expectRevert(FutarchyTWAPOracle.NotDAO.selector);
-        oracle.setConfig(14 days, 2 days, 5);
-    }
-
-    function testSetConfigRevertsInvalidWindow() public {
-        vm.prank(dao);
-        vm.expectRevert(
-            abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 1 days, 2 days)
-        );
-        oracle.setConfig(1 days, 2 days, 5);
-    }
-
-    function testSetConfigRevertsZeroWindow() public {
-        vm.prank(dao);
-        vm.expectRevert(
-            abi.encodeWithSelector(FutarchyTWAPOracle.InvalidConfig.selector, 1 days, 0)
-        );
-        oracle.setConfig(1 days, 0, 5);
     }
 
     // ═══════════════════════════════════════════════════════
