@@ -6,18 +6,18 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {Space} from "sx/Space.sol";
+import {Space} from "lib/sx-evm/src/Space.sol";
 import {
     VanillaProposalValidationStrategy
-} from "sx/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
+} from "lib/sx-evm/src/proposal-validation-strategies/VanillaProposalValidationStrategy.sol";
 
 import {AlwaysZeroVotingStrategy} from "../src/AlwaysZeroVotingStrategy.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 import {IFutarchyArbitrationEvaluator} from "../src/IFutarchyArbitrationEvaluator.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {SXProposalGateway} from "../src/SXProposalGateway.sol";
-import {IExecutionStrategy} from "../src/interfaces/IExecutionStrategy.sol";
-import {ISpaceErrors} from "../src/interfaces/space/ISpaceErrors.sol";
+import {IExecutionStrategy} from "src/interfaces/IExecutionStrategy.sol";
+import {ISpaceErrors} from "src/interfaces/space/ISpaceErrors.sol";
 import {
     Choice,
     FinalizationStatus,
@@ -26,7 +26,7 @@ import {
     Proposal,
     ProposalStatus,
     Strategy
-} from "../src/types.sol";
+} from "src/types.sol";
 
 contract ArbitrationMock {
     error NotProposalGateway();
@@ -161,7 +161,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testZeroDurationVoteAlwaysRevertsWithoutState() public {
-        uint256 proposalId = _propose(bytes("zero-duration"));
+        uint256 proposalId = _propose(_validPayload("zero-duration"));
         IndexedStrategy[] memory userStrategies = _userStrategies();
 
         vm.expectRevert(ISpaceErrors.AuthenticatorNotWhitelisted.selector);
@@ -179,7 +179,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testProposalCreationAtomicallyCreatesArbitrationRecord() public {
-        bytes memory payload = bytes("atomic-record");
+        bytes memory payload = _validPayload("atomic-record");
         _propose(payload);
 
         uint256 arbId = _arbId(payload);
@@ -189,7 +189,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testDuplicatePayloadCannotCreateAnotherSpaceProposal() public {
-        bytes memory payload = bytes("duplicate-payload");
+        bytes memory payload = _validPayload("duplicate-payload");
         _propose(payload);
         uint256 nextProposalId = space.nextProposalId();
 
@@ -207,7 +207,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
             address(space), address(strategy), address(rollbackArbitration), MIN_ACTIVATION_BOND
         );
         rollbackArbitration.setProposalGateway(address(unlistedGateway));
-        bytes memory payload = bytes("rollback-record");
+        bytes memory payload = _validPayload("rollback-record");
         uint256 nextProposalId = space.nextProposalId();
 
         vm.expectRevert(ISpaceErrors.AuthenticatorNotWhitelisted.selector);
@@ -243,7 +243,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testUnsettledArbitrationCannotExecute() public {
-        bytes memory payload = bytes("unsettled-payload");
+        bytes memory payload = _validPayload("unsettled-payload");
         uint256 proposalId = _propose(payload);
         arbitration.setAccepted(_arbId(payload), true);
 
@@ -259,7 +259,7 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testRejectedArbitrationCannotExecute() public {
-        bytes memory payload = bytes("rejected-payload");
+        bytes memory payload = _validPayload("rejected-payload");
         uint256 proposalId = _propose(payload);
         arbitration.settle(_arbId(payload), false);
 
@@ -321,7 +321,6 @@ contract SXArbitrationExecutionStrategyTest is Test {
     function testReleaseURILengthIsBounded() public {
         string memory uri = string(new bytes(strategy.MAX_RELEASE_URI_BYTES() + 1));
         bytes memory payload = _releasePayload(1, bytes32(0), keccak256("too-long-uri"), uri);
-        uint256 proposalId = _propose(payload);
         arbitration.settle(_arbId(payload), true);
 
         vm.expectRevert(
@@ -330,9 +329,10 @@ contract SXArbitrationExecutionStrategyTest is Test {
                 strategy.MAX_RELEASE_URI_BYTES() + 1
             )
         );
-        space.execute(proposalId, payload);
+        vm.prank(address(space));
+        strategy.execute(1, _proposal(address(strategy), payload), 0, 0, 0, payload);
 
-        _assertNotExecuted(proposalId);
+        assertEq(strategy.releaseNonce(), 0);
     }
 
     function testUnrelatedLargeNoProposalCannotBlockYesTimeoutSiteRelease() public {
@@ -398,12 +398,12 @@ contract SXArbitrationExecutionStrategyTest is Test {
     }
 
     function testPayloadMismatchCannotExecute() public {
-        bytes memory payload = bytes("committed-payload");
+        bytes memory payload = _validPayload("committed-payload");
         uint256 proposalId = _propose(payload);
         arbitration.settle(_arbId(payload), true);
 
         vm.expectRevert(ISpaceErrors.InvalidPayload.selector);
-        space.execute(proposalId, bytes("different-payload"));
+        space.execute(proposalId, _validPayload("different-payload"));
 
         _assertNotExecuted(proposalId);
     }
@@ -456,6 +456,11 @@ contract SXArbitrationExecutionStrategyTest is Test {
                 artifactURI: uri
             })
         );
+    }
+
+    function _validPayload(string memory seed) internal pure returns (bytes memory) {
+        return
+            _releasePayload(1, bytes32(0), keccak256(bytes(seed)), string.concat("ipfs://", seed));
     }
 
     function _proposal(address executionStrategy, bytes memory payload)

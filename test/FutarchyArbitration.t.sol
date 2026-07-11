@@ -87,6 +87,12 @@ contract FutarchyArbitrationTest is Test {
         arb.createProposalWithId(uint256(keccak256("squatted-id")), 1e18);
     }
 
+    function testOnlyProposalGatewayCanCreateAutoIdOnceConfigured() public {
+        vm.expectRevert(FutarchyArbitration.NotProposalGateway.selector);
+        vm.prank(makeAddr("queue-squatter"));
+        arb.createProposal(1e18);
+    }
+
     function testProposalGatewayCanOnlyBeSetOnce() public {
         vm.expectRevert(FutarchyArbitration.ProposalGatewayAlreadySet.selector);
         arb.setProposalGateway(makeAddr("replacement-gateway"));
@@ -434,6 +440,18 @@ contract FutarchyArbitrationTest is Test {
 
         FutarchyArbitration.Proposal memory p2 = arb.getProposal(pid2);
         assertEq(uint256(p2.state), uint256(FutarchyArbitration.ProposalState.QUEUED));
+    }
+
+    function testTryGraduateCannotConvertUnchallengedYesTimeoutRoute() public {
+        uint256 proposalId = arb.createProposal(1e18);
+        arb.placeYesBond(proposalId, arb.requiredYes(0));
+
+        vm.expectRevert(FutarchyArbitration.InvalidState.selector);
+        arb.tryGraduate(proposalId);
+
+        vm.warp(block.timestamp + GNOSIS_TIMEOUT);
+        arb.finalizeByTimeout(proposalId);
+        assertTrue(arb.isAccepted(proposalId));
     }
 
     function testGraduationRevertsIfQueueFull() public {

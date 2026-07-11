@@ -197,8 +197,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Create a new arbitration proposal with an auto-assigned id.
-    /// @dev Anyone can create proposals. Starts INACTIVE with no bonds.
+    /// @dev Anyone can create proposals until a deterministic-id gateway is selected. Once set,
+    ///      only that gateway may create either kind, preventing unevaluable ids from wedging the
+    ///      shared evaluation queue.
     function createProposal(uint256 minActivationBond) external returns (uint256 proposalId) {
+        if (proposalGateway != address(0) && msg.sender != proposalGateway) {
+            revert NotProposalGateway();
+        }
         if (minActivationBond == 0) revert InvalidMinActivationBond();
 
         proposalId = nextProposalId;
@@ -362,6 +367,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
         if (p.state != ProposalState.YES) revert InvalidState();
+        if (p.noBond.amount == 0) revert InvalidState();
 
         _tryGraduate(proposalId, p, p.yesBond.amount);
     }

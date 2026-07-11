@@ -14,6 +14,14 @@ interface IFutarchyArbitrationRegistry {
 
 /// @notice A Snapshot X authenticator that exposes proposal creation, but no vote or update path.
 contract SXProposalGateway {
+    struct SiteRelease {
+        uint256 nonce;
+        bytes32 expectedCurrentDigest;
+        bytes32 artifactDigest;
+        string artifactURI;
+    }
+
+    error InvalidExecutionPayload();
     error InvalidMinActivationBond();
     error ZeroAddress();
 
@@ -42,6 +50,15 @@ contract SXProposalGateway {
         bytes calldata executionPayload,
         bytes calldata proposalValidationParams
     ) external {
+        SiteRelease memory release = abi.decode(executionPayload, (SiteRelease));
+        uint256 uriLength = bytes(release.artifactURI).length;
+        if (
+            release.nonce == 0 || release.artifactDigest == bytes32(0) || uriLength == 0
+                || uriLength > 256
+        ) {
+            revert InvalidExecutionPayload();
+        }
+
         arbitration.createProposalWithId(uint256(keccak256(executionPayload)), minActivationBond);
         space.propose(
             msg.sender,
