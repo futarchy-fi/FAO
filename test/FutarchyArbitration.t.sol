@@ -6,28 +6,65 @@ import "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
-import {ManualEvaluator} from "../src/ManualEvaluator.sol";
+import {IFutarchyArbitrationEvaluator} from "../src/IFutarchyArbitrationEvaluator.sol";
+
+contract TestEvaluator is IFutarchyArbitrationEvaluator {
+    address public immutable arbitration;
+    mapping(uint256 proposalId => bool accepted) public decision;
+
+    constructor(address arbitration_) {
+        arbitration = arbitration_;
+    }
+
+    function setDecision(uint256 proposalId, bool accepted) external {
+        decision[proposalId] = accepted;
+    }
+
+    function resolve(uint256 proposalId) external returns (bool accepted) {
+        accepted = decision[proposalId];
+        FutarchyArbitration(arbitration).resolveActiveEvaluation(accepted);
+    }
+}
 
 contract FutarchyArbitrationTest is Test {
     FutarchyArbitration arb;
 
-    // Canonical Gnosis WXDAI address hardcoded into contract.
-    address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    address internal constant GNOSIS_WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    uint256 internal constant GNOSIS_BASE_X = 100e18;
+    uint256 internal constant GNOSIS_TIMEOUT = 72 hours;
 
     function setUp() public {
-        arb = new FutarchyArbitration();
+        vm.etch(GNOSIS_WXDAI, hex"00");
+        arb = new FutarchyArbitration(IERC20(GNOSIS_WXDAI), GNOSIS_BASE_X, GNOSIS_TIMEOUT);
+        arb.setProposalGateway(address(this));
 
         // We don't need a full ERC20 implementation for most tests; SafeERC20 only
         // requires transfer/transferFrom to return true (or return no data).
-        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true));
-        vm.mockCall(WXDAI, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true));
+        vm.mockCall(
+            GNOSIS_WXDAI, abi.encodeWithSelector(IERC20.transferFrom.selector), abi.encode(true)
+        );
+        vm.mockCall(
+            GNOSIS_WXDAI, abi.encodeWithSelector(IERC20.transfer.selector), abi.encode(true)
+        );
     }
 
     function testDeploy() public view {
         assertTrue(address(arb) != address(0));
 
-        // sanity: immutable WXDAI address is set to canonical Gnosis WXDAI
-        assertEq(address(arb.WXDAI()), WXDAI);
+        assertEq(address(arb.bondToken()), GNOSIS_WXDAI);
+        assertEq(arb.baseX(), GNOSIS_BASE_X);
+        assertEq(arb.timeout(), GNOSIS_TIMEOUT);
+    }
+
+    function testConstructorRejectsInvalidConfig() public {
+        vm.expectRevert(FutarchyArbitration.InvalidConfig.selector);
+        new FutarchyArbitration(IERC20(address(0)), GNOSIS_BASE_X, GNOSIS_TIMEOUT);
+
+        vm.expectRevert(FutarchyArbitration.InvalidConfig.selector);
+        new FutarchyArbitration(IERC20(GNOSIS_WXDAI), 0, GNOSIS_TIMEOUT);
+
+        vm.expectRevert(FutarchyArbitration.InvalidConfig.selector);
+        new FutarchyArbitration(IERC20(GNOSIS_WXDAI), GNOSIS_BASE_X, 0);
     }
 
     function testCreateProposalWithExplicitId() public {
@@ -42,6 +79,32 @@ contract FutarchyArbitrationTest is Test {
         // cannot reuse id
         vm.expectRevert(FutarchyArbitration.ProposalAlreadyExists.selector);
         arb.createProposalWithId(explicitId, 1e18);
+    }
+
+    function testOnlyProposalGatewayCanCreateWithExplicitId() public {
+        vm.expectRevert(FutarchyArbitration.NotProposalGateway.selector);
+        vm.prank(makeAddr("id-squatter"));
+        arb.createProposalWithId(uint256(keccak256("squatted-id")), 1e18);
+    }
+
+    function testOnlyProposalGatewayCanCreateAutoIdOnceConfigured() public {
+        vm.expectRevert(FutarchyArbitration.NotProposalGateway.selector);
+        vm.prank(makeAddr("queue-squatter"));
+        arb.createProposal(1e18);
+    }
+
+    function testProposalGatewayCanOnlyBeSetOnce() public {
+        vm.expectRevert(FutarchyArbitration.ProposalGatewayAlreadySet.selector);
+        arb.setProposalGateway(makeAddr("replacement-gateway"));
+    }
+
+    function testEvaluatorCanOnlyBeSetOnce() public {
+        TestEvaluator evaluator = new TestEvaluator(address(arb));
+        arb.setEvaluator(address(evaluator));
+        TestEvaluator replacement = new TestEvaluator(address(arb));
+
+        vm.expectRevert(FutarchyArbitration.EvaluatorAlreadySet.selector);
+        arb.setEvaluator(address(replacement));
     }
 
     function testCannotNoBidInactive() public {
@@ -266,7 +329,7 @@ contract FutarchyArbitrationTest is Test {
         // First withdraw transfers WXDAI and clears withdrawable balance
         bytes memory transferCalldata =
             abi.encodeWithSelector(IERC20.transfer.selector, noBidder, payout);
-        vm.expectCall(WXDAI, transferCalldata, 1);
+        vm.expectCall(GNOSIS_WXDAI, transferCalldata, 1);
 
         vm.prank(noBidder);
         arb.withdraw();
@@ -274,7 +337,7 @@ contract FutarchyArbitrationTest is Test {
         assertEq(arb.withdrawable(noBidder), 0);
 
         // Second withdraw should be a no-op (and must not call transfer again).
-        vm.mockCallRevert(WXDAI, transferCalldata, "unexpected-transfer");
+        vm.mockCallRevert(GNOSIS_WXDAI, transferCalldata, "unexpected-transfer");
 
         vm.prank(noBidder);
         arb.withdraw();
@@ -344,7 +407,7 @@ contract FutarchyArbitrationTest is Test {
     }
 
     function testTryGraduateWorksAfterQueueDrains() public {
-        ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
+        TestEvaluator eval = new TestEvaluator(address(arb));
         arb.setEvaluator(address(eval));
 
         // Graduate pid1 into queue (queueLen becomes 1, threshold = 200e18).
@@ -377,6 +440,18 @@ contract FutarchyArbitrationTest is Test {
 
         FutarchyArbitration.Proposal memory p2 = arb.getProposal(pid2);
         assertEq(uint256(p2.state), uint256(FutarchyArbitration.ProposalState.QUEUED));
+    }
+
+    function testTryGraduateCannotConvertUnchallengedYesTimeoutRoute() public {
+        uint256 proposalId = arb.createProposal(1e18);
+        arb.placeYesBond(proposalId, arb.requiredYes(0));
+
+        vm.expectRevert(FutarchyArbitration.InvalidState.selector);
+        arb.tryGraduate(proposalId);
+
+        vm.warp(block.timestamp + GNOSIS_TIMEOUT);
+        arb.finalizeByTimeout(proposalId);
+        assertTrue(arb.isAccepted(proposalId));
     }
 
     function testGraduationRevertsIfQueueFull() public {
@@ -467,7 +542,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testEvaluatorCanResolveActiveEvaluationAndSettles() public {
         // Deploy evaluator and wire it.
-        ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
+        TestEvaluator eval = new TestEvaluator(address(arb));
         arb.setEvaluator(address(eval));
 
         uint256 proposalId = arb.createProposal(1e18);
@@ -493,7 +568,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testEvaluationResolvesAndPaysCorrectWinner() public {
         // Deploy evaluator and wire it.
-        ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
+        TestEvaluator eval = new TestEvaluator(address(arb));
         arb.setEvaluator(address(eval));
 
         uint256 proposalId = arb.createProposal(1e18);
@@ -537,7 +612,7 @@ contract FutarchyArbitrationTest is Test {
 
     function testQueueAdvancesAfterResolution() public {
         // Deploy evaluator and wire it.
-        ManualEvaluator eval = new ManualEvaluator(address(arb), address(this));
+        TestEvaluator eval = new TestEvaluator(address(arb));
         arb.setEvaluator(address(eval));
 
         // Create two proposals and graduate both into the queue.
@@ -578,68 +653,23 @@ contract FutarchyArbitrationTest is Test {
         arb.resolveActiveEvaluation(true);
     }
 
-    function testTotalActiveNoBondsTracksActiveNoStateOnly() public {
-        uint256 pid = arb.createProposal(1e18);
-
-        // INACTIVE -> YES(10e18)
-        arb.placeYesBond(pid, 10e18);
-        assertEq(arb.totalActiveNoBonds(), 0);
-
-        // YES -> NO: matches 10e18, amount becomes active
-        arb.placeNoBond(pid);
-        assertEq(arb.totalActiveNoBonds(), 10e18);
-
-        // NO -> YES(20e18): NO amount no longer active
-        arb.placeYesBond(pid, 20e18);
-        assertEq(arb.totalActiveNoBonds(), 0);
-
-        // YES -> NO: matches 20e18, new NO amount becomes active
-        arb.placeNoBond(pid);
-        assertEq(arb.totalActiveNoBonds(), 20e18);
-
-        // Settle by timeout while NO: should decrement
-        vm.warp(block.timestamp + 72 hours);
-        arb.finalizeByTimeout(pid);
-        assertEq(arb.totalActiveNoBonds(), 0);
-    }
-
-    function testSafetyModeActiveWhenTotalActiveNoBondsAtOrAboveThreshold() public {
-        assertEq(arb.safetyNoBondThreshold(), arb.baseX());
-        assertFalse(arb.safetyModeActive());
-
-        // Drive a proposal into NO with a NO bond >= threshold.
-        // YES(100e18) -> NO matches(100e18) -> totalActiveNoBonds = 100e18 = baseX.
-        uint256 pid = arb.createProposal(1e18);
-        arb.placeYesBond(pid, 100e18);
-        arb.placeNoBond(pid);
-
-        assertEq(arb.totalActiveNoBonds(), 100e18);
-        assertTrue(arb.safetyModeActive());
-    }
-
-    function testSafetyModeBlocksYesTimeoutFinalizeButAllowsNoFinalize() public {
-        // Proposal 1: create large NO exposure so safety mode is active.
-        // YES(100e18) -> NO matches(100e18) -> totalActiveNoBonds = baseX.
+    function testUnrelatedLargeNoProposalCannotBlockYesTimeout() public {
         uint256 noPid = arb.createProposal(1e18);
         arb.placeYesBond(noPid, 100e18);
         arb.placeNoBond(noPid);
-        assertTrue(arb.safetyModeActive());
 
-        // Proposal 2: left in YES state.
         uint256 yesPid = arb.createProposal(1e18);
         arb.placeYesBond(yesPid, 1e18);
 
-        // Advance beyond TIMEOUT for both proposals.
         vm.warp(block.timestamp + 72 hours + 1);
 
-        // While in safety mode, YES-by-timeout must be disabled.
-        vm.expectRevert(FutarchyArbitration.SafetyModeActive.selector);
         arb.finalizeByTimeout(yesPid);
+        assertTrue(arb.isAccepted(yesPid));
+        assertEq(arb.withdrawable(address(this)), 1e18);
 
-        // NO-by-timeout is still allowed, and should decrement accounting.
         arb.finalizeByTimeout(noPid);
-        assertEq(arb.totalActiveNoBonds(), 0);
-        assertFalse(arb.safetyModeActive());
+        assertFalse(arb.isAccepted(noPid));
+        assertEq(arb.withdrawable(address(this)), 201e18);
     }
 
     function testEnumHasEvaluatingState() public {

@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 import {IExecutionStrategy} from "../../src/interfaces/IExecutionStrategy.sol";
-import {Proposal, ProposalStatus, FinalizationStatus} from "../../src/types.sol";
+import {Proposal, FinalizationStatus} from "../../src/types.sol";
 
 contract ForkArbMock {
     mapping(uint256 => bool) public accepted;
@@ -25,46 +25,28 @@ contract ForkArbMock {
     }
 }
 
-contract ForkInnerMock is IExecutionStrategy {
-    bool public executed;
-
-    function execute(uint256, Proposal memory, uint256, uint256, uint256, bytes memory)
-        external
-        override
-    {
-        executed = true;
-    }
-
-    function getProposalStatus(Proposal memory, uint256, uint256, uint256)
-        external
-        pure
-        override
-        returns (ProposalStatus)
-    {
-        return ProposalStatus.Accepted;
-    }
-
-    function getStrategyType() external pure override returns (string memory) {
-        return "ForkInnerMock";
-    }
-}
-
 contract SXArbitrationExecutionStrategyForkTest is Test {
     function testFork_blocksExecuteUntilArbitrationAccepted() public {
         if (!vm.envOr("RUN_GNOSIS_FORK_TESTS", false)) return;
         vm.createSelectFork(vm.rpcUrl("gnosis"));
 
         ForkArbMock arb = new ForkArbMock();
-        ForkInnerMock inner = new ForkInnerMock();
-        SXArbitrationExecutionStrategy wrapper = new SXArbitrationExecutionStrategy(
-            address(arb), address(inner), SXArbitrationExecutionStrategy.Mode.VETO
-        );
+        SXArbitrationExecutionStrategy wrapper =
+            new SXArbitrationExecutionStrategy(address(this), address(arb));
 
-        bytes memory payload = abi.encodePacked("hello");
+        bytes32 digest = keccak256("fork-release");
+        bytes memory payload = abi.encode(
+            SXArbitrationExecutionStrategy.SiteRelease({
+                nonce: 1,
+                expectedCurrentDigest: bytes32(0),
+                artifactDigest: digest,
+                artifactURI: "ipfs://fork-release"
+            })
+        );
         Proposal memory p = Proposal({
             author: address(this),
             startBlockNumber: uint32(block.number),
-            executionStrategy: IExecutionStrategy(address(inner)),
+            executionStrategy: IExecutionStrategy(address(wrapper)),
             minEndBlockNumber: uint32(block.number),
             maxEndBlockNumber: uint32(block.number + 1),
             finalizationStatus: FinalizationStatus.Pending,
@@ -82,6 +64,6 @@ contract SXArbitrationExecutionStrategyForkTest is Test {
 
         arb.settle(arbId, true);
         wrapper.execute(1, p, 1, 0, 0, payload);
-        assertTrue(inner.executed());
+        assertEq(wrapper.releaseDigest(), digest);
     }
 }

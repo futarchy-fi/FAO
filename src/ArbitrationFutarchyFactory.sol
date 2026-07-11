@@ -47,7 +47,7 @@ interface IWrapped1155FactoryLike {
 ///   1. No Reality.eth: question IDs are derived from a sequential nonce instead of
 ///      posting on-chain questions.
 ///   2. Configurable oracle: the constructor takes an `oracle` address that becomes the
-///      authorized CTF condition resolver (e.g., SnapshotExecutionProxy).
+///      authorized CTF condition resolver.
 ///   3. Uses ArbitrationFutarchyProposal as the clone template instead of FutarchyProposal.
 ///   4. CreateProposalParams is simplified — no category/lang/minBond/openingTime.
 ///
@@ -100,7 +100,7 @@ contract ArbitrationFutarchyFactory {
     // ═══════════════════════════════════════════════════════
 
     /// @param _proposalTemplate Address of the ArbitrationFutarchyProposal template.
-    /// @param _oracle The CTF oracle (e.g., SnapshotExecutionProxy).
+    /// @param _oracle The CTF settlement oracle.
     /// @param _wrapped1155Factory The Wrapped1155Factory for creating ERC20 wrappers.
     /// @param _conditionalTokens The Gnosis Conditional Tokens Framework contract.
     constructor(

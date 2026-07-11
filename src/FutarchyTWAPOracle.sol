@@ -50,7 +50,6 @@ contract FutarchyTWAPOracle {
     //  Errors
     // ═══════════════════════════════════════════════════════
 
-    error NotDAO();
     error NotBinder();
     error AlreadyBound(address proposal);
     error NotBound(address proposal);
@@ -70,26 +69,21 @@ contract FutarchyTWAPOracle {
     event ProposalResolved(
         address indexed proposal, bool accepted, int56 yesAvgTick, int56 noAvgTick
     );
-    event ConfigUpdated(uint32 tradingPeriod, uint32 twapWindow, int24 thresholdTicks);
-
     // ═══════════════════════════════════════════════════════
     //  State
     // ═══════════════════════════════════════════════════════
 
-    /// @notice DAO address that controls configuration.
-    address public dao;
-
     /// @notice Seconds from market creation to resolution deadline.
-    uint32 public tradingPeriod;
+    uint32 public immutable tradingPeriod;
 
     /// @notice Trailing TWAP measurement window in seconds (≤ tradingPeriod).
-    uint32 public twapWindow;
+    uint32 public immutable twapWindow;
 
     /// @notice YES avg tick must exceed NO avg tick by this amount to pass.
-    int24 public thresholdTicks;
+    int24 public immutable thresholdTicks;
 
     /// @notice Address authorized to bind proposals (the EvaluationPipeline).
-    address public binder;
+    address public immutable binder;
 
     /// @notice Per-proposal TWAP binding and result storage.
     mapping(address proposal => ProposalTWAP) public proposals;
@@ -98,34 +92,20 @@ contract FutarchyTWAPOracle {
     //  Constructor
     // ═══════════════════════════════════════════════════════
 
-    constructor(
-        address _dao,
-        address _binder,
-        uint32 _tradingPeriod,
-        uint32 _twapWindow,
-        int24 _thresholdTicks
-    ) {
-        if (_dao == address(0)) revert ZeroAddress();
+    constructor(address _binder, uint32 _tradingPeriod, uint32 _twapWindow, int24 _thresholdTicks) {
         if (_binder == address(0)) revert ZeroAddress();
         if (_twapWindow == 0 || _twapWindow > _tradingPeriod) {
             revert InvalidConfig(_tradingPeriod, _twapWindow);
         }
-        dao = _dao;
         binder = _binder;
         tradingPeriod = _tradingPeriod;
         twapWindow = _twapWindow;
         thresholdTicks = _thresholdTicks;
-        emit ConfigUpdated(_tradingPeriod, _twapWindow, _thresholdTicks);
     }
 
     // ═══════════════════════════════════════════════════════
     //  Modifiers
     // ═══════════════════════════════════════════════════════
-
-    modifier onlyDAO() {
-        if (msg.sender != dao) revert NotDAO();
-        _;
-    }
 
     modifier onlyBinder() {
         if (msg.sender != binder) revert NotBinder();
@@ -205,24 +185,6 @@ contract FutarchyTWAPOracle {
     function getDecision(address proposal) external view returns (bool resolved, bool accepted) {
         ProposalTWAP storage p = proposals[proposal];
         return (p.resolved, p.accepted);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  DAO Configuration
-    // ═══════════════════════════════════════════════════════
-
-    /// @notice Update oracle parameters. DAO-only.
-    function setConfig(uint32 _tradingPeriod, uint32 _twapWindow, int24 _thresholdTicks)
-        external
-        onlyDAO
-    {
-        if (_twapWindow == 0 || _twapWindow > _tradingPeriod) {
-            revert InvalidConfig(_tradingPeriod, _twapWindow);
-        }
-        tradingPeriod = _tradingPeriod;
-        twapWindow = _twapWindow;
-        thresholdTicks = _thresholdTicks;
-        emit ConfigUpdated(_tradingPeriod, _twapWindow, _thresholdTicks);
     }
 
     // ═══════════════════════════════════════════════════════

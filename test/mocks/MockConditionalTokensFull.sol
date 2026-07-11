@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @dev More complete CTF mock that supports both read (payouts) and write (prepareCondition,
-/// reportPayouts) operations. Used by ArbitrationFutarchyFactory and SnapshotExecutionProxy tests.
+/// @dev CTF mock supporting both payout reads and condition creation/reporting.
 contract MockConditionalTokensFull {
     // ── Payout state (for evaluator reads) ──
     mapping(bytes32 => uint256) public payoutDenominator;

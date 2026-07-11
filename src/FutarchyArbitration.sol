@@ -10,10 +10,11 @@ import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol
 /// @title FutarchyArbitration
 /// @notice Bond-based arbitration with escalation, graduation queue, and evaluator settlement.
 ///
-/// Proposals go through a bond escalation game where participants stake WXDAI on YES or NO.
-/// Each flip requires doubling the opposing bond. If unchallenged for 72 hours, the current
-/// side wins by timeout. Sufficiently large YES bonds graduate the proposal into an evaluation
-/// queue, where an external evaluator (e.g., CTF oracle) determines the final outcome.
+/// Proposals go through a bond escalation game where participants stake a configured token on
+/// YES or NO.
+/// Each flip requires doubling the opposing bond. If unchallenged for the configured timeout,
+/// the current side wins. Sufficiently large YES bonds graduate the proposal into an evaluation
+/// queue, where an external evaluator determines the final outcome.
 ///
 /// State machine:
 ///
@@ -67,12 +68,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     // ═══════════════════════════════════════════════════════
 
     /// @notice Duration after the last bond flip before timeout settlement is allowed.
-    uint256 internal constant TIMEOUT = 72 hours;
+    uint256 public immutable timeout;
 
-    /// @notice Bond token (WXDAI on Gnosis Chain).
-    IERC20 public immutable WXDAI;
+    /// @notice Token escrowed by YES and NO bidders.
+    IERC20 public immutable bondToken;
 
-    /// @notice Base graduation threshold (WXDAI, 18 decimals).
+    /// @notice Base graduation threshold in bond-token units.
     /// @dev requiredYes(queueLen) = baseX * 2^queueLen.
     uint256 public immutable baseX;
 
@@ -89,15 +90,14 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice All proposals by id.
     mapping(uint256 => Proposal) internal proposals;
 
-    /// @notice Pull-payment ledger for WXDAI payouts.
+    /// @notice Pull-payment ledger for bond-token payouts.
     mapping(address => uint256) public withdrawable;
-
-    /// @notice Aggregate NO bond amount across all proposals currently in NO state.
-    /// @dev When this exceeds `baseX`, safety mode activates — blocking YES-by-timeout.
-    uint256 public totalActiveNoBonds;
 
     /// @notice Evaluator module that resolves proposals in EVALUATING state.
     IFutarchyArbitrationEvaluator public evaluator;
+
+    /// @notice One-time authorized creator for deterministic proposal ids.
+    address public proposalGateway;
 
     // ── Graduation queue ──
 
@@ -145,31 +145,41 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     );
 
     event EvaluatorSet(address indexed evaluator);
+    event ProposalGatewaySet(address indexed proposalGateway);
     event Withdraw(address indexed account, uint256 amount);
 
     // ═══════════════════════════════════════════════════════
     //  Errors
     // ═══════════════════════════════════════════════════════
 
+    error InvalidConfig();
     error InvalidMinActivationBond();
     error ProposalAlreadyExists();
     error ProposalNotFound();
     error InvalidState();
     error BondTooSmall();
     error TimeoutNotReached();
-    error SafetyModeActive();
     error QueueFull();
     error NotEvaluator();
+    error NotProposalGateway();
     error InvalidEvaluator();
+    error EvaluatorAlreadySet();
+    error InvalidProposalGateway();
+    error ProposalGatewayAlreadySet();
 
     // ═══════════════════════════════════════════════════════
     //  Constructor
     // ═══════════════════════════════════════════════════════
 
-    constructor() {
+    constructor(IERC20 bondToken_, uint256 baseX_, uint256 timeout_) {
+        if (address(bondToken_).code.length == 0 || baseX_ == 0 || timeout_ == 0) {
+            revert InvalidConfig();
+        }
+
         _transferOwnership(msg.sender);
-        WXDAI = IERC20(0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d);
-        baseX = 100e18;
+        bondToken = bondToken_;
+        baseX = baseX_;
+        timeout = timeout_;
         MAX_QUEUE = 16;
     }
 
@@ -177,9 +187,23 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Proposal Creation
     // ═══════════════════════════════════════════════════════
 
+    /// @notice Permanently selects the only caller that may reserve deterministic ids.
+    function setProposalGateway(address proposalGateway_) external onlyOwner {
+        if (proposalGateway_ == address(0)) revert InvalidProposalGateway();
+        if (proposalGateway != address(0)) revert ProposalGatewayAlreadySet();
+
+        proposalGateway = proposalGateway_;
+        emit ProposalGatewaySet(proposalGateway_);
+    }
+
     /// @notice Create a new arbitration proposal with an auto-assigned id.
-    /// @dev Anyone can create proposals. Starts INACTIVE with no bonds.
+    /// @dev Anyone can create proposals until a deterministic-id gateway is selected. Once set,
+    ///      only that gateway may create either kind, preventing unevaluable ids from wedging the
+    ///      shared evaluation queue.
     function createProposal(uint256 minActivationBond) external returns (uint256 proposalId) {
+        if (proposalGateway != address(0) && msg.sender != proposalGateway) {
+            revert NotProposalGateway();
+        }
         if (minActivationBond == 0) revert InvalidMinActivationBond();
 
         proposalId = nextProposalId;
@@ -190,12 +214,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Create a proposal with an explicit id.
-    /// @dev Supports integrations that need deterministic ids (e.g., SX execution strategies
-    /// that derive arbId from executionPayloadHash). Reverts if the id is already taken.
+    /// @dev Only the one-time proposal gateway can reserve deterministic ids. This prevents
+    ///      third parties from squatting ids derived from Snapshot X execution payload hashes.
     function createProposalWithId(uint256 proposalId, uint256 minActivationBond)
         external
         returns (uint256)
     {
+        if (msg.sender != proposalGateway) revert NotProposalGateway();
         if (minActivationBond == 0) revert InvalidMinActivationBond();
         if (proposalId == 0) revert InvalidState();
         if (proposals[proposalId].exists) revert ProposalAlreadyExists();
@@ -239,7 +264,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
             revert InvalidState();
         }
 
-        WXDAI.safeTransferFrom(msg.sender, address(this), amount);
+        bondToken.safeTransferFrom(msg.sender, address(this), amount);
 
         // Refund replaced YES bond.
         address replacedBidder = p.yesBond.bidder;
@@ -255,9 +280,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         emit BondPlaced(proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount);
 
         if (isFlipFromNo) {
-            // NO bonds leave the active set.
-            totalActiveNoBonds -= p.noBond.amount;
-
             // Check graduation: only on NO → YES flip, never on first activation.
             _tryGraduate(proposalId, p, amount);
         }
@@ -266,8 +288,8 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice Place a NO bond (match-only).
     /// @dev NO always matches the current YES bond exactly. No amount parameter.
     ///      First activation must be YES (INACTIVE → NO is not allowed).
-    ///      Implicitly capped: any YES >= graduation threshold graduates immediately,
-    ///      so NO can never match a bond at or above the threshold.
+    ///      Graduation occurs only on a later NO → YES flip, so a first YES bond may be
+    ///      at or above the current graduation threshold and still be matched by NO.
     function placeNoBond(uint256 proposalId) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
@@ -277,7 +299,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
 
         uint256 amount = p.yesBond.amount;
 
-        WXDAI.safeTransferFrom(msg.sender, address(this), amount);
+        bondToken.safeTransferFrom(msg.sender, address(this), amount);
 
         // Refund replaced NO bond.
         address replacedBidder = p.noBond.bidder;
@@ -290,8 +312,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         p.state = ProposalState.NO;
         p.lastStateChangeAt = uint64(block.timestamp);
 
-        totalActiveNoBonds += amount;
-
         emit BondPlaced(proposalId, p.state, msg.sender, amount, replacedBidder, replacedAmount);
     }
 
@@ -299,9 +319,8 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Settlement
     // ═══════════════════════════════════════════════════════
 
-    /// @notice Finalize a proposal by timeout (72h unchallenged).
+    /// @notice Finalize a proposal after the configured unchallenged timeout.
     /// @dev The current leading side wins and receives both bonds.
-    ///      In safety mode, YES-by-timeout is blocked to prevent low-liquidity attacks.
     function finalizeByTimeout(uint256 proposalId) external {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
@@ -310,17 +329,8 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         ProposalState s = p.state;
         if (s != ProposalState.YES && s != ProposalState.NO) revert InvalidState();
 
-        if (block.timestamp < uint256(p.lastStateChangeAt) + TIMEOUT) {
+        if (block.timestamp < uint256(p.lastStateChangeAt) + timeout) {
             revert TimeoutNotReached();
-        }
-
-        // Safety mode blocks YES-by-timeout when aggregate NO exposure is high.
-        if (s == ProposalState.YES && safetyModeActive()) {
-            revert SafetyModeActive();
-        }
-
-        if (s == ProposalState.NO) {
-            totalActiveNoBonds -= p.noBond.amount;
         }
 
         address winner = (s == ProposalState.YES) ? p.yesBond.bidder : p.noBond.bidder;
@@ -357,6 +367,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
         if (p.state != ProposalState.YES) revert InvalidState();
+        if (p.noBond.amount == 0) revert InvalidState();
 
         _tryGraduate(proposalId, p, p.yesBond.amount);
     }
@@ -420,6 +431,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @dev Validates that the evaluator is bound to this arbitration instance.
     function setEvaluator(address evaluator_) external onlyOwner {
         if (evaluator_ == address(0)) revert InvalidEvaluator();
+        if (address(evaluator) != address(0)) revert EvaluatorAlreadySet();
         if (IFutarchyArbitrationEvaluator(evaluator_).arbitration() != address(this)) {
             revert InvalidEvaluator();
         }
@@ -432,13 +444,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     //  Withdrawals
     // ═══════════════════════════════════════════════════════
 
-    /// @notice Withdraw any WXDAI owed to the caller.
+    /// @notice Withdraw any bond tokens owed to the caller.
     function withdraw() external nonReentrant {
         uint256 amount = withdrawable[msg.sender];
         if (amount == 0) return;
 
         withdrawable[msg.sender] = 0;
-        WXDAI.safeTransfer(msg.sender, amount);
+        bondToken.safeTransfer(msg.sender, amount);
         emit Withdraw(msg.sender, amount);
     }
 
@@ -465,22 +477,6 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         Proposal storage p = proposals[proposalId];
         if (!p.exists) revert ProposalNotFound();
         return p.settled;
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  Safety
-    // ═══════════════════════════════════════════════════════
-
-    /// @notice Threshold above which safety mode activates (= baseX).
-    function safetyNoBondThreshold() public view returns (uint256) {
-        return baseX;
-    }
-
-    /// @notice True when aggregate active NO bonds exceed the safety threshold.
-    /// @dev In safety mode, YES-by-timeout settlement is disabled to prevent
-    ///      low-liquidity manipulation.
-    function safetyModeActive() public view returns (bool) {
-        return totalActiveNoBonds >= safetyNoBondThreshold();
     }
 
     // ═══════════════════════════════════════════════════════

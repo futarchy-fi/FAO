@@ -23,8 +23,12 @@ contract EvaluationPipelineIntegrationTest is Test {
     MockAlgebraFactoryLike factory;
     MockTWAPOracle twapOracle;
     EvaluationPipeline pipeline;
+    address manager = makeAddr("manager");
+    address proposalSource = makeAddr("proposal-source");
 
     address internal constant WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
+    uint256 internal constant BASE_X = 100e18;
+    uint256 internal constant TIMEOUT = 72 hours;
 
     // Outcome tokens.
     address yesCompany = address(0x10);
@@ -37,13 +41,21 @@ contract EvaluationPipelineIntegrationTest is Test {
     address noPool = address(0x60);
 
     function setUp() public {
-        arb = new FutarchyArbitration();
+        vm.etch(WXDAI, hex"00");
+        arb = new FutarchyArbitration(IERC20(WXDAI), BASE_X, TIMEOUT);
         orch = new MockEvaluationOrchestrator();
         factory = new MockAlgebraFactoryLike();
         twapOracle = new MockTWAPOracle();
 
         pipeline = new EvaluationPipeline(
-            address(arb), address(orch), address(twapOracle), address(factory)
+            address(arb),
+            address(orch),
+            address(twapOracle),
+            address(factory),
+            manager,
+            proposalSource,
+            1e18,
+            0
         );
 
         // Mock ERC20 behaviors used by SafeERC20 in FutarchyArbitration.
@@ -94,9 +106,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         MockFutarchyProposalLike futarchyProp = _makeProposal();
         orch.setNextReturn(10, address(futarchyProp));
 
-        pipeline.startEvaluation(
-            proposalId, "FAO Eval", "governance", "en", 1e18, uint32(block.timestamp)
-        );
+        pipeline.startEvaluation(proposalId, "FAO Eval", "governance", "en");
 
         assertEq(pipeline.futarchyProposalOf(proposalId), address(futarchyProp));
         assertEq(twapOracle.bindCallCount(), 1);
@@ -124,9 +134,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         MockFutarchyProposalLike futarchyProp = _makeProposal();
         orch.setNextReturn(10, address(futarchyProp));
 
-        pipeline.startEvaluation(
-            proposalId, "FAO Eval", "governance", "en", 1e18, uint32(block.timestamp)
-        );
+        pipeline.startEvaluation(proposalId, "FAO Eval", "governance", "en");
 
         // NO wins.
         twapOracle.setDecision(address(futarchyProp), true, false);
@@ -149,9 +157,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         MockFutarchyProposalLike futarchyProp = _makeProposal();
         orch.setNextReturn(10, address(futarchyProp));
 
-        pipeline.startEvaluation(
-            proposalId, "FAO Eval", "governance", "en", 1e18, uint32(block.timestamp)
-        );
+        pipeline.startEvaluation(proposalId, "FAO Eval", "governance", "en");
 
         // TWAP oracle not resolved.
         vm.expectRevert(
@@ -169,7 +175,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         MockFutarchyProposalLike prop1 = _makeProposal();
         orch.setNextReturn(10, address(prop1));
 
-        pipeline.startEvaluation(pid1, "First", "gov", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(pid1, "First", "gov", "en");
         twapOracle.setDecision(address(prop1), true, true);
         pipeline.resolve(pid1);
 
@@ -189,7 +195,7 @@ contract EvaluationPipelineIntegrationTest is Test {
         MockFutarchyProposalLike prop2 = _makeProposal();
         orch.setNextReturn(11, address(prop2));
 
-        pipeline.startEvaluation(pid2, "Second", "gov", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(pid2, "Second", "gov", "en");
         twapOracle.setDecision(address(prop2), true, false);
 
         bool accepted = pipeline.resolve(pid2);

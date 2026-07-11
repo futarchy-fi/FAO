@@ -14,6 +14,8 @@ interface IFutarchyProposalOutcomes {
 }
 
 interface IOrchestratorLike {
+    function setWiring(address manager, address proposalSource) external;
+
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata category,
@@ -65,6 +67,7 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
     error EvaluationNotStarted(uint256 proposalId);
     error FutarchyNotResolved(address futarchyProposal);
     error PoolNotFound();
+    error InvalidEvaluationConfig();
 
     // ═══════════════════════════════════════════════════════
     //  Immutables
@@ -82,6 +85,10 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
 
     /// @notice Algebra DEX factory for looking up conditional pools.
     IAlgebraFactoryLike public immutable algebraFactory;
+
+    /// @notice Pinned market parameters; permissionless callers cannot choose them.
+    uint256 public immutable evaluationMinBond;
+    uint32 public immutable marketOpeningDelay;
 
     // ═══════════════════════════════════════════════════════
     //  State
@@ -113,12 +120,21 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
         address _arbitration,
         address _orchestrator,
         address _twapOracle,
-        address _algebraFactory
+        address _algebraFactory,
+        address _manager,
+        address _proposalSource,
+        uint256 _evaluationMinBond,
+        uint32 _marketOpeningDelay
     ) {
+        if (_evaluationMinBond == 0) revert InvalidEvaluationConfig();
         arbitrationContract = _arbitration;
         orchestrator = IOrchestratorLike(_orchestrator);
         twapOracle = ITWAPOracleLike(_twapOracle);
         algebraFactory = IAlgebraFactoryLike(_algebraFactory);
+        evaluationMinBond = _evaluationMinBond;
+        marketOpeningDelay = _marketOpeningDelay;
+
+        orchestrator.setWiring(_manager, _proposalSource);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -170,9 +186,7 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
         uint256 proposalId,
         string calldata marketName,
         string calldata category,
-        string calldata lang,
-        uint256 minBond,
-        uint32 openingTime
+        string calldata lang
     ) external {
         uint256 active = IFutarchyArbitrationForPipeline(arbitrationContract)
             .activeEvaluationProposalId();
@@ -184,8 +198,11 @@ contract EvaluationPipeline is IFutarchyArbitrationEvaluator {
             revert EvaluationAlreadyStarted(proposalId);
         }
 
+        uint256 opening = block.timestamp + marketOpeningDelay;
+        if (opening > type(uint32).max) revert InvalidEvaluationConfig();
+        uint32 openingTime = uint32(opening);
         (uint256 futarchyProposalId, address futarchyProposal) = orchestrator.createOfficialProposalAndMigrate(
-            marketName, category, lang, minBond, openingTime
+            marketName, category, lang, evaluationMinBond, openingTime
         );
 
         futarchyProposalOf[proposalId] = futarchyProposal;

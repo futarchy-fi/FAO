@@ -5,8 +5,8 @@ pragma solidity ^0.8.20;
 /// @notice Clone-pattern proposal template for ArbitrationFutarchyFactory.
 ///
 /// Stores the same data as Seer's FutarchyProposal but without the Reality.eth dependency.
-/// This is a pure data container — resolution is handled externally by the CTF oracle
-/// (SnapshotExecutionProxy for market settlement, TWAP oracle for the futarchy signal).
+/// This is a pure data container — resolution is handled externally by the configured CTF
+/// settlement oracle.
 ///
 /// External interface matches Seer's FutarchyProposal for ecosystem compatibility:
 ///   conditionId(), questionId(), collateralToken1(), collateralToken2(),

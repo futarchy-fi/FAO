@@ -26,6 +26,8 @@ contract EvaluationPipelineTest is Test {
     MockAlgebraFactoryLike factory;
     MockTWAPOracle twapOracle;
     EvaluationPipeline pipeline;
+    address manager = makeAddr("manager");
+    address proposalSource = makeAddr("proposal-source");
 
     // Outcome tokens.
     address yesCompany = address(0x10);
@@ -44,7 +46,14 @@ contract EvaluationPipelineTest is Test {
         twapOracle = new MockTWAPOracle();
 
         pipeline = new EvaluationPipeline(
-            address(arb), address(orch), address(twapOracle), address(factory)
+            address(arb),
+            address(orch),
+            address(twapOracle),
+            address(factory),
+            manager,
+            proposalSource,
+            1e18,
+            0
         );
 
         // Register pools in factory.
@@ -69,6 +78,26 @@ contract EvaluationPipelineTest is Test {
         assertEq(pipeline.arbitration(), address(arb));
     }
 
+    function testConstructorWiresOrchestratorFromPipeline() public view {
+        assertEq(orch.manager(), manager);
+        assertEq(orch.proposalSource(), proposalSource);
+        assertEq(orch.wiringCaller(), address(pipeline));
+    }
+
+    function testConstructorRevertsIfEvaluationMinBondIsZero() public {
+        vm.expectRevert(EvaluationPipeline.InvalidEvaluationConfig.selector);
+        new EvaluationPipeline(
+            address(arb),
+            address(orch),
+            address(twapOracle),
+            address(factory),
+            manager,
+            proposalSource,
+            0,
+            0
+        );
+    }
+
     // ═══════════════════════════════════════════════════════
     //  startEvaluation
     // ═══════════════════════════════════════════════════════
@@ -77,21 +106,21 @@ contract EvaluationPipelineTest is Test {
         arb.setActive(0);
 
         vm.expectRevert(EvaluationPipeline.NoActiveEvaluation.selector);
-        pipeline.startEvaluation(1, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(1, "test", "cat", "en");
     }
 
     function testStartEvaluationRevertsIfWrongProposalId() public {
         arb.setActive(7);
 
         vm.expectRevert(abi.encodeWithSelector(EvaluationPipeline.WrongProposalId.selector, 7, 99));
-        pipeline.startEvaluation(99, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(99, "test", "cat", "en");
     }
 
     function testStartEvaluationSucceeds() public {
         arb.setActive(5);
         MockFutarchyProposalLike prop = _setupProposal(42);
 
-        pipeline.startEvaluation(5, "test market", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test market", "cat", "en");
 
         assertEq(pipeline.futarchyProposalOf(5), address(prop));
         assertEq(orch.createCallCount(), 1);
@@ -103,7 +132,7 @@ contract EvaluationPipelineTest is Test {
         arb.setActive(5);
         MockFutarchyProposalLike prop = _setupProposal(42);
 
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test", "cat", "en");
 
         // Verify the TWAP oracle received correct binding.
         (
@@ -120,27 +149,38 @@ contract EvaluationPipelineTest is Test {
         assertEq(boundStartTime, uint48(block.timestamp));
     }
 
-    function testStartEvaluationBindsFutureOpeningTimeAsStart() public {
+    function testStartEvaluationUsesPinnedMarketConfig() public {
         arb.setActive(5);
         MockFutarchyProposalLike prop = _setupProposal(42);
-        uint32 openingTime = uint32(block.timestamp + 2 days);
+        EvaluationPipeline delayedPipeline = new EvaluationPipeline(
+            address(arb),
+            address(orch),
+            address(twapOracle),
+            address(factory),
+            manager,
+            proposalSource,
+            2e18,
+            2 days
+        );
 
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, openingTime);
+        delayedPipeline.startEvaluation(5, "test", "cat", "en");
 
         (,,,, uint48 boundStartTime) = twapOracle.bindings(address(prop));
-        assertEq(boundStartTime, openingTime);
+        assertEq(boundStartTime, uint48(block.timestamp + 2 days));
+        assertEq(orch.lastMinBond(), 2e18);
+        assertEq(orch.lastOpeningTime(), uint32(block.timestamp + 2 days));
     }
 
     function testStartEvaluationRevertsIfAlreadyStarted() public {
         arb.setActive(5);
         _setupProposal(42);
 
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test", "cat", "en");
 
         vm.expectRevert(
             abi.encodeWithSelector(EvaluationPipeline.EvaluationAlreadyStarted.selector, 5)
         );
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test", "cat", "en");
     }
 
     function testStartEvaluationEmitsEvent() public {
@@ -150,7 +190,7 @@ contract EvaluationPipelineTest is Test {
         vm.expectEmit(true, true, true, true);
         emit EvaluationMarketCreated(5, 42, address(prop));
 
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test", "cat", "en");
     }
 
     function testStartEvaluationRevertsIfPoolNotFound() public {
@@ -169,7 +209,7 @@ contract EvaluationPipelineTest is Test {
         orch.setNextReturn(42, address(prop));
 
         vm.expectRevert(EvaluationPipeline.PoolNotFound.selector);
-        pipeline.startEvaluation(5, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(5, "test", "cat", "en");
     }
 
     // ═══════════════════════════════════════════════════════
@@ -200,7 +240,7 @@ contract EvaluationPipelineTest is Test {
     function testResolveRevertsIfFutarchyNotResolved() public {
         arb.setActive(7);
         MockFutarchyProposalLike prop = _setupProposal(42);
-        pipeline.startEvaluation(7, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(7, "test", "cat", "en");
 
         // Decision not set → resolved = false.
         vm.expectRevert(
@@ -212,7 +252,7 @@ contract EvaluationPipelineTest is Test {
     function testResolveAcceptedWhenYesWins() public {
         arb.setActive(7);
         MockFutarchyProposalLike prop = _setupProposal(42);
-        pipeline.startEvaluation(7, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(7, "test", "cat", "en");
 
         twapOracle.setDecision(address(prop), true, true);
 
@@ -226,7 +266,7 @@ contract EvaluationPipelineTest is Test {
     function testResolveRejectedWhenNoWins() public {
         arb.setActive(7);
         MockFutarchyProposalLike prop = _setupProposal(42);
-        pipeline.startEvaluation(7, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(7, "test", "cat", "en");
 
         twapOracle.setDecision(address(prop), true, false);
 
@@ -240,7 +280,7 @@ contract EvaluationPipelineTest is Test {
     function testResolveEmitsEvent() public {
         arb.setActive(7);
         MockFutarchyProposalLike prop = _setupProposal(42);
-        pipeline.startEvaluation(7, "test", "cat", "en", 1e18, uint32(block.timestamp));
+        pipeline.startEvaluation(7, "test", "cat", "en");
 
         twapOracle.setDecision(address(prop), true, true);
 
