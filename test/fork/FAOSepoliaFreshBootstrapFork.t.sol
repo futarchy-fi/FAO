@@ -83,18 +83,18 @@ contract FAOSepoliaFreshBootstrapForkTest is Test {
         (uint256 lpTokenId, uint128 spotLiquidity,,) = IFreshBootstrapNPM(NPM)
             .mint(
                 IFreshBootstrapNPM.MintParams({
-                    token0: companyFirst ? address(token) : WETH,
-                    token1: companyFirst ? WETH : address(token),
-                    fee: FEE,
-                    tickLower: -887_270,
-                    tickUpper: 887_270,
-                    amount0Desired: SEED,
-                    amount1Desired: SEED,
-                    amount0Min: (SEED * 99) / 100,
-                    amount1Min: (SEED * 99) / 100,
-                    recipient: operator,
-                    deadline: block.timestamp + 10 minutes
-                })
+                token0: companyFirst ? address(token) : WETH,
+                token1: companyFirst ? WETH : address(token),
+                fee: FEE,
+                tickLower: -887_270,
+                tickUpper: 887_270,
+                amount0Desired: SEED,
+                amount1Desired: SEED,
+                amount0Min: (SEED * 99) / 100,
+                amount1Min: (SEED * 99) / 100,
+                recipient: operator,
+                deadline: block.timestamp + 10 minutes
+            })
             );
         uint256 poolSeedGas = gasStart - gasleft();
 

@@ -218,14 +218,14 @@ contract OperateFAOSepoliaEvaluation is Script {
         uint256 amountOut = IOperatorSwapRouter(SWAP_ROUTER)
             .exactInputSingle(
                 IOperatorSwapRouter.ExactInputSingleParams({
-                    tokenIn: yesCurrency,
-                    tokenOut: yesCompany,
-                    fee: FEE,
-                    recipient: operator,
-                    amountIn: moveAmount,
-                    amountOutMinimum: (moveAmount * 98) / 100,
-                    sqrtPriceLimitX96: _boundedYesPriceLimit(yesPool, yesCompany)
-                })
+                tokenIn: yesCurrency,
+                tokenOut: yesCompany,
+                fee: FEE,
+                recipient: operator,
+                amountIn: moveAmount,
+                amountOutMinimum: (moveAmount * 98) / 100,
+                sqrtPriceLimitX96: _boundedYesPriceLimit(yesPool, yesCompany)
+            })
             );
         vm.stopBroadcast();
 
@@ -356,18 +356,18 @@ contract OperateFAOSepoliaEvaluation is Script {
         (tokenId, liquidity,,) = IOperatorPositionManager(POSITION_MANAGER)
             .mint(
                 IOperatorPositionManager.MintParams({
-                    token0: token0,
-                    token1: token1,
-                    fee: FEE,
-                    tickLower: TICK_LOWER,
-                    tickUpper: TICK_UPPER,
-                    amount0Desired: amount,
-                    amount1Desired: amount,
-                    amount0Min: (amount * 99) / 100,
-                    amount1Min: (amount * 99) / 100,
-                    recipient: operator,
-                    deadline: block.timestamp + 10 minutes
-                })
+                token0: token0,
+                token1: token1,
+                fee: FEE,
+                tickLower: TICK_LOWER,
+                tickUpper: TICK_UPPER,
+                amount0Desired: amount,
+                amount1Desired: amount,
+                amount0Min: (amount * 99) / 100,
+                amount1Min: (amount * 99) / 100,
+                recipient: operator,
+                deadline: block.timestamp + 10 minutes
+            })
             );
         IERC20(token0).safeApprove(POSITION_MANAGER, 0);
         IERC20(token1).safeApprove(POSITION_MANAGER, 0);
