@@ -194,18 +194,18 @@ contract DeployFAOSepoliaSiteRelease is Script {
         (lpTokenId, liquidity,,) = ISiteReleasePositionManager(NONFUNGIBLE_POSITION_MANAGER)
             .mint(
                 ISiteReleasePositionManager.MintParams({
-                token0: companyFirst ? address(companyToken) : WETH,
-                token1: companyFirst ? WETH : address(companyToken),
-                fee: FEE_TIER,
-                tickLower: TICK_LOWER,
-                tickUpper: TICK_UPPER,
-                amount0Desired: seedAmount,
-                amount1Desired: seedAmount,
-                amount0Min: amountMin,
-                amount1Min: amountMin,
-                recipient: deployer,
-                deadline: block.timestamp + 10 minutes
-            })
+                    token0: companyFirst ? address(companyToken) : WETH,
+                    token1: companyFirst ? WETH : address(companyToken),
+                    fee: FEE_TIER,
+                    tickLower: TICK_LOWER,
+                    tickUpper: TICK_UPPER,
+                    amount0Desired: seedAmount,
+                    amount1Desired: seedAmount,
+                    amount0Min: amountMin,
+                    amount1Min: amountMin,
+                    recipient: deployer,
+                    deadline: block.timestamp + 10 minutes
+                })
             );
     }
 
