@@ -332,7 +332,7 @@ contract FaoGenesisDeploymentTest is Test {
         receipt.uniswapV3SwapCallback(0, 0, "");
     }
 
-    function test_receiptAndEveryChildInitcodeRespectProtocolLimits() public {
+    function test_receiptAndDominatingChildInitcodesRespectProtocolLimits() public {
         FaoGenesisDeployment receipt = _newReceipt();
         assertLt(type(FaoGenesisDeployment).creationCode.length + 64, 49_152);
         assertLt(address(receipt).code.length, 24_576);
@@ -346,6 +346,15 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(keccak256(coreCodes[5]), receipt.ECON_EVALUATOR_CODE_HASH());
         assertLt(
             coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), _grants()).length, 49_152
+        );
+        GenesisVault.GrantConfig[] memory maxGrants = new GenesisVault.GrantConfig[](32);
+        for (uint256 i; i < maxGrants.length; ++i) {
+            maxGrants[i] = GenesisVault.GrantConfig({
+                beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
+            });
+        }
+        assertLt(
+            coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), maxGrants).length, 49_152
         );
     }
 
