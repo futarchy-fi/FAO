@@ -48,6 +48,7 @@ CORE_TARGETS = (
 )
 DEPLOYMENT_TARGETS = (
     Target("RECEIPT", "src/FaoGenesisDeployment.sol", "FaoGenesisDeployment"),
+    Target("REGISTRAR", "src/FaoGenesisRegistrar.sol", "FaoGenesisRegistrar"),
     Target(
         "PROPOSAL_IMPLEMENTATION",
         "src/FAOFutarchyProposal.sol",

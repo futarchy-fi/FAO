@@ -47,6 +47,12 @@
       "baseCreationCodeBytes": 23511,
       "baseCreationCodeKeccak256": "0xaab72fae2db40b8c97dd99861ef1c927bf9374c7ab9e78b999e3a6521b04ae9a"
     },
+    "REGISTRAR": {
+      "source": "src/FaoGenesisRegistrar.sol",
+      "contract": "FaoGenesisRegistrar",
+      "baseCreationCodeBytes": 1327,
+      "baseCreationCodeKeccak256": "0xdbd8cabd9812bc3c1a75ff99153fdae361a4e2fdbbcb651cb3433b55b9c37c7f"
+    },
     "PROPOSAL_IMPLEMENTATION": {
       "source": "src/FAOFutarchyProposal.sol",
       "contract": "FAOFutarchyProposal",

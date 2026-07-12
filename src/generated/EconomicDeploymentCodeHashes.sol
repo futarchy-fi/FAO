@@ -5,6 +5,8 @@ pragma solidity 0.8.20;
 library EconomicDeploymentCodeHashes {
     bytes32 internal constant RECEIPT =
         0xaab72fae2db40b8c97dd99861ef1c927bf9374c7ab9e78b999e3a6521b04ae9a;
+    bytes32 internal constant REGISTRAR =
+        0xdbd8cabd9812bc3c1a75ff99153fdae361a4e2fdbbcb651cb3433b55b9c37c7f;
     bytes32 internal constant PROPOSAL_IMPLEMENTATION =
         0x5de9951ca5cc20a586a6c27254bcab9c770c499b25fe1fb989d96b1271942070;
     bytes32 internal constant STACK_DEPLOYER =

@@ -130,7 +130,7 @@ class EconomicCodeHashesTest(unittest.TestCase):
         self.assertEqual(tuple(manifest["contracts"]), tuple(t.constant for t in economic_code_hashes.TARGETS))
         self.assertEqual(
             tuple(target.constant for target in economic_code_hashes.DEPLOYMENT_TARGETS),
-            ("RECEIPT", "PROPOSAL_IMPLEMENTATION", "STACK_DEPLOYER"),
+            ("RECEIPT", "REGISTRAR", "PROPOSAL_IMPLEMENTATION", "STACK_DEPLOYER"),
         )
         for item in compiled:
             evidence = manifest["contracts"][item.target.constant]
