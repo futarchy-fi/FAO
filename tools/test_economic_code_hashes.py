@@ -128,6 +128,10 @@ class EconomicCodeHashesTest(unittest.TestCase):
         manifest = json.loads(first)
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(tuple(manifest["contracts"]), tuple(t.constant for t in economic_code_hashes.TARGETS))
+        self.assertEqual(
+            tuple(target.constant for target in economic_code_hashes.DEPLOYMENT_TARGETS),
+            ("RECEIPT", "PROPOSAL_IMPLEMENTATION", "STACK_DEPLOYER"),
+        )
         for item in compiled:
             evidence = manifest["contracts"][item.target.constant]
             self.assertEqual(evidence["baseCreationCodeBytes"], len(item.code))

@@ -40,6 +40,24 @@
       "contract": "FAOEconomicEvaluationPipeline",
       "baseCreationCodeBytes": 5706,
       "baseCreationCodeKeccak256": "0x01376a87b521baf67a9c9cdef18c7720790e8d0bc0d1b4028658d6ebe301d7d9"
+    },
+    "RECEIPT": {
+      "source": "src/FaoGenesisDeployment.sol",
+      "contract": "FaoGenesisDeployment",
+      "baseCreationCodeBytes": 23511,
+      "baseCreationCodeKeccak256": "0xaab72fae2db40b8c97dd99861ef1c927bf9374c7ab9e78b999e3a6521b04ae9a"
+    },
+    "PROPOSAL_IMPLEMENTATION": {
+      "source": "src/FAOFutarchyProposal.sol",
+      "contract": "FAOFutarchyProposal",
+      "baseCreationCodeBytes": 4818,
+      "baseCreationCodeKeccak256": "0x5de9951ca5cc20a586a6c27254bcab9c770c499b25fe1fb989d96b1271942070"
+    },
+    "STACK_DEPLOYER": {
+      "source": "src/FAOSiteStackDeployer.sol",
+      "contract": "FAOSiteStackDeployer",
+      "baseCreationCodeBytes": 16530,
+      "baseCreationCodeKeccak256": "0x0170f0b0d3dcca4fcf66ee642a5e6e09cbf6c670c1057283b46c87f0a647fef8"
     }
   }
 }

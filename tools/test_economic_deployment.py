@@ -1,0 +1,742 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import unittest
+from unittest import mock
+
+from tools import economic_deployment
+
+
+def address(index: int) -> str:
+    return f"0x{index:040x}"
+
+
+# `cast calldata 'deployFlm(((address,bytes32)),bytes[])' ... '[0x01,...,0x05]'`.
+CAST_DEPLOY_FLM_VECTOR = bytes.fromhex(
+    "88b5e7840000000000000000000000001111111111111111111111111111111111111111"
+    "2222222222222222222222222222222222222222222222222222222222222222"
+    "0000000000000000000000000000000000000000000000000000000000000060"
+    "0000000000000000000000000000000000000000000000000000000000000005"
+    "00000000000000000000000000000000000000000000000000000000000000a0"
+    "00000000000000000000000000000000000000000000000000000000000000e0"
+    "0000000000000000000000000000000000000000000000000000000000000120"
+    "0000000000000000000000000000000000000000000000000000000000000160"
+    "00000000000000000000000000000000000000000000000000000000000001a0"
+    "0000000000000000000000000000000000000000000000000000000000000001"
+    "0100000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000001"
+    "0200000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000001"
+    "0300000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000001"
+    "0400000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000001"
+    "0500000000000000000000000000000000000000000000000000000000000000"
+)
+
+
+class FixtureHash:
+    def __init__(self) -> None:
+        self.overrides: dict[bytes, str] = {}
+
+    def __call__(self, value: bytes) -> str:
+        return self.overrides.get(value, "0x" + hashlib.sha256(value).hexdigest())
+
+
+class FakeClient:
+    def __init__(self) -> None:
+        self.chain = economic_deployment.CHAIN_ID
+        self.codes: dict[str, bytes] = {}
+        self.calls: dict[tuple[str, ...], str] = {}
+        self.transactions: dict[str, dict] = {}
+        self.receipts: dict[str, dict] = {}
+
+    def chain_id(self) -> int:
+        return self.chain
+
+    def code(self, target: str) -> bytes:
+        return self.codes.get(target, b"")
+
+    def call(self, target: str, signature: str, *args: str) -> str:
+        key = (target, signature, *args)
+        try:
+            return self.calls[key]
+        except KeyError as exc:
+            raise AssertionError(f"unexpected call: {key}") from exc
+
+    def transaction(self, tx_hash: str) -> dict:
+        return self.transactions[tx_hash]
+
+    def receipt(self, tx_hash: str) -> dict:
+        return self.receipts[tx_hash]
+
+
+class EconomicDeploymentTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.hash = FixtureHash()
+        self.client = FakeClient()
+        self.core_hashes, self.flm_hashes, self.creation_evidence = (
+            economic_deployment._canonical_blob_hashes()
+        )
+        self.creation = b"\x60" * int(self.creation_evidence["receipt"]["bytes"])
+        self.creation_hash = str(self.creation_evidence["receipt"]["hash"])
+        self.hash.overrides[self.creation] = self.creation_hash
+        self.core_codes = tuple(f"core-{key}".encode() for key in economic_deployment.CORE_BLOBS)
+        self.flm_codes = tuple(f"flm-{key}".encode() for key in economic_deployment.FLM_BLOBS)
+        for code, key in zip(self.core_codes, economic_deployment.CORE_BLOBS):
+            self.hash.overrides[code] = self.core_hashes[key]
+        for code, key in zip(self.flm_codes, economic_deployment.FLM_BLOBS):
+            self.hash.overrides[code] = self.flm_hashes[key]
+
+        self.deployer = address(0xAAA)
+        self.prerequisite_nonces = {"proposalImplementation": 183, "stackDeployer": 184}
+        self.receipt_nonce = 185
+        self.receipt = economic_deployment._create_address(
+            self.deployer, self.receipt_nonce, self.hash
+        )
+        self.prerequisite_creation = {
+            key: bytes([index]) * int(self.creation_evidence[key]["bytes"])
+            for index, key in enumerate(economic_deployment.PREREQUISITES, start=1)
+        }
+        for key, code in self.prerequisite_creation.items():
+            self.hash.overrides[code] = str(self.creation_evidence[key]["hash"])
+        self.prerequisite_runtime = {
+            "proposalImplementation": b"proposal-runtime",
+            "stackDeployer": b"stack-runtime",
+        }
+
+        self.dependencies = self._dependencies()
+        self.core_config = {
+            **{key: self.dependencies[key] for key in economic_deployment.CORE_DEPENDENCY_KEYS},
+            "graduationThreshold": 100,
+            "arbitrationTimeout": 3600,
+            "siteMinActivationBond": 10,
+            "treasuryMinActivationBond": 20,
+            "twapTimeout": 1800,
+            "twapWindow": 900,
+            "spaceSaltNonce": 7,
+            "daoURI": "ipfs://bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "metadataURI": "ipfs://bafkreibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "votingStrategyMetadataURI": "ipfs://bafkreicccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "proposalValidationStrategyMetadataURI": "ipfs://bafkreidddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "tokenName": "Futarchy Autonomous Organization",
+            "tokenSymbol": "FAO",
+            "saleEnd": 2_000_000_000,
+            "bootstrapDeadline": 2_000_086_400,
+            "saleCap": 1_000_000,
+            "minimumRaise": 1_000,
+            "tokenMaxSupply": 3_000_000,
+            "initialPrice": 10**16,
+            "slope": 10**12,
+            "bootstrapBps": 5000,
+        }
+        self.grants = [
+            {"beneficiary": address(0x301), "start": 1, "duration": 100, "amount": 10},
+            {"beneficiary": address(0x302), "start": 2, "duration": 200, "amount": 20},
+        ]
+        self.flm_config = {"positionManager": self.dependencies["positionManager"]}
+        self.core_config_hash = economic_deployment._digest(
+            economic_deployment._encode_core_commitment(self.core_config, self.grants), self.hash
+        )
+        self.flm_config_hash = economic_deployment._digest(
+            economic_deployment._encode_flm_config(self.flm_config), self.hash
+        )
+        derived = {
+            name: economic_deployment._create_address(self.receipt, nonce, self.hash)
+            for name, nonce in (
+                *economic_deployment.CORE_CHILDREN,
+                *economic_deployment.FLM_CHILDREN,
+            )
+        }
+        wallets = [
+            economic_deployment._create_address(derived["vault"], nonce, self.hash)
+            for nonce in (1, 2)
+        ]
+        company_token = economic_deployment._create_address(derived["vault"], 3, self.hash)
+        spot_pool = economic_deployment._pool_address(
+            self.dependencies["uniswapV3Factory"]["target"],
+            company_token,
+            self.dependencies["weth"]["target"],
+            self.hash,
+        )
+        self.contracts = {
+            "space": address(0x201),
+            "arbitration": derived["arbitration"],
+            "vault": derived["vault"],
+            "companyToken": company_token,
+            "proposalGateway": derived["proposalGateway"],
+            "releaseStrategy": derived["releaseStrategy"],
+            "votingStrategy": derived["votingStrategy"],
+            "evaluator": derived["evaluator"],
+            "orchestrator": address(0x202),
+            "resolver": address(0x203),
+            "futarchyFactory": address(0x204),
+            "spotPool": spot_pool,
+            "relay": derived["relay"],
+            "spotAdapter": derived["spotAdapter"],
+            "conditionalAdapter": derived["conditionalAdapter"],
+            "guard": derived["guard"],
+            "router": derived["router"],
+            "manager": derived["manager"],
+            "vestingWallets": wallets,
+        }
+        self.manifest = self._manifest()
+        self._chain_evidence(live=False)
+
+    def _dependencies(self) -> dict[str, dict[str, str]]:
+        pinned_targets = {
+            **{key: value for key, value in economic_deployment.SX_PINS.items()},
+            "weth": (economic_deployment.flm_deployment.WETH, "weth"),
+            "conditionalTokens": (
+                economic_deployment.flm_deployment.CTF,
+                "conditionalTokens",
+            ),
+            "wrapped1155Factory": (
+                economic_deployment.flm_deployment.WRAPPED_1155_FACTORY,
+                "wrapped1155Factory",
+            ),
+            "uniswapV3Factory": (
+                economic_deployment.flm_deployment.UNIV3_FACTORY,
+                "univ3Factory",
+            ),
+            "positionManager": (
+                economic_deployment.flm_deployment.POSITION_MANAGER,
+                "positionManager",
+            ),
+        }
+        dependencies = {}
+        for index, key in enumerate(economic_deployment.DEPENDENCY_KEYS, start=1):
+            pinned = pinned_targets.get(key)
+            if key in self.prerequisite_nonces:
+                target = economic_deployment._create_address(
+                    self.deployer, self.prerequisite_nonces[key], self.hash
+                )
+                code = self.prerequisite_runtime[key]
+                code_hash = economic_deployment._digest(code, self.hash)
+            else:
+                target = pinned[0]
+                code_hash = (
+                    pinned[1]
+                    if key in economic_deployment.SX_PINS
+                    else economic_deployment.flm_deployment.PINNED_CODEHASHES[pinned[1]]
+                )
+                code = f"dependency-{key}".encode()
+                self.hash.overrides[code] = code_hash
+            self.client.codes[target] = code
+            dependencies[key] = {
+                "target": target,
+                "runtimeCodeKeccak256": code_hash,
+            }
+        return dependencies
+
+    def _manifest(self) -> dict:
+        transactions = {
+            "receiptCreate": {
+                "hash": "0x" + "a1" * 32,
+                "block": 10,
+                "nonce": self.receipt_nonce,
+                "from": self.deployer,
+            },
+            "deployCore": {
+                "hash": "0x" + "a2" * 32,
+                "block": 11,
+                "nonce": 186,
+                "from": self.deployer,
+            },
+            "deployFlm": {
+                "hash": "0x" + "a3" * 32,
+                "block": 12,
+                "nonce": 187,
+                "from": self.deployer,
+            },
+        }
+        return {
+            "schemaVersion": 1,
+            "status": "sealed",
+            "network": "sepolia",
+            "chainId": economic_deployment.CHAIN_ID,
+            "transactions": transactions,
+            "receipt": {
+                "address": self.receipt,
+                "source": economic_deployment.RECEIPT_SOURCE,
+                "contract": economic_deployment.RECEIPT_CONTRACT,
+                "createNonce": self.receipt_nonce,
+                "creationCodeBytes": len(self.creation),
+                "creationCodeKeccak256": self.creation_hash,
+                "coreConfigHash": self.core_config_hash,
+                "flmConfigHash": self.flm_config_hash,
+            },
+            "prerequisites": {
+                key: {
+                    "address": self.dependencies[key]["target"],
+                    "source": economic_deployment.PREREQUISITES[key][0],
+                    "contract": economic_deployment.PREREQUISITES[key][1],
+                    "transaction": {
+                        "hash": "0x" + ("81" if key == "proposalImplementation" else "82") * 32,
+                        "block": 8 if key == "proposalImplementation" else 9,
+                        "nonce": self.prerequisite_nonces[key],
+                        "from": self.deployer,
+                    },
+                    "creationCodeBytes": len(self.prerequisite_creation[key]),
+                    "creationCodeKeccak256": economic_deployment._digest(
+                        self.prerequisite_creation[key], self.hash
+                    ),
+                    "runtimeCodeBytes": len(self.prerequisite_runtime[key]),
+                    "runtimeCodeKeccak256": self.dependencies[key]["runtimeCodeKeccak256"],
+                }
+                for key in economic_deployment.PREREQUISITES
+            },
+            "coreConfig": self.core_config,
+            "grants": self.grants,
+            "flmConfig": self.flm_config,
+            "feeTier": economic_deployment.FEE_TIER,
+            "poolInitCodeHash": economic_deployment.POOL_INIT_CODE_HASH,
+            "observationCardinality": economic_deployment.OBSERVATION_CARDINALITY,
+            "contracts": self.contracts,
+            "codeBlobs": {"core": self.core_hashes, "flm": self.flm_hashes},
+            "finalization": None,
+        }
+
+    def _record_transaction(
+        self, name: str, target: str | None, input_: bytes, contract: str | None = None
+    ) -> None:
+        if name in self.manifest["transactions"]:
+            value = self.manifest["transactions"][name]
+        elif name in self.manifest["prerequisites"]:
+            value = self.manifest["prerequisites"][name]["transaction"]
+        else:
+            value = self.manifest[name]
+        tx_hash = value["hash"]
+        self.client.transactions[tx_hash] = {
+            "hash": tx_hash,
+            "blockNumber": value["block"],
+            "nonce": value["nonce"],
+            "from": value["from"],
+            "to": target,
+            "input": "0x" + input_.hex(),
+        }
+        self.client.receipts[tx_hash] = {
+            "transactionHash": tx_hash,
+            "blockNumber": value["block"],
+            "from": value["from"],
+            "to": target,
+            "status": 1,
+            "contractAddress": contract,
+        }
+
+    def _put(self, target: str, signature: str, value: object, *args: str) -> None:
+        self.client.calls[(target, signature, *args)] = str(value).lower() if isinstance(value, bool) else str(value)
+
+    def _chain_evidence(self, *, live: bool) -> None:
+        for key, (_, _, constructor_args) in economic_deployment.PREREQUISITES.items():
+            self._record_transaction(
+                key,
+                None,
+                self.prerequisite_creation[key] + constructor_args,
+                self.dependencies[key]["target"],
+            )
+        self._record_transaction(
+            "receiptCreate",
+            None,
+            self.creation
+            + bytes.fromhex(self.core_config_hash[2:] + self.flm_config_hash[2:]),
+            self.receipt,
+        )
+        self._record_transaction(
+            "deployCore",
+            self.receipt,
+            economic_deployment._encode_deploy_core(
+                self.core_config, self.grants, self.core_codes
+            ),
+        )
+        self._record_transaction(
+            "deployFlm",
+            self.receipt,
+            economic_deployment._encode_deploy_flm(self.flm_config, self.flm_codes),
+        )
+        if live:
+            self._record_transaction(
+                "finalization",
+                self.contracts["vault"],
+                bytes.fromhex(economic_deployment.FINALIZE_SELECTOR),
+            )
+
+        self.client.codes[self.receipt] = b"receipt-runtime"
+        for key, target in self.contracts.items():
+            if key != "spotPool":
+                if isinstance(target, list):
+                    for wallet in target:
+                        self.client.codes[wallet] = b"vesting-runtime"
+                else:
+                    self.client.codes[target] = f"runtime-{key}".encode()
+        if live:
+            self.client.codes[self.contracts["spotPool"]] = b"pool-runtime"
+
+        c, d = self.contracts, {key: value["target"] for key, value in self.dependencies.items()}
+        self._put(self.receipt, "coreSealed()(bool)", True)
+        self._put(self.receipt, "flmSealed()(bool)", True)
+        self._put(self.receipt, "CORE_CONFIG_HASH()(bytes32)", self.core_config_hash)
+        self._put(self.receipt, "FLM_CONFIG_HASH()(bytes32)", self.flm_config_hash)
+        self._put(
+            self.receipt,
+            "uniswapV3FactoryCodehash()(bytes32)",
+            self.dependencies["uniswapV3Factory"]["runtimeCodeKeccak256"],
+        )
+        receipt_addresses = {
+            "space": c["space"],
+            "arbitration": c["arbitration"],
+            "vault": c["vault"],
+            "companyToken": c["companyToken"],
+            "proposalGateway": c["proposalGateway"],
+            "releaseStrategy": c["releaseStrategy"],
+            "votingStrategy": c["votingStrategy"],
+            "evaluator": c["evaluator"],
+            "orchestrator": c["orchestrator"],
+            "resolver": c["resolver"],
+            "futarchyFactory": c["futarchyFactory"],
+            "weth": d["weth"],
+            "conditionalTokens": d["conditionalTokens"],
+            "wrapped1155Factory": d["wrapped1155Factory"],
+            "uniswapV3Factory": d["uniswapV3Factory"],
+            "spotPool": c["spotPool"],
+            "relay": c["relay"],
+            "spotAdapter": c["spotAdapter"],
+            "conditionalAdapter": c["conditionalAdapter"],
+            "guard": c["guard"],
+            "router": c["router"],
+            "manager": c["manager"],
+        }
+        for name, expected in receipt_addresses.items():
+            self._put(self.receipt, f"{name}()(address)", expected)
+
+        address_calls = (
+            (c["space"], "owner()(address)", economic_deployment.ZERO),
+            (c["arbitration"], "owner()(address)", economic_deployment.ZERO),
+            (c["arbitration"], "pendingOwner()(address)", economic_deployment.ZERO),
+            (c["arbitration"], "proposalGateway()(address)", c["proposalGateway"]),
+            (c["arbitration"], "evaluator()(address)", c["evaluator"]),
+            (c["companyToken"], "vault()(address)", c["vault"]),
+            (c["vault"], "WETH()(address)", d["weth"]),
+            (c["vault"], "COMPANY_TOKEN()(address)", c["companyToken"]),
+            (c["vault"], "ASSEMBLER()(address)", self.receipt),
+            (c["vault"], "ARBITRATION()(address)", c["arbitration"]),
+            (c["vault"], "BOOTSTRAP_HOOK()(address)", self.receipt),
+            (c["vault"], "manager()(address)", c["manager"]),
+            (c["proposalGateway"], "space()(address)", c["space"]),
+            (c["proposalGateway"], "executionStrategy()(address)", c["releaseStrategy"]),
+            (c["proposalGateway"], "arbitration()(address)", c["arbitration"]),
+            (c["proposalGateway"], "vault()(address)", c["vault"]),
+            (c["releaseStrategy"], "space()(address)", c["space"]),
+            (c["releaseStrategy"], "arbitration()(address)", c["arbitration"]),
+            (c["evaluator"], "arbitrationContract()(address)", c["arbitration"]),
+            (c["evaluator"], "vault()(address)", c["vault"]),
+            (c["evaluator"], "orchestrator()(address)", c["orchestrator"]),
+            (c["evaluator"], "resolver()(address)", c["resolver"]),
+            (c["evaluator"], "conditionalTokens()(address)", d["conditionalTokens"]),
+            (c["resolver"], "CTF()(address)", d["conditionalTokens"]),
+            (c["resolver"], "orchestrator()(address)", c["orchestrator"]),
+            (c["futarchyFactory"], "conditionalTokens()(address)", d["conditionalTokens"]),
+            (c["futarchyFactory"], "wrapped1155Factory()(address)", d["wrapped1155Factory"]),
+            (c["futarchyFactory"], "oracle()(address)", c["resolver"]),
+            (c["futarchyFactory"], "proposalImpl()(address)", d["proposalImplementation"]),
+            (c["orchestrator"], "ADMIN()(address)", c["evaluator"]),
+            (c["orchestrator"], "FACTORY()(address)", c["futarchyFactory"]),
+            (c["orchestrator"], "UNIV3_FACTORY()(address)", d["uniswapV3Factory"]),
+            (c["orchestrator"], "SPOT_POOL()(address)", c["spotPool"]),
+            (c["orchestrator"], "COMPANY_TOKEN()(address)", c["companyToken"]),
+            (c["orchestrator"], "CURRENCY_TOKEN()(address)", d["weth"]),
+            (c["orchestrator"], "RESOLVER()(address)", c["resolver"]),
+            (c["relay"], "MANAGER()(address)", c["manager"]),
+            (c["relay"], "ARBITRATION()(address)", c["arbitration"]),
+            (c["relay"], "PIPELINE()(address)", c["evaluator"]),
+            (c["relay"], "UNIV3_FACTORY()(address)", d["uniswapV3Factory"]),
+            (c["relay"], "CTF()(address)", d["conditionalTokens"]),
+            (c["relay"], "COMPANY_TOKEN()(address)", c["companyToken"]),
+            (c["relay"], "CURRENCY_TOKEN()(address)", d["weth"]),
+            (c["spotAdapter"], "MANAGER()(address)", c["manager"]),
+            (c["conditionalAdapter"], "MANAGER()(address)", c["manager"]),
+            (c["spotAdapter"], "POSITION_MANAGER()(address)", d["positionManager"]),
+            (c["conditionalAdapter"], "POSITION_MANAGER()(address)", d["positionManager"]),
+            (c["guard"], "FACTORY()(address)", d["uniswapV3Factory"]),
+            (c["router"], "CONDITIONAL_TOKENS()(address)", d["conditionalTokens"]),
+            (c["router"], "WRAPPED_1155_FACTORY()(address)", d["wrapped1155Factory"]),
+            (c["manager"], "owner()(address)", economic_deployment.DEAD),
+            (c["manager"], "pendingOwner()(address)", economic_deployment.ZERO),
+            (c["manager"], "BOOTSTRAP_RECIPIENT()(address)", c["vault"]),
+            (c["manager"], "OFFICIAL_PROPOSER()(address)", c["relay"]),
+            (c["manager"], "PROPOSAL_SOURCE()(address)", c["relay"]),
+            (c["manager"], "SPOT_ADAPTER()(address)", c["spotAdapter"]),
+            (c["manager"], "CONDITIONAL_ADAPTER()(address)", c["conditionalAdapter"]),
+            (c["manager"], "CONDITIONAL_ROUTER()(address)", c["router"]),
+            (c["manager"], "POOL_STABILITY_GUARD()(address)", c["guard"]),
+            (c["manager"], "COMPANY_TOKEN()(address)", c["companyToken"]),
+            (c["manager"], "WRAPPED_NATIVE()(address)", d["weth"]),
+        )
+        for target, signature, expected in address_calls:
+            self._put(target, signature, expected)
+
+        salt = economic_deployment._digest(
+            bytes.fromhex(self.receipt[2:])
+            + self.core_config["spaceSaltNonce"].to_bytes(32, "big"),
+            self.hash,
+        )
+        self._put(
+            d["proxyFactory"],
+            "predictProxyAddress(address,bytes32)(address)",
+            c["space"],
+            d["spaceImplementation"],
+            salt,
+        )
+        self._put(c["space"], "votingStrategies(uint8)(address,bytes)", c["votingStrategy"], "0")
+        self._put(
+            c["space"],
+            "proposalValidationStrategy()(address,bytes)",
+            d["proposalValidationStrategy"],
+        )
+        self._put(
+            c["space"], "authenticators(address)(uint256)", 1, c["proposalGateway"]
+        )
+        self._put(c["space"], "activeVotingStrategies()(uint256)", 1)
+        self._put(
+            c["votingStrategy"],
+            "getVotingPower(uint32,address,bytes,bytes)(uint256)",
+            0,
+            "0",
+            economic_deployment.DEAD,
+            "0x",
+            "0x",
+        )
+        self._put(c["vault"], "grantCount()(uint256)", len(c["vestingWallets"]))
+        for index, wallet in enumerate(c["vestingWallets"]):
+            self._put(
+                c["vault"],
+                "grants(uint256)(address,uint64,uint64,uint256)",
+                wallet,
+                str(index),
+            )
+
+        int_calls = (
+            (self.receipt, "FEE_TIER()(uint24)", economic_deployment.FEE_TIER),
+            (
+                self.receipt,
+                "OBSERVATION_CARDINALITY()(uint16)",
+                economic_deployment.OBSERVATION_CARDINALITY,
+            ),
+            (c["orchestrator"], "FEE_TIER()(uint24)", economic_deployment.FEE_TIER),
+            (
+                c["orchestrator"],
+                "OBSERVATION_CARDINALITY()(uint16)",
+                economic_deployment.OBSERVATION_CARDINALITY,
+            ),
+            (c["relay"], "FEE_TIER()(uint24)", economic_deployment.FEE_TIER),
+            (c["guard"], "FEE()(uint24)", economic_deployment.FEE_TIER),
+            (
+                c["spotAdapter"],
+                "DEFAULT_TICK_LOWER()(int24)",
+                economic_deployment.flm_deployment.TICK_LOWER,
+            ),
+            (
+                c["spotAdapter"],
+                "DEFAULT_TICK_UPPER()(int24)",
+                economic_deployment.flm_deployment.TICK_UPPER,
+            ),
+            (
+                c["conditionalAdapter"],
+                "DEFAULT_TICK_LOWER()(int24)",
+                economic_deployment.flm_deployment.TICK_LOWER,
+            ),
+            (
+                c["conditionalAdapter"],
+                "DEFAULT_TICK_UPPER()(int24)",
+                economic_deployment.flm_deployment.TICK_UPPER,
+            ),
+        )
+        for target, signature, expected in int_calls:
+            self._put(target, signature, expected)
+        self._put(c["orchestrator"], "ADAPTER_REPLACEABLE()(bool)", False)
+        self._put(d["stackDeployer"], "ADAPTER_REPLACEABLE()(bool)", False)
+        core_getters = {
+            "ARBITRATION": "ARBITRATION_CODE_HASH()(bytes32)",
+            "VAULT": "VAULT_CODE_HASH()(bytes32)",
+            "RELEASE_STRATEGY": "RELEASE_STRATEGY_CODE_HASH()(bytes32)",
+            "ZERO_VOTING": "ZERO_VOTING_CODE_HASH()(bytes32)",
+            "ECON_GATEWAY": "ECON_GATEWAY_CODE_HASH()(bytes32)",
+            "ECON_EVALUATOR": "ECON_EVALUATOR_CODE_HASH()(bytes32)",
+        }
+        for key, signature in core_getters.items():
+            self._put(self.receipt, signature, self.core_hashes[key])
+
+        self._put(c["manager"], "initializedFromBootstrap()(bool)", live)
+        if live:
+            self._put(c["vault"], "phase()(uint8)", 2)
+            self._put(c["companyToken"], "mintingFinished()(bool)", True)
+            self._put(
+                d["uniswapV3Factory"],
+                "getPool(address,address,uint24)(address)",
+                c["spotPool"],
+                c["companyToken"],
+                d["weth"],
+                str(economic_deployment.FEE_TIER),
+            )
+            token0, token1 = sorted((c["companyToken"], d["weth"]))
+            self._put(c["spotPool"], "token0()(address)", token0)
+            self._put(c["spotPool"], "token1()(address)", token1)
+            self._put(c["spotPool"], "fee()(uint24)", economic_deployment.FEE_TIER)
+        else:
+            self._put(c["manager"], "totalSupply()(uint256)", 0)
+
+    def _verify(self) -> None:
+        economic_deployment.verify_rpc(
+            self.manifest,
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+
+    def test_sealed_manifest_verifies_staged_deployment(self) -> None:
+        self._verify()
+
+    def test_cast_vector_places_static_flm_tuple_before_bytes_array_offset(self) -> None:
+        codes = economic_deployment._decode_bytes_array_argument(
+            CAST_DEPLOY_FLM_VECTOR, 64, 5
+        )
+        self.assertEqual(codes, (b"\x01", b"\x02", b"\x03", b"\x04", b"\x05"))
+        config = {
+            "positionManager": {
+                "target": "0x1111111111111111111111111111111111111111",
+                "runtimeCodeKeccak256": "0x" + "22" * 32,
+            }
+        }
+        self.assertEqual(
+            economic_deployment._encode_deploy_flm(config, codes), CAST_DEPLOY_FLM_VECTOR
+        )
+        with self.assertRaises(economic_deployment.ManifestError):
+            economic_deployment._decode_bytes_array_argument(CAST_DEPLOY_FLM_VECTOR, 32, 5)
+
+    def test_outer_receipt_create_supports_operator_nonce_above_127(self) -> None:
+        actual = economic_deployment._create_address(
+            address(0xAAA), 185, economic_deployment.flm_code_hashes.keccak256
+        )
+        self.assertEqual(actual, "0x8b531d483464e7ef234f638eb3b95a0fc56abca8")
+
+    def test_local_creation_evidence_comes_from_checked_isolated_build_info(self) -> None:
+        compiled = tuple(
+            economic_deployment.economic_code_hashes.CompiledTarget(
+                target, target.constant.encode(), "0.8.20", {"viaIR": True}
+            )
+            for target in economic_deployment.economic_code_hashes.TARGETS
+        )
+        with mock.patch.object(
+            economic_deployment.flm_deployment, "_require_clean_tracked_root"
+        ) as clean, mock.patch.object(
+            economic_deployment.economic_code_hashes, "generate", return_value=compiled
+        ) as generate:
+            receipt, prerequisites = economic_deployment.verified_creation_evidence()
+        clean.assert_called_once_with(economic_deployment.ROOT)
+        generate.assert_called_once_with(check=True)
+        self.assertEqual(receipt, b"RECEIPT")
+        self.assertEqual(prerequisites["proposalImplementation"], b"PROPOSAL_IMPLEMENTATION")
+        self.assertEqual(prerequisites["stackDeployer"], b"STACK_DEPLOYER")
+
+    def test_live_manifest_verifies_finalization_evidence(self) -> None:
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 0,
+            "from": address(0xBBB),
+        }
+        self._chain_evidence(live=True)
+        # Legitimate later exits/trading must not rewrite historical finalization evidence.
+        self._put(self.contracts["manager"], "totalSupply()(uint256)", 0)
+        self._put(
+            self.contracts["manager"],
+            "balanceOf(address)(uint256)",
+            0,
+            self.contracts["vault"],
+        )
+        self._put(
+            self.contracts["spotPool"],
+            "slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)",
+            "999\n0\n0\n0\n120\n0\ntrue",
+        )
+        self._verify()
+
+    def test_rejects_noncanonical_code_blob_hash(self) -> None:
+        broken = copy.deepcopy(self.manifest)
+        broken["codeBlobs"]["core"]["VAULT"] = "0x" + "ff" * 32
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "VAULT is not canonical"):
+            economic_deployment.validate_manifest(broken, hash_=self.hash)
+
+    def test_schema_rejects_self_declared_creation_evidence(self) -> None:
+        broken = copy.deepcopy(self.manifest)
+        broken["receipt"]["creationCodeKeccak256"] = "0x" + "ff" * 32
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "canonical compiler"):
+            economic_deployment.validate_manifest(broken, hash_=self.hash)
+
+        broken = copy.deepcopy(self.manifest)
+        broken["prerequisites"]["stackDeployer"]["creationCodeBytes"] += 1
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "canonical compiler"):
+            economic_deployment.validate_manifest(broken, hash_=self.hash)
+
+    def test_rejects_failed_staged_call(self) -> None:
+        tx_hash = self.manifest["transactions"]["deployFlm"]["hash"]
+        self.client.receipts[tx_hash]["status"] = 0
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "deployFlm transaction evidence"):
+            self._verify()
+
+    def test_rejects_mutated_constructor_commitment(self) -> None:
+        tx_hash = self.manifest["transactions"]["receiptCreate"]["hash"]
+        input_ = bytearray.fromhex(self.client.transactions[tx_hash]["input"][2:])
+        input_[-1] ^= 1
+        self.client.transactions[tx_hash]["input"] = "0x" + input_.hex()
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "config commitments"):
+            self._verify()
+
+    def test_rejects_disclosed_config_not_used_by_deploy_core(self) -> None:
+        self.core_config["saleCap"] += 1
+        self.core_config_hash = economic_deployment._digest(
+            economic_deployment._encode_core_commitment(self.core_config, self.grants), self.hash
+        )
+        self.manifest["receipt"]["coreConfigHash"] = self.core_config_hash
+        self._put(self.receipt, "CORE_CONFIG_HASH()(bytes32)", self.core_config_hash)
+        create_hash = self.manifest["transactions"]["receiptCreate"]["hash"]
+        self.client.transactions[create_hash]["input"] = (
+            "0x"
+            + (
+                self.creation
+                + bytes.fromhex(self.core_config_hash[2:] + self.flm_config_hash[2:])
+            ).hex()
+        )
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "deployCore calldata"):
+            self._verify()
+
+    def test_rejects_unproven_prerequisite_create(self) -> None:
+        tx_hash = self.manifest["prerequisites"]["stackDeployer"]["transaction"]["hash"]
+        self.client.transactions[tx_hash]["input"] += "00"
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "CREATE input"):
+            self._verify()
+
+    def test_rejects_wrong_ownerless_authority(self) -> None:
+        self._put(self.contracts["manager"], "owner()(address)", address(0xBAD))
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "public wiring mismatch"):
+            self._verify()
+
+    def test_live_rejects_missing_canonical_pool(self) -> None:
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 0,
+            "from": address(0xBBB),
+        }
+        self._chain_evidence(live=True)
+        self.client.codes[self.contracts["spotPool"]] = b""
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "no deployed code"):
+            self._verify()
+
+
+if __name__ == "__main__":
+    unittest.main()

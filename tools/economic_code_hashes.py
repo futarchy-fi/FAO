@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate reproducible economic-core creation-code evidence."""
+"""Regenerate reproducible economic deployment creation-code evidence."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ Target = flm_code_hashes.Target
 CompiledTarget = flm_code_hashes.CompiledTarget
 GenerationError = flm_code_hashes.GenerationError
 
-TARGETS = (
+CORE_TARGETS = (
     Target("ARBITRATION", "src/FutarchyArbitration.sol", "FutarchyArbitration"),
     Target("VAULT", "src/GenesisVault.sol", "GenesisVault"),
     Target(
@@ -44,6 +44,16 @@ TARGETS = (
         "FAOEconomicEvaluationPipeline",
     ),
 )
+DEPLOYMENT_TARGETS = (
+    Target("RECEIPT", "src/FaoGenesisDeployment.sol", "FaoGenesisDeployment"),
+    Target(
+        "PROPOSAL_IMPLEMENTATION",
+        "src/FAOFutarchyProposal.sol",
+        "FAOFutarchyProposal",
+    ),
+    Target("STACK_DEPLOYER", "src/FAOSiteStackDeployer.sol", "FAOSiteStackDeployer"),
+)
+TARGETS = (*CORE_TARGETS, *DEPLOYMENT_TARGETS)
 
 
 def _build(root: Path) -> None:
@@ -170,10 +180,11 @@ def _output(
     return json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
 
 
-def generate(root: Path = ROOT, *, check: bool = False) -> None:
+def generate(root: Path = ROOT, *, check: bool = False) -> tuple[CompiledTarget, ...]:
     _build(root)
     compiled = tuple(_read_compiled(root, target) for target in TARGETS)
     flm_code_hashes._write_or_check(root / MANIFEST_PATH, _output(compiled), check)
+    return compiled
 
 
 def main(argv: list[str] | None = None) -> int:
