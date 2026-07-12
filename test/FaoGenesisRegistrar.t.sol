@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FaoGenesisRegistrar} from "../src/FaoGenesisRegistrar.sol";
+import {EconomicDeploymentCodeHashes} from "../src/generated/EconomicDeploymentCodeHashes.sol";
 
 contract FaoGenesisRegistrarTest is Test {
     bytes32 private constant CORE_HASH = keccak256("core");
@@ -18,7 +19,8 @@ contract FaoGenesisRegistrarTest is Test {
     );
 
     function setUp() public {
-        receiptBaseCode = type(FaoGenesisDeployment).creationCode;
+        receiptBaseCode = vm.readFileBinary("metadata/economic-creation-code/receipt.bin");
+        assertEq(keccak256(receiptBaseCode), EconomicDeploymentCodeHashes.RECEIPT);
         registrar = new FaoGenesisRegistrar(keccak256(receiptBaseCode));
     }
 
@@ -37,8 +39,8 @@ contract FaoGenesisRegistrarTest is Test {
         FaoGenesisDeployment receipt = FaoGenesisDeployment(deployed);
         assertEq(receipt.CORE_CONFIG_HASH(), CORE_HASH);
         assertEq(receipt.FLM_CONFIG_HASH(), FLM_HASH);
-        FaoGenesisDeployment direct = new FaoGenesisDeployment(CORE_HASH, FLM_HASH);
-        assertEq(deployed.code, address(direct).code);
+        address direct = _deployDirect(receiptBaseCode, CORE_HASH, FLM_HASH);
+        assertEq(deployed.code, direct.code);
         assertEq(vm.load(address(registrar), bytes32(0)), bytes32(0));
     }
 
@@ -69,9 +71,11 @@ contract FaoGenesisRegistrarTest is Test {
         );
         registrar.stage(CORE_HASH, FLM_HASH, wrongCode);
 
-        registrar.stage(CORE_HASH, FLM_HASH, receiptBaseCode);
-        vm.expectRevert(FaoGenesisRegistrar.DeploymentFailed.selector);
-        registrar.stage(CORE_HASH, FLM_HASH, receiptBaseCode);
+        address first = registrar.stage(CORE_HASH, FLM_HASH, receiptBaseCode);
+        vm.recordLogs();
+        address repeated = registrar.stage(CORE_HASH, FLM_HASH, receiptBaseCode);
+        assertEq(repeated, first);
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 
     function test_distinctHashesProduceDistinctReceipts() public {
@@ -128,5 +132,16 @@ contract FaoGenesisRegistrarTest is Test {
                 )
             )
         );
+    }
+
+    function _deployDirect(bytes memory baseCode, bytes32 coreHash, bytes32 flmHash)
+        private
+        returns (address deployed)
+    {
+        bytes memory initcode = abi.encodePacked(baseCode, abi.encode(coreHash, flmHash));
+        assembly ("memory-safe") {
+            deployed := create(0, add(initcode, 0x20), mload(initcode))
+        }
+        assertTrue(deployed.code.length != 0);
     }
 }

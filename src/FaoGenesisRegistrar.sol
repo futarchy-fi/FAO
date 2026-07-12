@@ -27,6 +27,8 @@ contract FaoGenesisRegistrar {
     {
         bytes memory initcode = _initcode(coreConfigHash, flmConfigHash, receiptBaseCode);
         bytes32 salt_ = salt(coreConfigHash, flmConfigHash);
+        receipt = _predict(salt_, keccak256(initcode));
+        if (receipt.code.length != 0) return receipt;
         assembly ("memory-safe") {
             receipt := create2(0, add(initcode, 0x20), mload(initcode), salt_)
         }
@@ -40,17 +42,14 @@ contract FaoGenesisRegistrar {
         returns (address)
     {
         bytes32 initcodeHash = keccak256(_initcode(coreConfigHash, flmConfigHash, receiptBaseCode));
+        return _predict(salt(coreConfigHash, flmConfigHash), initcodeHash);
+    }
+
+    function _predict(bytes32 salt_, bytes32 initcodeHash) private view returns (address) {
         return address(
             uint160(
                 uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff),
-                            address(this),
-                            salt(coreConfigHash, flmConfigHash),
-                            initcodeHash
-                        )
-                    )
+                    keccak256(abi.encodePacked(bytes1(0xff), address(this), salt_, initcodeHash))
                 )
             )
         );
