@@ -267,6 +267,17 @@ def _browser_bundle(
             "flmManifestPath": flm_code_hashes.MANIFEST_PATH.as_posix(),
             "flmManifestKeccak256": hash_(flm_manifest_bytes),
         },
+        "codeHashes": {
+            "receipt": hash_(by_key["RECEIPT"].code),
+            "core": {
+                target.constant: hash_(by_key[target.constant].code)
+                for target in CORE_TARGETS
+            },
+            "flm": {
+                target.constant: contracts[target.constant]["baseCreationCodeKeccak256"]
+                for target in flm_code_hashes.TARGETS
+            },
+        },
         "creationCodes": {
             "receipt": "0x" + by_key["RECEIPT"].code.hex(),
             "core": {

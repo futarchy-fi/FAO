@@ -199,6 +199,16 @@ class EconomicCodeHashesTest(unittest.TestCase):
                 bundle["creationCodes"]["receipt"],
                 "0x" + compiled[len(economic_code_hashes.CORE_TARGETS)].code.hex(),
             )
+            self.assertEqual(
+                bundle["codeHashes"]["receipt"],
+                fake_keccak(compiled[len(economic_code_hashes.CORE_TARGETS)].code),
+            )
+            for section in ("core", "flm"):
+                for key, code in bundle["creationCodes"][section].items():
+                    self.assertEqual(
+                        bundle["codeHashes"][section][key],
+                        fake_keccak(bytes.fromhex(code[2:])),
+                    )
 
             first_flm = economic_code_hashes.flm_code_hashes.TARGETS[0]
             (root / first_flm.blob).write_bytes(b"changed")
