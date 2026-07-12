@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 2,
+  "flmSubmoduleSha": "b6eda7b56ee0308ad45801dab914d83afeb28464",
+  "compiler": {
+    "solcVersion": "0.8.20+commit.a1b79de6",
+    "solcSettingsKeccak256": "0x9128ef1c01f6e5c3f96246af932b889da8ef79e328e65724dc2a3050ebb35b59"
+  },
+  "receipt": {
+    "source": "src/SepoliaFlmBundleDeployment.sol",
+    "contract": "SepoliaFlmBundleDeployment",
+    "creationCodeBytes": 19843,
+    "creationCodeKeccak256": "0x0598fbfd0080328dae708d811ed8501479a9ba340ac4b4e4cc11de4a10d32612"
+  },
+  "contracts": {
+    "RELAY": {
+      "source": "src/FAOFlmProposalSourceRelay.sol",
+      "contract": "FAOFlmProposalSourceRelay",
+      "baseCreationCodePath": "metadata/flm-creation-code/relay.bin",
+      "baseCreationCodeBytes": 5325,
+      "baseCreationCodeKeccak256": "0x8de73c5f9e6a1db95177b7dd155de6431e52ec862738caaeeabf8a3977378428"
+    },
+    "ADAPTER": {
+      "source": "lib/futarchy-liquidity-manager/src/adapters/UniswapV3LiquidityAdapter.sol",
+      "contract": "UniswapV3LiquidityAdapter",
+      "baseCreationCodePath": "metadata/flm-creation-code/adapter.bin",
+      "baseCreationCodeBytes": 8657,
+      "baseCreationCodeKeccak256": "0xab22492ab443ce07175f01c104e3cf94c72a1d50a885b99e7a48df9ff468ed67"
+    },
+    "GUARD": {
+      "source": "lib/futarchy-liquidity-manager/src/oracles/UniV3PoolStabilityGuard.sol",
+      "contract": "UniV3PoolStabilityGuard",
+      "baseCreationCodePath": "metadata/flm-creation-code/guard.bin",
+      "baseCreationCodeBytes": 2130,
+      "baseCreationCodeKeccak256": "0x2926ce4ea96c3373691275ecac531f5274cfa137b7b2a4c575619339e644bc0b"
+    },
+    "ROUTER": {
+      "source": "lib/futarchy-liquidity-manager/src/routers/FutarchyConditionalRouter.sol",
+      "contract": "FutarchyConditionalRouter",
+      "baseCreationCodePath": "metadata/flm-creation-code/router.bin",
+      "baseCreationCodeBytes": 13766,
+      "baseCreationCodeKeccak256": "0xae45109d0f787c58277666d49ad9aebe4759c5d97827d95a8a551bb529616d78"
+    },
+    "MANAGER": {
+      "source": "lib/futarchy-liquidity-manager/src/core/FutarchyLiquidityManager.sol",
+      "contract": "FutarchyLiquidityManager",
+      "baseCreationCodePath": "metadata/flm-creation-code/manager.bin",
+      "baseCreationCodeBytes": 26603,
+      "baseCreationCodeKeccak256": "0xfeccaac1748c196ad21446a5d43a96f7f383cb0fd0ece6d5d915f1b65ef4bc4d"
+    }
+  }
+}

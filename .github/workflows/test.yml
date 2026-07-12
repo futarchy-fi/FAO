@@ -21,12 +21,22 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ssh-key: ${{ secrets.FLM_SUBMODULE_SSH_KEY }}
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Show Forge version
         run: forge --version
+
+      - name: Test FLM code-hash generator
+        run: python3 -m unittest tools.test_flm_code_hashes
+
+      - name: Test FLM deployment manifest verifier
+        run: python3 -m unittest tools.test_flm_deployment
+
+      - name: Verify sealed FLM code and compiler evidence
+        run: python3 tools/flm_deployment.py prepare-build-info
 
       - name: Run Forge fmt
         run: forge fmt --check
