@@ -36,24 +36,14 @@ contract FaoGenesisDeploymentForkTest is Test {
 
     function testFork_stagedEconomicGenesisFinalizesAgainstCanonicalSepolia() public {
         if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
-        vm.createSelectFork("https://ethereum-sepolia.publicnode.com");
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
 
-        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
-        FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
-        FaoGenesisDeployment.CoreConfig memory coreConfig =
-            _coreConfig(stackDeployer, proposalImplementation);
-        FaoGenesisDeployment.FlmConfig memory flmConfig = _flmConfig();
-        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
-        FaoGenesisDeployment receipt = new FaoGenesisDeployment(
-            keccak256(abi.encode(coreConfig, grants)), keccak256(abi.encode(flmConfig))
-        );
-
-        uint256 gasBefore = gasleft();
-        receipt.deployCore(coreConfig, grants, _coreCodes());
-        uint256 coreGas = gasBefore - gasleft();
-        gasBefore = gasleft();
-        receipt.deployFlm(flmConfig, _flmCodes());
-        uint256 flmGas = gasBefore - gasleft();
+        (
+            FaoGenesisDeployment receipt,
+            FaoGenesisDeployment.CoreConfig memory coreConfig,
+            uint256 coreGas,
+            uint256 flmGas
+        ) = _deployReceipt();
 
         GenesisVault vault = GenesisVault(payable(receipt.vault()));
         FutarchyLiquidityManager manager = FutarchyLiquidityManager(payable(receipt.manager()));
@@ -73,7 +63,7 @@ contract FaoGenesisDeploymentForkTest is Test {
             address(0)
         );
 
-        gasBefore = gasleft();
+        uint256 gasBefore = gasleft();
         uint256 shares = vault.finalize();
         uint256 finalizeGas = gasBefore - gasleft();
 
@@ -115,6 +105,60 @@ contract FaoGenesisDeploymentForkTest is Test {
         console2.log("economic core stage gas", coreGas);
         console2.log("economic FLM stage gas", flmGas);
         console2.log("economic atomic finalize gas", finalizeGas);
+    }
+
+    function testFork_realEmptyPoolSwapNormalizesWithoutPayment() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        (FaoGenesisDeployment receipt,,,) = _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        uint256 terminalPrice = vault.terminalPrice();
+        uint160 target = receipt.sqrtPriceX96(terminalPrice);
+        address poolAddress = IUniswapV3FactoryLike(UNIV3_FACTORY)
+            .createPool(receipt.companyToken(), WETH, receipt.FEE_TIER());
+        assertEq(poolAddress, receipt.spotPool());
+        IUniswapV3PoolLike(poolAddress).initialize(target + 1);
+
+        assertEq(IERC20(receipt.companyToken()).balanceOf(address(receipt)), 0);
+        assertEq(IERC20(WETH).balanceOf(address(receipt)), 0);
+        uint256 gasBefore = gasleft();
+        vm.prank(address(vault));
+        receipt.prepareAndAssert(terminalPrice);
+        uint256 normalizeGas = gasBefore - gasleft();
+
+        (uint160 normalized,,,, uint16 cardinalityNext,,) = IUniswapV3PoolLike(poolAddress).slot0();
+        assertEq(normalized, target);
+        assertGe(cardinalityNext, receipt.OBSERVATION_CARDINALITY());
+        assertEq(IERC20(receipt.companyToken()).balanceOf(address(receipt)), 0);
+        assertEq(IERC20(WETH).balanceOf(address(receipt)), 0);
+        console2.log("economic empty-pool normalization gas", normalizeGas);
+    }
+
+    function _deployReceipt()
+        private
+        returns (
+            FaoGenesisDeployment receipt,
+            FaoGenesisDeployment.CoreConfig memory coreConfig,
+            uint256 coreGas,
+            uint256 flmGas
+        )
+    {
+        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
+        FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
+        coreConfig = _coreConfig(stackDeployer, proposalImplementation);
+        FaoGenesisDeployment.FlmConfig memory flmConfig = _flmConfig();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        receipt = new FaoGenesisDeployment(
+            keccak256(abi.encode(coreConfig, grants)), keccak256(abi.encode(flmConfig))
+        );
+
+        uint256 gasBefore = gasleft();
+        receipt.deployCore(coreConfig, grants, _coreCodes());
+        coreGas = gasBefore - gasleft();
+        gasBefore = gasleft();
+        receipt.deployFlm(flmConfig, _flmCodes());
+        flmGas = gasBefore - gasleft();
     }
 
     function _coreConfig(
