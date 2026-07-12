@@ -146,7 +146,6 @@ contract FaoGenesisDeployment {
     address public router;
     address public manager;
 
-    error ActiveEvaluation(uint256 proposalId);
     error AlreadySealed();
     error EmptyCodeBlob(uint256 index);
     error InvalidCallback(address caller, int256 amount0Delta, int256 amount1Delta);
@@ -371,8 +370,6 @@ contract FaoGenesisDeployment {
             revert InvalidConfigHash(FLM_CONFIG_HASH, actualHash);
         }
         _requireDependency(config.positionManager);
-        uint256 active = FutarchyArbitration(arbitration).activeEvaluationProposalId();
-        if (active != 0) revert ActiveEvaluation(active);
         _validateBaseCodes(baseCodes);
 
         address relay_ = _deploy(

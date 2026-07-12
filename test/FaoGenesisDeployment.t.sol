@@ -18,6 +18,7 @@ import {
 import {AlwaysZeroVotingStrategy} from "../src/AlwaysZeroVotingStrategy.sol";
 import {EconGateway} from "../src/EconGateway.sol";
 import {FAOEconomicEvaluationPipeline} from "../src/FAOEconomicEvaluationPipeline.sol";
+import {FAOTreasuryActions} from "../src/FAOTreasuryActions.sol";
 import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {FAOFutarchyFactory} from "../src/FAOFutarchyFactory.sol";
 import {FAOOfficialProposalOrchestrator} from "../src/FAOOfficialProposalOrchestrator.sol";
@@ -39,6 +40,10 @@ contract FaoGenesisDependencyMock {}
 
 contract FaoGenesisTokenMock is ERC20 {
     constructor() ERC20("Wrapped Ether", "WETH") {}
+
+    function mint(address account, uint256 amount) external {
+        _mint(account, amount);
+    }
 }
 
 contract FaoGenesisFactoryMock is IUniswapV3FactoryLike {
@@ -246,6 +251,28 @@ contract FaoGenesisDeploymentTest is Test {
 
         receipt.deployCore(_coreConfig(), _grants(), _coreCodes());
         assertEq(receipt.arbitration(), _createAddress(address(receipt), 1));
+    }
+
+    function test_activeEvaluationCannotBlockTheFlmStage() public {
+        FaoGenesisDeployment receipt = _newReceipt();
+        receipt.deployCore(_coreConfig(), _grants(), _coreCodes());
+
+        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
+            target: address(0xBEEF), value: 0, data: "", salt: bytes32(uint256(1))
+        });
+        uint256 proposalId = EconGateway(receipt.proposalGateway()).proposeTreasuryAction(action);
+        FutarchyArbitration arbitrationLike = FutarchyArbitration(receipt.arbitration());
+        weth.mint(address(this), TREASURY_BOND * 2 + GRADUATION_THRESHOLD);
+        weth.approve(address(arbitrationLike), type(uint256).max);
+        arbitrationLike.placeYesBond(proposalId, TREASURY_BOND);
+        arbitrationLike.placeNoBond(proposalId);
+        arbitrationLike.placeYesBond(proposalId, GRADUATION_THRESHOLD);
+        arbitrationLike.startNextEvaluation();
+        assertEq(arbitrationLike.activeEvaluationProposalId(), proposalId);
+
+        receipt.deployFlm(_flmConfig(), _flmCodes());
+        assertTrue(receipt.flmSealed());
+        assertEq(arbitrationLike.activeEvaluationProposalId(), proposalId);
     }
 
     function test_coreRejectsTerminalPriceOutsideRepresentablePoolDomainBeforeCreate() public {
