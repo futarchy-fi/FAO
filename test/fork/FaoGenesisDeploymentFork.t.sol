@@ -11,10 +11,12 @@ import {EconGateway} from "../../src/EconGateway.sol";
 import {FAOEconomicEvaluationPipeline} from "../../src/FAOEconomicEvaluationPipeline.sol";
 import {FAOFutarchyProposal} from "../../src/FAOFutarchyProposal.sol";
 import {FaoGenesisDeployment} from "../../src/FaoGenesisDeployment.sol";
+import {FaoGenesisRegistrar} from "../../src/FaoGenesisRegistrar.sol";
 import {FAOSiteStackDeployer} from "../../src/FAOSiteStackDeployer.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../../src/GenesisVault.sol";
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
+import {EconomicDeploymentCodeHashes} from "../../src/generated/EconomicDeploymentCodeHashes.sol";
 import {IUniswapV3FactoryLike} from "../../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../../src/interfaces/IUniswapV3PoolLike.sol";
 
@@ -133,6 +135,44 @@ contract FaoGenesisDeploymentForkTest is Test {
         assertEq(IERC20(receipt.companyToken()).balanceOf(address(receipt)), 0);
         assertEq(IERC20(WETH).balanceOf(address(receipt)), 0);
         console2.log("economic empty-pool normalization gas", normalizeGas);
+    }
+
+    function testFork_registrarRouteResumesPermissionlesslyAcrossCallers() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
+        FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
+        FaoGenesisDeployment.CoreConfig memory coreConfig =
+            _coreConfig(stackDeployer, proposalImplementation);
+        FaoGenesisDeployment.FlmConfig memory flmConfig = _flmConfig();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        bytes32 coreHash = keccak256(abi.encode(coreConfig, grants));
+        bytes32 flmHash = keccak256(abi.encode(flmConfig));
+        bytes memory receiptCode = vm.readFileBinary("metadata/economic-creation-code/receipt.bin");
+        assertEq(keccak256(receiptCode), EconomicDeploymentCodeHashes.RECEIPT);
+
+        FaoGenesisRegistrar registrar =
+            new FaoGenesisRegistrar(EconomicDeploymentCodeHashes.RECEIPT);
+        address predicted = registrar.predict(coreHash, flmHash, receiptCode);
+        address stager = makeAddr("registrar-stager");
+        vm.prank(stager);
+        FaoGenesisDeployment receipt =
+            FaoGenesisDeployment(registrar.stage(coreHash, flmHash, receiptCode));
+        assertEq(address(receipt), predicted);
+
+        vm.prank(makeAddr("mempool-copier"));
+        assertEq(registrar.stage(coreHash, flmHash, receiptCode), predicted);
+        vm.prank(makeAddr("core-completer"));
+        receipt.deployCore(coreConfig, grants, _coreCodes());
+        vm.prank(makeAddr("flm-completer"));
+        receipt.deployFlm(flmConfig, _flmCodes());
+
+        assertTrue(receipt.coreSealed());
+        assertTrue(receipt.flmSealed());
+        assertEq(Space(receipt.space()).owner(), address(0));
+        assertEq(FutarchyArbitration(receipt.arbitration()).owner(), address(0));
+        assertEq(FutarchyLiquidityManager(payable(receipt.manager())).owner(), receipt.DEAD());
     }
 
     function _deployReceipt()
