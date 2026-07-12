@@ -10,3 +10,6 @@
 [submodule "lib/sx-evm"]
 	path = lib/sx-evm
 	url = https://github.com/snapshot-labs/sx-evm.git
+[submodule "lib/futarchy-liquidity-manager"]
+	path = lib/futarchy-liquidity-manager
+	url = https://github.com/futarchy-fi/futarchy-liquidity-manager.git

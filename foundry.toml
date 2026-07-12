@@ -16,6 +16,7 @@ remappings = [
     "@openzeppelin/=lib/sx-evm/lib/openzeppelin-contracts/", 
     "openzeppelin-contracts/=lib/openzeppelin-contracts/",
     "forge-std/=lib/forge-std/src/",
+    "flm/=lib/futarchy-liquidity-manager/src/",
 
     "forge-gas-snapshot/=lib/sx-evm/lib/forge-gas-snapshot/src/",
     "@prb/test/=lib/sx-evm/lib/prb-test/src/",
