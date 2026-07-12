@@ -438,6 +438,140 @@ def _encode_deploy_flm(config: dict[str, Any], codes: tuple[bytes, ...]) -> byte
     )
 
 
+def _decode_address_word(value: bytes, offset: int, name: str) -> str:
+    if offset < 0 or offset + 32 > len(value) or any(value[offset : offset + 12]):
+        raise ManifestError(f"{name} is not an encoded address")
+    return "0x" + value[offset + 12 : offset + 32].hex()
+
+
+def _decode_hash_word(value: bytes, offset: int, name: str) -> str:
+    if offset < 0 or offset + 32 > len(value):
+        raise ManifestError(f"{name} is truncated")
+    return "0x" + value[offset : offset + 32].hex()
+
+
+def _decode_string(value: bytes, head_offset: int, name: str) -> str:
+    start = _word_uint(value, head_offset, f"{name} offset")
+    if start % 32 or start + 32 > len(value):
+        raise ManifestError(f"{name} offset is malformed")
+    length = _word_uint(value, start, f"{name} length")
+    content_start = start + 32
+    content_end = content_start + length
+    padded_end = content_start + ((length + 31) // 32) * 32
+    if padded_end > len(value) or any(value[content_end:padded_end]):
+        raise ManifestError(f"{name} is truncated or has nonzero padding")
+    try:
+        return value[content_start:content_end].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ManifestError(f"{name} is not UTF-8") from exc
+
+
+def _decode_core_config(value: bytes) -> dict[str, Any]:
+    if len(value) < 39 * 32 or len(value) % 32:
+        raise ManifestError("encoded CoreConfig is malformed")
+    config: dict[str, Any] = {}
+    word = 0
+    for key in CORE_DEPENDENCY_KEYS:
+        config[key] = {
+            "target": _decode_address_word(value, word * 32, f"CoreConfig.{key}.target"),
+            "runtimeCodeKeccak256": _decode_hash_word(
+                value, (word + 1) * 32, f"CoreConfig.{key}.codehash"
+            ),
+        }
+        word += 2
+    for key in (
+        "graduationThreshold",
+        "arbitrationTimeout",
+        "siteMinActivationBond",
+        "treasuryMinActivationBond",
+        "twapTimeout",
+        "twapWindow",
+        "spaceSaltNonce",
+    ):
+        config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    for key in (
+        "daoURI",
+        "metadataURI",
+        "votingStrategyMetadataURI",
+        "proposalValidationStrategyMetadataURI",
+        "tokenName",
+        "tokenSymbol",
+    ):
+        config[key] = _decode_string(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    for key in (
+        "saleEnd",
+        "bootstrapDeadline",
+        "saleCap",
+        "minimumRaise",
+        "tokenMaxSupply",
+        "initialPrice",
+        "slope",
+        "bootstrapBps",
+    ):
+        config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    if _encode_core_config(config) != value:
+        raise ManifestError("CoreConfig ABI encoding is not canonical")
+    return config
+
+
+def _decode_grants(value: bytes) -> list[dict[str, Any]]:
+    count = _word_uint(value, 0, "GrantConfig[] length")
+    if len(value) != 32 + count * 128:
+        raise ManifestError("GrantConfig[] ABI encoding is malformed")
+    grants = []
+    for index in range(count):
+        offset = 32 + index * 128
+        grants.append(
+            {
+                "beneficiary": _decode_address_word(
+                    value, offset, f"GrantConfig[{index}].beneficiary"
+                ),
+                "start": _word_uint(value, offset + 32, f"GrantConfig[{index}].start"),
+                "duration": _word_uint(value, offset + 64, f"GrantConfig[{index}].duration"),
+                "amount": _word_uint(value, offset + 96, f"GrantConfig[{index}].amount"),
+            }
+        )
+    return grants
+
+
+def _decode_deploy_core(calldata: bytes) -> tuple[dict[str, Any], list[dict[str, Any]], tuple[bytes, ...]]:
+    if len(calldata) < 4 + 96 or calldata[:4].hex() != DEPLOY_CORE_SELECTOR:
+        raise ManifestError("broadcast deployCore calldata has the wrong selector")
+    args = calldata[4:]
+    offsets = [_word_uint(args, index * 32, f"deployCore argument {index} offset") for index in range(3)]
+    if offsets[0] != 96 or any(offset % 32 for offset in offsets) or offsets != sorted(offsets):
+        raise ManifestError("deployCore dynamic argument offsets are not canonical")
+    if offsets[2] >= len(args):
+        raise ManifestError("deployCore dynamic arguments are truncated")
+    config = _decode_core_config(args[offsets[0] : offsets[1]])
+    grants = _decode_grants(args[offsets[1] : offsets[2]])
+    codes = _decode_bytes_array_argument(calldata, 64, len(CORE_BLOBS))
+    if _encode_deploy_core(config, grants, codes) != calldata:
+        raise ManifestError("deployCore calldata is not canonical")
+    return config, grants, codes
+
+
+def _decode_deploy_flm(calldata: bytes) -> tuple[dict[str, Any], tuple[bytes, ...]]:
+    if len(calldata) < 4 + 96 or calldata[:4].hex() != DEPLOY_FLM_SELECTOR:
+        raise ManifestError("broadcast deployFlm calldata has the wrong selector")
+    args = calldata[4:]
+    config = {
+        "positionManager": {
+            "target": _decode_address_word(args, 0, "FlmConfig.positionManager.target"),
+            "runtimeCodeKeccak256": _decode_hash_word(
+                args, 32, "FlmConfig.positionManager.codehash"
+            ),
+        }
+    }
+    codes = _decode_bytes_array_argument(calldata, 64, len(FLM_BLOBS))
+    if _encode_deploy_flm(config, codes) != calldata:
+        raise ManifestError("deployFlm calldata is not canonical")
+    return config, codes
+
+
 def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     core = _require_dict(manifest["coreConfig"], "coreConfig")
     if tuple(core) != CORE_CONFIG_KEYS:
@@ -805,6 +939,191 @@ def _live_transaction(
     if contract != created:
         raise ManifestError(f"live {name} contract address is inconsistent")
     return _variable_bytes(tx.get("input"), f"live {name}.input")
+
+
+def _broadcast_records(broadcast: Any) -> list[dict[str, Any]]:
+    broadcast = _require_dict(broadcast, "economic genesis broadcast")
+    if _quantity(broadcast.get("chain"), "broadcast.chain") != CHAIN_ID:
+        raise ManifestError(f"broadcast chain must be Sepolia ({CHAIN_ID})")
+    if _require_list(broadcast.get("pending", []), "broadcast.pending"):
+        raise ManifestError("broadcast contains pending transactions")
+    transactions = _require_list(broadcast.get("transactions"), "broadcast.transactions")
+    if len(transactions) != 5:
+        raise ManifestError("economic genesis broadcast must contain exactly five transactions")
+    receipts = site_deployment._receipt_map(broadcast)
+    if len(receipts) != 5:
+        raise ManifestError("economic genesis broadcast must contain exactly five receipts")
+
+    expected = (
+        ("CREATE", "FAOFutarchyProposal"),
+        ("CREATE", "FAOSiteStackDeployer"),
+        ("CREATE", RECEIPT_CONTRACT),
+        ("CALL", RECEIPT_CONTRACT),
+        ("CALL", RECEIPT_CONTRACT),
+    )
+    records = []
+    for index, (raw, identity) in enumerate(zip(transactions, expected)):
+        outer = _require_dict(raw, f"broadcast.transactions[{index}]")
+        if (outer.get("transactionType"), outer.get("contractName")) != identity:
+            raise ManifestError(f"broadcast transaction {index} has the wrong staged identity")
+        tx_hash = _hex(outer.get("hash"), 32, f"broadcast.transactions[{index}].hash")
+        receipt = receipts.get(tx_hash)
+        if receipt is None or not site_deployment._is_success(receipt):
+            raise ManifestError(f"broadcast transaction {index} has no successful receipt")
+        tx = _require_dict(outer.get("transaction"), f"broadcast.transactions[{index}].transaction")
+        sender = _address(tx.get("from"), f"broadcast transaction {index} sender")
+        nonce = _quantity(tx.get("nonce"), f"broadcast transaction {index} nonce")
+        block = _quantity(receipt.get("blockNumber"), f"broadcast transaction {index} block")
+        target = flm_deployment._live_target(tx.get("to"), f"broadcast transaction {index} target")
+        created = flm_deployment._live_target(
+            receipt.get("contractAddress"), f"broadcast transaction {index} created contract"
+        )
+        declared_contract = flm_deployment._live_target(
+            outer.get("contractAddress"), f"broadcast transaction {index} declared contract"
+        )
+        if (
+            _address(receipt.get("from"), f"broadcast transaction {index} receipt sender") != sender
+            or flm_deployment._live_target(
+                receipt.get("to"), f"broadcast transaction {index} receipt target"
+            )
+            != target
+        ):
+            raise ManifestError(f"broadcast transaction {index} receipt provenance is inconsistent")
+        is_create = identity[0] == "CREATE"
+        if (is_create and (target is not None or created is None or declared_contract != created)) or (
+            not is_create
+            and (target is None or created is not None or declared_contract != target)
+        ):
+            raise ManifestError(f"broadcast transaction {index} CREATE/CALL provenance is inconsistent")
+        records.append(
+            {
+                "evidence": {"hash": tx_hash, "block": block, "nonce": nonce, "from": sender},
+                "input": _variable_bytes(tx.get("input"), f"broadcast transaction {index} input"),
+                "target": target,
+                "created": created,
+            }
+        )
+    senders = {record["evidence"]["from"] for record in records}
+    nonces = [record["evidence"]["nonce"] for record in records]
+    blocks = [record["evidence"]["block"] for record in records]
+    if len(senders) != 1 or nonces != list(range(nonces[0], nonces[0] + 5)):
+        raise ManifestError("broadcast must use one deployer and five consecutive nonces")
+    if blocks != sorted(blocks):
+        raise ManifestError("broadcast transaction blocks are out of order")
+    if records[3]["target"] != records[2]["created"] or records[4]["target"] != records[2]["created"]:
+        raise ManifestError("staged calls do not target the created receipt")
+    if records[3]["input"][:4].hex() != DEPLOY_CORE_SELECTOR or records[4]["input"][:4].hex() != DEPLOY_FLM_SELECTOR:
+        raise ManifestError("staged receipt calls are out of order")
+    return records
+
+
+def manifest_from_broadcast(
+    broadcast: Any,
+    receipt_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    *,
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> dict[str, Any]:
+    records = _broadcast_records(broadcast)
+    proposal, stack, receipt_create, deploy_core, deploy_flm = records
+    receipt_address = receipt_create["created"]
+    if receipt_address != _create_address(
+        receipt_create["evidence"]["from"], receipt_create["evidence"]["nonce"], hash_
+    ):
+        raise ManifestError("broadcast receipt address does not match its CREATE nonce")
+
+    if set(prerequisite_creation_codes) != set(PREREQUISITES):
+        raise ManifestError("broadcast prerequisite compiler evidence is incomplete")
+    prerequisite_records = {
+        "proposalImplementation": proposal,
+        "stackDeployer": stack,
+    }
+    prerequisites = {}
+    for key, record in prerequisite_records.items():
+        source, contract, constructor_args = PREREQUISITES[key]
+        creation = prerequisite_creation_codes[key]
+        if record["input"] != creation + constructor_args or record["created"] != _create_address(
+            record["evidence"]["from"], record["evidence"]["nonce"], hash_
+        ):
+            raise ManifestError(f"broadcast prerequisite {key} does not match compiler evidence")
+        runtime = client.code(record["created"])
+        if not runtime:
+            raise ManifestError(f"broadcast prerequisite {key} has no runtime code")
+        prerequisites[key] = {
+            "address": record["created"],
+            "source": source,
+            "contract": contract,
+            "transaction": record["evidence"],
+            "creationCodeBytes": len(creation),
+            "creationCodeKeccak256": _digest(creation, hash_),
+            "runtimeCodeBytes": len(runtime),
+            "runtimeCodeKeccak256": _digest(runtime, hash_),
+        }
+
+    expected_receipt_input_bytes = len(receipt_creation_code) + 64
+    if len(receipt_create["input"]) != expected_receipt_input_bytes or not receipt_create[
+        "input"
+    ].startswith(receipt_creation_code):
+        raise ManifestError("broadcast receipt CREATE does not match compiler evidence")
+    commitment = receipt_create["input"][-64:]
+    core_config_hash = "0x" + commitment[:32].hex()
+    flm_config_hash = "0x" + commitment[32:].hex()
+
+    core_config, grants, core_codes = _decode_deploy_core(deploy_core["input"])
+    flm_config, flm_codes = _decode_deploy_flm(deploy_flm["input"])
+    getter_keys = CONTRACT_KEYS[:-1]
+    contracts = {
+        key: _call_address(client, receipt_address, f"{key}()(address)") for key in getter_keys
+    }
+    contracts["vestingWallets"] = [
+        _create_address(contracts["vault"], index, hash_)
+        for index in range(1, len(grants) + 1)
+    ]
+
+    core_hashes = {
+        key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)
+    }
+    flm_hashes = {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)}
+    manifest = {
+        "schemaVersion": 1,
+        "status": "sealed",
+        "network": "sepolia",
+        "chainId": CHAIN_ID,
+        "transactions": {
+            "receiptCreate": receipt_create["evidence"],
+            "deployCore": deploy_core["evidence"],
+            "deployFlm": deploy_flm["evidence"],
+        },
+        "receipt": {
+            "address": receipt_address,
+            "source": RECEIPT_SOURCE,
+            "contract": RECEIPT_CONTRACT,
+            "createNonce": receipt_create["evidence"]["nonce"],
+            "creationCodeBytes": len(receipt_creation_code),
+            "creationCodeKeccak256": _digest(receipt_creation_code, hash_),
+            "coreConfigHash": core_config_hash,
+            "flmConfigHash": flm_config_hash,
+        },
+        "prerequisites": prerequisites,
+        "coreConfig": core_config,
+        "grants": grants,
+        "flmConfig": flm_config,
+        "feeTier": FEE_TIER,
+        "poolInitCodeHash": POOL_INIT_CODE_HASH,
+        "observationCardinality": OBSERVATION_CARDINALITY,
+        "contracts": contracts,
+        "codeBlobs": {"core": core_hashes, "flm": flm_hashes},
+        "finalization": None,
+    }
+    verify_rpc(
+        manifest,
+        receipt_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_=hash_,
+    )
+    return manifest
 
 
 def _verify_prerequisites(
@@ -1211,10 +1530,27 @@ def verified_creation_evidence() -> tuple[bytes, dict[str, bytes]]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--manifest", type=Path)
+    source.add_argument("--from-broadcast", type=Path)
     parser.add_argument("--rpc-url")
+    parser.add_argument("--out", type=Path, default=ROOT / "deployments/sepolia-economic-genesis.json")
+    parser.add_argument("--check", action="store_true")
     parser.add_argument("--schema-only", action="store_true")
     args = parser.parse_args(argv)
+    if args.from_broadcast:
+        if args.schema_only or not args.rpc_url:
+            raise ManifestError("--from-broadcast requires --rpc-url and cannot be schema-only")
+        receipt_creation, prerequisite_creation = verified_creation_evidence()
+        manifest = manifest_from_broadcast(
+            site_deployment.load_json(args.from_broadcast),
+            receipt_creation,
+            prerequisite_creation,
+            CastClient(args.rpc_url),
+        )
+        site_deployment._write_or_check(args.out, manifest, args.check)
+        return 0
+
     manifest = site_deployment.load_json(args.manifest)
     validate_manifest(manifest)
     if args.schema_only:

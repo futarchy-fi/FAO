@@ -586,6 +586,42 @@ class EconomicDeploymentTest(unittest.TestCase):
         else:
             self._put(c["manager"], "totalSupply()(uint256)", 0)
 
+    def _broadcast(self) -> dict:
+        staged = (
+            ("proposalImplementation", "CREATE", "FAOFutarchyProposal"),
+            ("stackDeployer", "CREATE", "FAOSiteStackDeployer"),
+            ("receiptCreate", "CREATE", economic_deployment.RECEIPT_CONTRACT),
+            ("deployCore", "CALL", economic_deployment.RECEIPT_CONTRACT),
+            ("deployFlm", "CALL", economic_deployment.RECEIPT_CONTRACT),
+        )
+        transactions = []
+        receipts = []
+        for key, kind, contract_name in staged:
+            if key in self.manifest["prerequisites"]:
+                evidence = self.manifest["prerequisites"][key]["transaction"]
+            else:
+                evidence = self.manifest["transactions"][key]
+            tx = copy.deepcopy(self.client.transactions[evidence["hash"]])
+            receipt = copy.deepcopy(self.client.receipts[evidence["hash"]])
+            transactions.append(
+                {
+                    "hash": evidence["hash"],
+                    "transactionType": kind,
+                    "contractName": contract_name,
+                    "contractAddress": receipt["contractAddress"]
+                    if kind == "CREATE"
+                    else tx["to"],
+                    "transaction": tx,
+                }
+            )
+            receipts.append(receipt)
+        return {
+            "chain": economic_deployment.CHAIN_ID,
+            "pending": [],
+            "transactions": transactions,
+            "receipts": receipts,
+        }
+
     def _verify(self) -> None:
         economic_deployment.verify_rpc(
             self.manifest,
@@ -597,6 +633,16 @@ class EconomicDeploymentTest(unittest.TestCase):
 
     def test_sealed_manifest_verifies_staged_deployment(self) -> None:
         self._verify()
+
+    def test_builds_and_verifies_manifest_from_exact_five_transaction_broadcast(self) -> None:
+        built = economic_deployment.manifest_from_broadcast(
+            self._broadcast(),
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(built, self.manifest)
 
     def test_cast_vector_places_static_flm_tuple_before_bytes_array_offset(self) -> None:
         codes = economic_deployment._decode_bytes_array_argument(
