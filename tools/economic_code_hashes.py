@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD_ROOT = Path("build-info/economic-core-code-hashes")
 BUILD_INFO_PATH = BUILD_ROOT / "build-info"
 MANIFEST_PATH = Path("metadata/economic-core-code-hashes.json")
+BROWSER_BUNDLE_PATH = Path("metadata/fao-creation-codes.json")
 BLOB_DIR = Path("metadata/economic-creation-code")
 SOLIDITY_PATH = Path("src/generated/EconomicDeploymentCodeHashes.sol")
 
@@ -212,7 +213,70 @@ def _solidity(
 def deployment_blob(target: Target) -> Path:
     if target not in DEPLOYMENT_TARGETS:
         raise GenerationError(f"{target.constant} is not a deployment artifact")
+    return creation_blob(target)
+
+
+def creation_blob(target: Target) -> Path:
+    if target not in TARGETS:
+        raise GenerationError(f"{target.constant} is not an economic creation artifact")
     return BLOB_DIR / f"{target.constant.lower()}.bin"
+
+
+def _browser_bundle(
+    root: Path,
+    compiled: tuple[CompiledTarget, ...],
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> bytes:
+    by_key = {item.target.constant: item for item in compiled}
+    economic_manifest = _output(compiled, hash_)
+    flm_manifest_path = root / flm_code_hashes.MANIFEST_PATH
+    try:
+        flm_manifest_bytes = flm_manifest_path.read_bytes()
+        flm_manifest = json.loads(flm_manifest_bytes)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GenerationError(f"cannot read FLM evidence {flm_manifest_path}: {exc}") from exc
+
+    contracts = flm_manifest.get("contracts") if isinstance(flm_manifest, dict) else None
+    expected_flm = tuple(target.constant for target in flm_code_hashes.TARGETS)
+    if not isinstance(contracts, dict) or tuple(contracts) != expected_flm:
+        raise GenerationError("FLM evidence has an unexpected contract set or order")
+
+    flm_codes: dict[str, str] = {}
+    for target in flm_code_hashes.TARGETS:
+        evidence = contracts[target.constant]
+        if not isinstance(evidence, dict):
+            raise GenerationError(f"invalid FLM evidence for {target.constant}")
+        path = root / target.blob
+        try:
+            code = path.read_bytes()
+        except OSError as exc:
+            raise GenerationError(f"cannot read FLM creation code {path}: {exc}") from exc
+        if not code:
+            raise GenerationError(f"empty FLM creation code for {target.constant}")
+        if evidence.get("baseCreationCodeBytes") != len(code):
+            raise GenerationError(f"FLM creation-code length mismatch for {target.constant}")
+        if evidence.get("baseCreationCodeKeccak256") != hash_(code):
+            raise GenerationError(f"FLM creation-code hash mismatch for {target.constant}")
+        flm_codes[target.constant] = "0x" + code.hex()
+
+    bundle = {
+        "schemaVersion": 1,
+        "evidence": {
+            "economicManifestPath": MANIFEST_PATH.as_posix(),
+            "economicManifestKeccak256": hash_(economic_manifest),
+            "flmManifestPath": flm_code_hashes.MANIFEST_PATH.as_posix(),
+            "flmManifestKeccak256": hash_(flm_manifest_bytes),
+        },
+        "creationCodes": {
+            "receipt": "0x" + by_key["RECEIPT"].code.hex(),
+            "core": {
+                target.constant: "0x" + by_key[target.constant].code.hex()
+                for target in CORE_TARGETS
+            },
+            "flm": flm_codes,
+        },
+    }
+    return json.dumps(bundle, indent=2).encode("utf-8") + b"\n"
 
 
 def generate(root: Path = ROOT, *, check: bool = False) -> tuple[CompiledTarget, ...]:
@@ -221,10 +285,13 @@ def generate(root: Path = ROOT, *, check: bool = False) -> tuple[CompiledTarget,
     flm_code_hashes._write_or_check(root / MANIFEST_PATH, _output(compiled), check)
     flm_code_hashes._write_or_check(root / SOLIDITY_PATH, _solidity(compiled), check)
     by_key = {item.target.constant: item for item in compiled}
-    for target in DEPLOYMENT_TARGETS:
+    for target in TARGETS:
         flm_code_hashes._write_or_check(
-            root / deployment_blob(target), by_key[target.constant].code, check
+            root / creation_blob(target), by_key[target.constant].code, check
         )
+    flm_code_hashes._write_or_check(
+        root / BROWSER_BUNDLE_PATH, _browser_bundle(root, compiled), check
+    )
     return compiled
 
 

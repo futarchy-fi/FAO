@@ -152,6 +152,61 @@ class EconomicCodeHashesTest(unittest.TestCase):
                 economic_code_hashes.BLOB_DIR / f"{target.constant.lower()}.bin",
             )
 
+    def test_browser_bundle_is_exact_and_rejects_stale_flm_blobs(self) -> None:
+        settings = {"optimizer": {"enabled": True, "runs": 200}, "viaIR": True}
+        compiled = tuple(
+            economic_code_hashes.CompiledTarget(
+                target, bytes([index]), "0.8.20", settings
+            )
+            for index, target in enumerate(economic_code_hashes.TARGETS, start=1)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = {}
+            for index, target in enumerate(
+                economic_code_hashes.flm_code_hashes.TARGETS, start=101
+            ):
+                code = bytes([index])
+                path = root / target.blob
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(code)
+                contracts[target.constant] = {
+                    "baseCreationCodeBytes": len(code),
+                    "baseCreationCodeKeccak256": fake_keccak(code),
+                }
+            manifest_path = root / economic_code_hashes.flm_code_hashes.MANIFEST_PATH
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps({"schemaVersion": 2, "contracts": contracts}) + "\n",
+                encoding="utf-8",
+            )
+
+            raw = economic_code_hashes._browser_bundle(root, compiled, fake_keccak)
+            bundle = json.loads(raw)
+            self.assertEqual(bundle["schemaVersion"], 1)
+            self.assertEqual(
+                tuple(bundle["creationCodes"]["core"]),
+                tuple(target.constant for target in economic_code_hashes.CORE_TARGETS),
+            )
+            self.assertEqual(
+                tuple(bundle["creationCodes"]["flm"]),
+                tuple(
+                    target.constant
+                    for target in economic_code_hashes.flm_code_hashes.TARGETS
+                ),
+            )
+            self.assertEqual(
+                bundle["creationCodes"]["receipt"],
+                "0x" + compiled[len(economic_code_hashes.CORE_TARGETS)].code.hex(),
+            )
+
+            first_flm = economic_code_hashes.flm_code_hashes.TARGETS[0]
+            (root / first_flm.blob).write_bytes(b"changed")
+            with self.assertRaisesRegex(
+                economic_code_hashes.GenerationError, "length mismatch"
+            ):
+                economic_code_hashes._browser_bundle(root, compiled, fake_keccak)
+
 
 if __name__ == "__main__":
     unittest.main()
