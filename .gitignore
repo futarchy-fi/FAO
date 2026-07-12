@@ -8,6 +8,8 @@
 # Environment
 .env
 .env.*
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store

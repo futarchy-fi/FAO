@@ -25,18 +25,20 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.0
 
       - name: Show Forge version
         run: forge --version
 
-      - name: Test FLM code-hash generator
-        run: python3 -m unittest tools.test_flm_code_hashes
-
-      - name: Test FLM deployment manifest verifier
-        run: python3 -m unittest tools.test_flm_deployment
+      - name: Test deployment evidence tools
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
 
       - name: Verify sealed FLM code and compiler evidence
         run: python3 tools/flm_deployment.py prepare-build-info
+
+      - name: Verify sealed economic-core code and compiler evidence
+        run: python3 tools/economic_code_hashes.py --check
 
       - name: Run Forge fmt
         run: forge fmt --check

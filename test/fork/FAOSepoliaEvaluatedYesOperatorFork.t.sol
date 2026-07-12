@@ -220,14 +220,14 @@ contract FAOSepoliaEvaluatedYesOperatorForkTest is Test {
         IOperatorSwapRouter(SWAP_ROUTER)
             .exactInputSingle(
                 IOperatorSwapRouter.ExactInputSingleParams({
-                tokenIn: yesCurrency,
-                tokenOut: yesCompany,
-                fee: FEE,
-                recipient: operator,
-                amountIn: YES_MOVE,
-                amountOutMinimum: (YES_MOVE * 98) / 100,
-                sqrtPriceLimitX96: limit
-            })
+                    tokenIn: yesCurrency,
+                    tokenOut: yesCompany,
+                    fee: FEE,
+                    recipient: operator,
+                    amountIn: YES_MOVE,
+                    amountOutMinimum: (YES_MOVE * 98) / 100,
+                    sqrtPriceLimitX96: limit
+                })
             );
         yesTickAfter = _economicTick(yesPool, yesCompany);
         assertLe(uint256(uint24(yesTickAfter - noTick)), 500);
@@ -273,18 +273,18 @@ contract FAOSepoliaEvaluatedYesOperatorForkTest is Test {
         (tokenId, liquidity,,) = IOperatorPositionManager(NPM)
             .mint(
                 IOperatorPositionManager.MintParams({
-                token0: token0,
-                token1: token1,
-                fee: FEE,
-                tickLower: -887_270,
-                tickUpper: 887_270,
-                amount0Desired: amount,
-                amount1Desired: amount,
-                amount0Min: (amount * 99) / 100,
-                amount1Min: (amount * 99) / 100,
-                recipient: operator,
-                deadline: block.timestamp + 10 minutes
-            })
+                    token0: token0,
+                    token1: token1,
+                    fee: FEE,
+                    tickLower: -887_270,
+                    tickUpper: 887_270,
+                    amount0Desired: amount,
+                    amount1Desired: amount,
+                    amount0Min: (amount * 99) / 100,
+                    amount1Min: (amount * 99) / 100,
+                    recipient: operator,
+                    deadline: block.timestamp + 10 minutes
+                })
             );
         assertEq(IUniswapV3FactoryLike(UNIV3_FACTORY).getPool(token0, token1, FEE), pool);
     }
