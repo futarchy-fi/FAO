@@ -635,8 +635,13 @@ class EconomicDeploymentTest(unittest.TestCase):
         self._verify()
 
     def test_builds_and_verifies_manifest_from_exact_five_transaction_broadcast(self) -> None:
+        broadcast = self._broadcast()
+        broadcast["transactions"][2]["hash"], broadcast["transactions"][3]["hash"] = (
+            broadcast["transactions"][3]["hash"],
+            broadcast["transactions"][2]["hash"],
+        )
         built = economic_deployment.manifest_from_broadcast(
-            self._broadcast(),
+            broadcast,
             self.creation,
             self.prerequisite_creation,
             self.client,

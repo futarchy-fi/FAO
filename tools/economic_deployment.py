@@ -941,7 +941,7 @@ def _live_transaction(
     return _variable_bytes(tx.get("input"), f"live {name}.input")
 
 
-def _broadcast_records(broadcast: Any) -> list[dict[str, Any]]:
+def _broadcast_records(broadcast: Any, client: Any) -> list[dict[str, Any]]:
     broadcast = _require_dict(broadcast, "economic genesis broadcast")
     if _quantity(broadcast.get("chain"), "broadcast.chain") != CHAIN_ID:
         raise ManifestError(f"broadcast chain must be Sepolia ({CHAIN_ID})")
@@ -953,6 +953,16 @@ def _broadcast_records(broadcast: Any) -> list[dict[str, Any]]:
     receipts = site_deployment._receipt_map(broadcast)
     if len(receipts) != 5:
         raise ManifestError("economic genesis broadcast must contain exactly five receipts")
+    declared_hashes = [
+        _hex(
+            _require_dict(raw, f"broadcast.transactions[{index}]").get("hash"),
+            32,
+            f"broadcast.transactions[{index}].hash",
+        )
+        for index, raw in enumerate(transactions)
+    ]
+    if len(set(declared_hashes)) != 5 or set(declared_hashes) != set(receipts):
+        raise ManifestError("broadcast transaction/receipt hashes are incomplete or duplicated")
 
     expected = (
         ("CREATE", "FAOFutarchyProposal"),
@@ -962,19 +972,61 @@ def _broadcast_records(broadcast: Any) -> list[dict[str, Any]]:
         ("CALL", RECEIPT_CONTRACT),
     )
     records = []
+    used_hashes: set[str] = set()
     for index, (raw, identity) in enumerate(zip(transactions, expected)):
         outer = _require_dict(raw, f"broadcast.transactions[{index}]")
         if (outer.get("transactionType"), outer.get("contractName")) != identity:
             raise ManifestError(f"broadcast transaction {index} has the wrong staged identity")
-        tx_hash = _hex(outer.get("hash"), 32, f"broadcast.transactions[{index}].hash")
+        artifact_tx = _require_dict(
+            outer.get("transaction"), f"broadcast.transactions[{index}].transaction"
+        )
+        artifact_sender = _address(
+            artifact_tx.get("from"), f"broadcast transaction {index} sender"
+        )
+        artifact_nonce = _quantity(
+            artifact_tx.get("nonce"), f"broadcast transaction {index} nonce"
+        )
+        artifact_target = flm_deployment._live_target(
+            artifact_tx.get("to"), f"broadcast transaction {index} target"
+        )
+        artifact_input = _variable_bytes(
+            artifact_tx.get("input"), f"broadcast transaction {index} input"
+        )
+        matches = []
+        for candidate in declared_hashes:
+            if candidate in used_hashes:
+                continue
+            live = _require_dict(client.transaction(candidate), f"live broadcast transaction {candidate}")
+            if (
+                _hex(live.get("hash"), 32, f"live broadcast transaction {candidate}.hash")
+                == candidate
+                and _address(live.get("from"), f"live broadcast transaction {candidate}.from")
+                == artifact_sender
+                and _quantity(live.get("nonce"), f"live broadcast transaction {candidate}.nonce")
+                == artifact_nonce
+                and flm_deployment._live_target(
+                    live.get("to"), f"live broadcast transaction {candidate}.to"
+                )
+                == artifact_target
+                and _variable_bytes(
+                    live.get("input"), f"live broadcast transaction {candidate}.input"
+                )
+                == artifact_input
+            ):
+                matches.append(candidate)
+        if len(matches) != 1:
+            raise ManifestError(
+                f"broadcast transaction {index} does not match exactly one live transaction"
+            )
+        tx_hash = matches[0]
+        used_hashes.add(tx_hash)
         receipt = receipts.get(tx_hash)
         if receipt is None or not site_deployment._is_success(receipt):
             raise ManifestError(f"broadcast transaction {index} has no successful receipt")
-        tx = _require_dict(outer.get("transaction"), f"broadcast.transactions[{index}].transaction")
-        sender = _address(tx.get("from"), f"broadcast transaction {index} sender")
-        nonce = _quantity(tx.get("nonce"), f"broadcast transaction {index} nonce")
+        sender = artifact_sender
+        nonce = artifact_nonce
         block = _quantity(receipt.get("blockNumber"), f"broadcast transaction {index} block")
-        target = flm_deployment._live_target(tx.get("to"), f"broadcast transaction {index} target")
+        target = artifact_target
         created = flm_deployment._live_target(
             receipt.get("contractAddress"), f"broadcast transaction {index} created contract"
         )
@@ -998,7 +1050,7 @@ def _broadcast_records(broadcast: Any) -> list[dict[str, Any]]:
         records.append(
             {
                 "evidence": {"hash": tx_hash, "block": block, "nonce": nonce, "from": sender},
-                "input": _variable_bytes(tx.get("input"), f"broadcast transaction {index} input"),
+                "input": artifact_input,
                 "target": target,
                 "created": created,
             }
@@ -1025,7 +1077,7 @@ def manifest_from_broadcast(
     *,
     hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
 ) -> dict[str, Any]:
-    records = _broadcast_records(broadcast)
+    records = _broadcast_records(broadcast, client)
     proposal, stack, receipt_create, deploy_core, deploy_flm = records
     receipt_address = receipt_create["created"]
     if receipt_address != _create_address(
