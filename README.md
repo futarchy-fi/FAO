@@ -105,6 +105,21 @@ forge fmt
 forge snapshot
 ```
 
+## Sepolia Site Release
+
+Set the deployment wallet, Sepolia RPC, and the four canonical `ipfs://` metadata URIs, then run:
+
+```bash
+script/deploy-fao-sepolia.sh
+```
+
+This is the canonical dry run. It forces one coherent Foundry build and validates the generated
+`run-latest.json`. Add `--broadcast` only after reviewing that artifact:
+
+```bash
+script/deploy-fao-sepolia.sh --broadcast
+```
+
 ## Gnosis Liquidity Stack Deploy
 
 Deploy `FutarchyOfficialProposalSource`, two Swapr adapters (spot/conditional), and `FutarchyLiquidityManager`:
