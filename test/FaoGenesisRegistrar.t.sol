@@ -14,10 +14,7 @@ contract FaoGenesisRegistrarTest is Test {
     FaoGenesisRegistrar private registrar;
 
     event GenesisStaged(
-        address indexed receipt,
-        bytes32 indexed coreConfigHash,
-        bytes32 indexed flmConfigHash,
-        address stager
+        address indexed receipt, bytes32 indexed coreHash, bytes32 indexed flmHash, address stager
     );
 
     function setUp() public {

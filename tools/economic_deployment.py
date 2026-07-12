@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -29,8 +30,14 @@ POOL_INIT_CODE_HASH = (
 DEPLOY_CORE_SELECTOR = "67658a72"
 DEPLOY_FLM_SELECTOR = "88b5e784"
 FINALIZE_SELECTOR = "4bb278f3"
+STAGE_SIGNATURE = "stage(bytes32,bytes32,bytes)"
+GENESIS_STAGED_EVENT = "GenesisStaged(address,bytes32,bytes32,address)"
+CORE_SEALED_EVENT = "CoreSealed(address,address,address,address,address,address)"
+FLM_SEALED_EVENT = "FlmSealed(address,address,address)"
+FINALIZED_EVENT = "Finalized(uint256,uint256,uint256,uint256,uint256)"
 RECEIPT_SOURCE = "src/FaoGenesisDeployment.sol"
 RECEIPT_CONTRACT = "FaoGenesisDeployment"
+SELF_SERVE_MANIFEST = ROOT / "deployments/sepolia-selfserve.json"
 SX_PINS = {
     "proxyFactory": (
         "0x4b4f7f64be813ccc66aefc3bfce2baa01188631c",
@@ -438,6 +445,21 @@ def _encode_deploy_flm(config: dict[str, Any], codes: tuple[bytes, ...]) -> byte
     )
 
 
+def _encode_stage(
+    core_config_hash: str,
+    flm_config_hash: str,
+    receipt_creation_code: bytes,
+    hash_: Callable[[bytes], str],
+) -> bytes:
+    selector = bytes.fromhex(_digest(STAGE_SIGNATURE.encode(), hash_)[2:10])
+    return (
+        selector
+        + bytes.fromhex(core_config_hash[2:] + flm_config_hash[2:])
+        + _word(96)
+        + _dynamic_bytes(receipt_creation_code)
+    )
+
+
 def _decode_address_word(value: bytes, offset: int, name: str) -> str:
     if offset < 0 or offset + 32 > len(value) or any(value[offset : offset + 12]):
         raise ManifestError(f"{name} is not an encoded address")
@@ -664,20 +686,18 @@ def validate_manifest(
         raise ManifestError("staged transaction blocks are out of order")
 
     receipt = _require_dict(manifest["receipt"], "receipt")
-    _expect_keys(
-        receipt,
-        (
-            "address",
-            "source",
-            "contract",
-            "createNonce",
-            "creationCodeBytes",
-            "creationCodeKeccak256",
-            "coreConfigHash",
-            "flmConfigHash",
-        ),
-        "receipt",
+    receipt_keys = (
+        "address",
+        "source",
+        "contract",
+        "createNonce",
+        "creationCodeBytes",
+        "creationCodeKeccak256",
+        "coreConfigHash",
+        "flmConfigHash",
     )
+    if set(receipt) not in (set(receipt_keys), {*receipt_keys, "registrar"}):
+        raise ManifestError("receipt has invalid keys")
     receipt_address = _canonical_address(receipt["address"], "receipt.address")
     if receipt["source"] != RECEIPT_SOURCE or receipt["contract"] != RECEIPT_CONTRACT:
         raise ManifestError("receipt has the wrong compiler identity")
@@ -685,7 +705,7 @@ def validate_manifest(
     if create_nonce < 0 or create_nonce >= 1 << 64:
         raise ManifestError("receipt.createNonce is outside the Ethereum account nonce range")
     if create_nonce != ordered_transactions[0]["nonce"]:
-        raise ManifestError("receipt CREATE nonce is inconsistent")
+        raise ManifestError("receipt creation transaction nonce is inconsistent")
     if _json_integer(receipt["creationCodeBytes"], "receipt.creationCodeBytes") <= 0:
         raise ManifestError("receipt creation code cannot be empty")
     for key in ("creationCodeKeccak256", "coreConfigHash", "flmConfigHash"):
@@ -697,6 +717,11 @@ def validate_manifest(
         or receipt["creationCodeKeccak256"] != canonical_creations["receipt"]["hash"]
     ):
         raise ManifestError("receipt creation code does not match canonical compiler evidence")
+    registrar = None
+    if "registrar" in receipt:
+        registrar = _dependency(receipt["registrar"], "receipt.registrar")
+        if registrar["target"] == receipt_address:
+            raise ManifestError("receipt registrar cannot be the receipt")
 
     core_config, grants, flm_config = _validate_config_preimages(manifest)
     dependencies = _dependencies(manifest)
@@ -779,6 +804,8 @@ def validate_manifest(
         for index, value in enumerate(wallets)
     )
     addresses.append(receipt_address)
+    if registrar is not None:
+        addresses.append(registrar["target"])
     if len(set(addresses)) != len(addresses):
         raise ManifestError("receipt and deployed contract addresses must be unique")
 
@@ -820,6 +847,23 @@ def _create_address(sender: str, nonce: int, hash_: Callable[[bytes], str]) -> s
         encoded_nonce = bytes([0x80 + len(encoded_nonce)]) + encoded_nonce
     payload = b"\x94" + bytes.fromhex(_address(sender, "CREATE sender")[2:]) + encoded_nonce
     digest = _digest(bytes([0xC0 + len(payload)]) + payload, hash_)
+    return "0x" + digest[-40:]
+
+
+def _create2_address(
+    deployer: str,
+    core_config_hash: str,
+    flm_config_hash: str,
+    receipt_creation_code: bytes,
+    hash_: Callable[[bytes], str],
+) -> str:
+    commitments = bytes.fromhex(core_config_hash[2:] + flm_config_hash[2:])
+    salt = bytes.fromhex(_digest(commitments, hash_)[2:])
+    initcode_hash = bytes.fromhex(_digest(receipt_creation_code + commitments, hash_)[2:])
+    digest = _digest(
+        b"\xff" + bytes.fromhex(deployer[2:]) + salt + initcode_hash,
+        hash_,
+    )
     return "0x" + digest[-40:]
 
 
@@ -878,6 +922,23 @@ class CastClient(flm_deployment.CastClient):
     def call(self, address: str, signature: str, *args: str) -> str:
         return self._run("call", address, signature, *args)
 
+    def logs(
+        self,
+        address: str,
+        topics: list[str | None],
+        from_block: int,
+    ) -> list[dict[str, Any]]:
+        filter_ = {
+            "address": address,
+            "fromBlock": hex(from_block),
+            "toBlock": "latest",
+            "topics": topics,
+        }
+        return _require_list(
+            self._rpc("eth_getLogs", json.dumps(filter_, separators=(",", ":"))),
+            "RPC logs",
+        )
+
 
 def _call(client: Any, address: str, signature: str, *args: str) -> str:
     return client.call(address, signature, *args)
@@ -908,6 +969,126 @@ def _call_bool(client: Any, address: str, signature: str, *args: str) -> bool:
     if raw not in {"true", "false"}:
         raise ManifestError(f"{address}.{signature} returned a non-bool")
     return raw == "true"
+
+
+def _event_topic(signature: str, hash_: Callable[[bytes], str]) -> str:
+    return _digest(signature.encode(), hash_)
+
+
+def _topic_address(value: Any, name: str) -> str:
+    topic = _hex(value, 32, name)
+    if topic[2:26] != "0" * 24:
+        raise ManifestError(f"{name} is not an indexed address")
+    return "0x" + topic[-40:]
+
+
+def _data_addresses(value: Any, count: int, name: str) -> tuple[str, ...]:
+    data = _variable_bytes(value, name)
+    if len(data) != count * 32:
+        raise ManifestError(f"{name} must contain {count} encoded addresses")
+    return tuple(_decode_address_word(data, index * 32, f"{name}[{index}]") for index in range(count))
+
+
+def _transaction_from_hash(
+    client: Any,
+    tx_hash: str,
+    target: str,
+    name: str,
+) -> tuple[dict[str, Any], bytes, dict[str, Any]]:
+    tx_hash = _canonical_hash(tx_hash, f"{name} hash")
+    tx = _require_dict(client.transaction(tx_hash), f"live {name} transaction")
+    receipt = _require_dict(client.receipt(tx_hash), f"live {name} receipt")
+    block = _quantity(receipt.get("blockNumber"), f"live {name} receipt block")
+    sender = _address(tx.get("from"), f"live {name} sender")
+    nonce = _quantity(tx.get("nonce"), f"live {name} nonce")
+    if (
+        _hex(tx.get("hash"), 32, f"live {name} transaction hash") != tx_hash
+        or _hex(receipt.get("transactionHash"), 32, f"live {name} receipt hash") != tx_hash
+        or _quantity(tx.get("blockNumber"), f"live {name} transaction block") != block
+        or _address(receipt.get("from"), f"live {name} receipt sender") != sender
+        or flm_deployment._live_target(tx.get("to"), f"live {name} target") != target
+        or flm_deployment._live_target(receipt.get("to"), f"live {name} receipt target")
+        != target
+        or flm_deployment._live_target(
+            receipt.get("contractAddress"), f"live {name} contractAddress"
+        )
+        is not None
+        or _quantity(receipt.get("status"), f"live {name} status") != 1
+    ):
+        raise ManifestError(f"live {name} transaction evidence is inconsistent")
+    evidence = {"hash": tx_hash, "block": block, "nonce": nonce, "from": sender}
+    return evidence, _variable_bytes(tx.get("input"), f"live {name} input"), receipt
+
+
+def _single_log(
+    client: Any,
+    emitter: str,
+    signature: str,
+    from_block: int,
+    hash_: Callable[[bytes], str],
+    *indexed_topics: str | None,
+) -> dict[str, Any]:
+    logs = client.logs(
+        emitter,
+        [_event_topic(signature, hash_), *indexed_topics],
+        from_block,
+    )
+    if len(logs) != 1:
+        raise ManifestError(f"expected one {signature} event, found {len(logs)}")
+    log = _require_dict(logs[0], signature)
+    if _address(log.get("address"), f"{signature}.emitter") != emitter:
+        raise ManifestError(f"{signature} has the wrong emitter")
+    return log
+
+
+def _log_hash(log: dict[str, Any], name: str) -> str:
+    return _hex(log.get("transactionHash"), 32, f"{name}.transactionHash")
+
+
+def _validate_stage_log(
+    log: dict[str, Any],
+    registrar: str,
+    receipt: str,
+    core_config_hash: str,
+    flm_config_hash: str,
+    stager: str,
+    hash_: Callable[[bytes], str],
+) -> None:
+    topics = _require_list(log.get("topics"), "GenesisStaged.topics")
+    if (
+        len(topics) != 4
+        or _hex(topics[0], 32, "GenesisStaged.topic0")
+        != _event_topic(GENESIS_STAGED_EVENT, hash_)
+        or _topic_address(topics[1], "GenesisStaged.receipt") != receipt
+        or _hex(topics[2], 32, "GenesisStaged.coreConfigHash") != core_config_hash
+        or _hex(topics[3], 32, "GenesisStaged.flmConfigHash") != flm_config_hash
+        or _data_addresses(log.get("data"), 1, "GenesisStaged.data") != (stager,)
+        or _address(log.get("address"), "GenesisStaged.emitter") != registrar
+    ):
+        raise ManifestError("GenesisStaged event does not match the receipt provenance")
+
+
+def _validate_seal_log(
+    log: dict[str, Any],
+    signature: str,
+    receipt: str,
+    indexed: tuple[str, ...],
+    data: tuple[str, ...],
+    hash_: Callable[[bytes], str],
+) -> None:
+    topics = _require_list(log.get("topics"), f"{signature}.topics")
+    if (
+        len(topics) != len(indexed) + 1
+        or _hex(topics[0], 32, f"{signature}.topic0") != _event_topic(signature, hash_)
+        or tuple(
+            _topic_address(value, f"{signature}.indexed[{index}]")
+            for index, value in enumerate(topics[1:])
+        )
+        != indexed
+        or _data_addresses(log.get("data"), len(data), f"{signature}.data") != data
+        or _address(log.get("address"), f"{signature}.emitter") != receipt
+    ):
+        raise ManifestError(f"{signature} event does not match deployed receipt wiring")
 
 
 def _live_transaction(
@@ -1172,6 +1353,268 @@ def manifest_from_broadcast(
     return manifest
 
 
+def _shared_prerequisites(raw: Any) -> dict[str, Any]:
+    shared = _require_dict(raw, "self-serve deployment manifest")
+    prerequisites = _require_dict(
+        shared.get("prerequisites", shared),
+        "self-serve deployment prerequisites",
+    )
+    if tuple(prerequisites) != tuple(PREREQUISITES):
+        raise ManifestError("self-serve deployment manifest has incomplete prerequisites")
+    return prerequisites
+
+
+def manifest_from_chain(
+    receipt_address: str,
+    registrar_address: str,
+    shared_deployment: Any,
+    receipt_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    *,
+    from_block: int = 0,
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> dict[str, Any]:
+    if client.chain_id() != CHAIN_ID:
+        raise ManifestError(f"RPC chain must be Sepolia ({CHAIN_ID})")
+    receipt_address = _canonical_address(receipt_address, "from-chain receipt")
+    registrar_address = _canonical_address(registrar_address, "from-chain registrar")
+    if from_block < 0:
+        raise ManifestError("from-chain block cannot be negative")
+    if _digest(receipt_creation_code, hash_) != _canonical_blob_hashes()[2]["receipt"]["hash"]:
+        raise ManifestError("local receipt creation code is not canonical compiler evidence")
+
+    receipt_topic = "0x" + _address_word(receipt_address).hex()
+    stage_log = _single_log(
+        client,
+        registrar_address,
+        GENESIS_STAGED_EVENT,
+        from_block,
+        hash_,
+        receipt_topic,
+    )
+    stage_topics = _require_list(stage_log.get("topics"), "GenesisStaged.topics")
+    if len(stage_topics) != 4:
+        raise ManifestError("GenesisStaged must have four topics")
+    core_config_hash = _hex(stage_topics[2], 32, "GenesisStaged.coreConfigHash")
+    flm_config_hash = _hex(stage_topics[3], 32, "GenesisStaged.flmConfigHash")
+    stage_data = _data_addresses(stage_log.get("data"), 1, "GenesisStaged.data")
+    stage_evidence, stage_input, stage_receipt = _transaction_from_hash(
+        client,
+        _log_hash(stage_log, "GenesisStaged"),
+        registrar_address,
+        "receiptCreate",
+    )
+    _validate_stage_log(
+        stage_log,
+        registrar_address,
+        receipt_address,
+        core_config_hash,
+        flm_config_hash,
+        stage_evidence["from"],
+        hash_,
+    )
+    if stage_data != (stage_evidence["from"],) or stage_input != _encode_stage(
+        core_config_hash,
+        flm_config_hash,
+        receipt_creation_code,
+        hash_,
+    ):
+        raise ManifestError("GenesisStaged transaction calldata is not canonical")
+    receipt_stage_log = _receipt_event(
+        stage_receipt,
+        registrar_address,
+        GENESIS_STAGED_EVENT,
+        hash_,
+    )
+    _validate_stage_log(
+        receipt_stage_log,
+        registrar_address,
+        receipt_address,
+        core_config_hash,
+        flm_config_hash,
+        stage_evidence["from"],
+        hash_,
+    )
+    if receipt_address != _create2_address(
+        registrar_address,
+        core_config_hash,
+        flm_config_hash,
+        receipt_creation_code,
+        hash_,
+    ):
+        raise ManifestError("from-chain receipt is not the registrar CREATE2 prediction")
+    if not client.code(receipt_address):
+        raise ManifestError("from-chain receipt has no deployed code")
+
+    core_log = _single_log(
+        client,
+        receipt_address,
+        CORE_SEALED_EVENT,
+        stage_evidence["block"],
+        hash_,
+    )
+    flm_log = _single_log(
+        client,
+        receipt_address,
+        FLM_SEALED_EVENT,
+        stage_evidence["block"],
+        hash_,
+    )
+    core_evidence, core_input, core_receipt = _transaction_from_hash(
+        client,
+        _log_hash(core_log, "CoreSealed"),
+        receipt_address,
+        "deployCore",
+    )
+    flm_evidence, flm_input, flm_receipt = _transaction_from_hash(
+        client,
+        _log_hash(flm_log, "FlmSealed"),
+        receipt_address,
+        "deployFlm",
+    )
+    receipt_core_log = _receipt_event(
+        core_receipt, receipt_address, CORE_SEALED_EVENT, hash_
+    )
+    receipt_flm_log = _receipt_event(flm_receipt, receipt_address, FLM_SEALED_EVENT, hash_)
+
+    core_config, grants, core_codes = _decode_deploy_core(core_input)
+    flm_config, flm_codes = _decode_deploy_flm(flm_input)
+    contracts = {
+        key: _call_address(client, receipt_address, f"{key}()(address)")
+        for key in CONTRACT_KEYS[:-1]
+    }
+    contracts["vestingWallets"] = [
+        _create_address(contracts["vault"], index, hash_)
+        for index in range(1, len(grants) + 1)
+    ]
+    _validate_seal_log(
+        core_log,
+        CORE_SEALED_EVENT,
+        receipt_address,
+        (contracts["vault"], contracts["companyToken"], contracts["space"]),
+        (contracts["arbitration"], contracts["evaluator"], contracts["spotPool"]),
+        hash_,
+    )
+    _validate_seal_log(
+        receipt_core_log,
+        CORE_SEALED_EVENT,
+        receipt_address,
+        (contracts["vault"], contracts["companyToken"], contracts["space"]),
+        (contracts["arbitration"], contracts["evaluator"], contracts["spotPool"]),
+        hash_,
+    )
+    _validate_seal_log(
+        flm_log,
+        FLM_SEALED_EVENT,
+        receipt_address,
+        (contracts["manager"],),
+        (contracts["relay"], contracts["spotAdapter"]),
+        hash_,
+    )
+    _validate_seal_log(
+        receipt_flm_log,
+        FLM_SEALED_EVENT,
+        receipt_address,
+        (contracts["manager"],),
+        (contracts["relay"], contracts["spotAdapter"]),
+        hash_,
+    )
+
+    finalization_logs = client.logs(
+        contracts["vault"],
+        [_event_topic(FINALIZED_EVENT, hash_)],
+        core_evidence["block"],
+    )
+    if len(finalization_logs) > 1:
+        raise ManifestError("expected at most one GenesisVault Finalized event")
+    finalization = None
+    status = "sealed"
+    if finalization_logs:
+        finalization_log = _require_dict(finalization_logs[0], "GenesisVault Finalized")
+        topics = _require_list(finalization_log.get("topics"), "GenesisVault Finalized topics")
+        if (
+            len(topics) != 1
+            or _hex(topics[0], 32, "GenesisVault Finalized topic")
+            != _event_topic(FINALIZED_EVENT, hash_)
+            or len(_variable_bytes(finalization_log.get("data"), "GenesisVault Finalized data"))
+            != 160
+            or _address(finalization_log.get("address"), "GenesisVault Finalized emitter")
+            != contracts["vault"]
+        ):
+            raise ManifestError("GenesisVault Finalized event is malformed")
+        finalization, finalize_input, finalize_receipt = _transaction_from_hash(
+            client,
+            _log_hash(finalization_log, "GenesisVault Finalized"),
+            contracts["vault"],
+            "finalization",
+        )
+        receipt_finalization_log = _receipt_event(
+            finalize_receipt,
+            contracts["vault"],
+            FINALIZED_EVENT,
+            hash_,
+        )
+        if finalize_input.hex() != FINALIZE_SELECTOR:
+            raise ManifestError("GenesisVault Finalized transaction is not canonical")
+        if (
+            len(_variable_bytes(receipt_finalization_log.get("data"), "Finalized receipt data"))
+            != 160
+        ):
+            raise ManifestError("GenesisVault Finalized receipt event is malformed")
+        status = "live"
+
+    registrar_code = client.code(registrar_address)
+    if not registrar_code:
+        raise ManifestError("from-chain registrar has no deployed code")
+    manifest = {
+        "schemaVersion": 1,
+        "status": status,
+        "network": "sepolia",
+        "chainId": CHAIN_ID,
+        "transactions": {
+            "receiptCreate": stage_evidence,
+            "deployCore": core_evidence,
+            "deployFlm": flm_evidence,
+        },
+        "receipt": {
+            "address": receipt_address,
+            "source": RECEIPT_SOURCE,
+            "contract": RECEIPT_CONTRACT,
+            "createNonce": stage_evidence["nonce"],
+            "creationCodeBytes": len(receipt_creation_code),
+            "creationCodeKeccak256": _digest(receipt_creation_code, hash_),
+            "coreConfigHash": core_config_hash,
+            "flmConfigHash": flm_config_hash,
+            "registrar": {
+                "target": registrar_address,
+                "runtimeCodeKeccak256": _digest(registrar_code, hash_),
+            },
+        },
+        "prerequisites": _shared_prerequisites(shared_deployment),
+        "coreConfig": core_config,
+        "grants": grants,
+        "flmConfig": flm_config,
+        "feeTier": FEE_TIER,
+        "poolInitCodeHash": POOL_INIT_CODE_HASH,
+        "observationCardinality": OBSERVATION_CARDINALITY,
+        "contracts": contracts,
+        "codeBlobs": {
+            "core": {key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)},
+            "flm": {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)},
+        },
+        "finalization": finalization,
+    }
+    verify_rpc(
+        manifest,
+        receipt_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_=hash_,
+    )
+    return manifest
+
+
 def finalization_hash_from_broadcast(broadcast: Any, vault: str, client: Any) -> str:
     broadcast = _require_dict(broadcast, "economic operation broadcast")
     if _quantity(broadcast.get("chain"), "operation broadcast.chain") != CHAIN_ID:
@@ -1296,6 +1739,26 @@ def _verify_prerequisites(
             raise ManifestError(f"prerequisites.{key} runtime evidence mismatch")
 
 
+def _receipt_event(
+    receipt: dict[str, Any],
+    emitter: str,
+    signature: str,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    topic = _event_topic(signature, hash_)
+    matches = []
+    for raw in _require_list(receipt.get("logs", []), f"{signature} receipt logs"):
+        log = _require_dict(raw, f"{signature} receipt log")
+        topics = _require_list(log.get("topics"), f"{signature} receipt log topics")
+        if topics and str(topics[0]).lower() == topic:
+            matches.append(log)
+    if len(matches) != 1:
+        raise ManifestError(f"expected one {signature} in its transaction receipt")
+    if _address(matches[0].get("address"), f"{signature}.emitter") != emitter:
+        raise ManifestError(f"{signature} has the wrong emitter")
+    return matches[0]
+
+
 def _verify_transactions(
     manifest: dict[str, Any], client: Any, receipt_creation_code: bytes, hash_: Callable[[bytes], str]
 ) -> None:
@@ -1303,20 +1766,6 @@ def _verify_transactions(
     receipt = manifest["receipt"]
     receipt_address = receipt["address"]
 
-    create_input = _live_transaction(
-        client,
-        transactions["receiptCreate"],
-        None,
-        "receiptCreate",
-        receipt_address,
-    )
-    live_receipt = client.receipt(transactions["receiptCreate"]["hash"])
-    if _address(live_receipt.get("contractAddress"), "receipt contract") != receipt_address:
-        raise ManifestError("receipt CREATE address does not match the manifest")
-    if receipt_address != _create_address(
-        transactions["receiptCreate"]["from"], receipt["createNonce"], hash_
-    ):
-        raise ManifestError("receipt address is not the declared deployer CREATE nonce")
     if (
         len(receipt_creation_code) != receipt["creationCodeBytes"]
         or _digest(receipt_creation_code, hash_) != receipt["creationCodeKeccak256"]
@@ -1325,8 +1774,65 @@ def _verify_transactions(
     expected_create = receipt_creation_code + bytes.fromhex(
         receipt["coreConfigHash"][2:] + receipt["flmConfigHash"][2:]
     )
-    if create_input != expected_create:
-        raise ManifestError("receipt CREATE input does not bind the declared config commitments")
+    if "registrar" in receipt:
+        registrar = receipt["registrar"]
+        create_input = _live_transaction(
+            client,
+            transactions["receiptCreate"],
+            registrar["target"],
+            "receiptCreate",
+        )
+        live_receipt = _require_dict(
+            client.receipt(transactions["receiptCreate"]["hash"]),
+            "live receiptCreate receipt",
+        )
+        stage_log = _receipt_event(
+            live_receipt,
+            registrar["target"],
+            GENESIS_STAGED_EVENT,
+            hash_,
+        )
+        _validate_stage_log(
+            stage_log,
+            registrar["target"],
+            receipt_address,
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            transactions["receiptCreate"]["from"],
+            hash_,
+        )
+        if create_input != _encode_stage(
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            receipt_creation_code,
+            hash_,
+        ):
+            raise ManifestError("registrar stage calldata does not match compiler evidence")
+        if receipt_address != _create2_address(
+            registrar["target"],
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            receipt_creation_code,
+            hash_,
+        ):
+            raise ManifestError("receipt address is not the registrar CREATE2 prediction")
+    else:
+        create_input = _live_transaction(
+            client,
+            transactions["receiptCreate"],
+            None,
+            "receiptCreate",
+            receipt_address,
+        )
+        live_receipt = client.receipt(transactions["receiptCreate"]["hash"])
+        if _address(live_receipt.get("contractAddress"), "receipt contract") != receipt_address:
+            raise ManifestError("receipt CREATE address does not match the manifest")
+        if receipt_address != _create_address(
+            transactions["receiptCreate"]["from"], receipt["createNonce"], hash_
+        ):
+            raise ManifestError("receipt address is not the declared deployer CREATE nonce")
+        if create_input != expected_create:
+            raise ManifestError("receipt CREATE input does not bind the declared config commitments")
 
     core_input = _live_transaction(client, transactions["deployCore"], receipt_address, "deployCore")
     flm_input = _live_transaction(client, transactions["deployFlm"], receipt_address, "deployFlm")
@@ -1405,6 +1911,16 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
 
     if not client.code(receipt):
         raise ManifestError("receipt has no deployed code")
+    if "registrar" in manifest["receipt"]:
+        registrar = manifest["receipt"]["registrar"]
+        code = client.code(registrar["target"])
+        if not code or _digest(code, hash_) != registrar["runtimeCodeKeccak256"]:
+            raise ManifestError("receipt registrar runtime evidence mismatch")
+        if (
+            _call_hash(client, registrar["target"], "RECEIPT_CREATION_CODE_HASH()(bytes32)")
+            != manifest["receipt"]["creationCodeKeccak256"]
+        ):
+            raise ManifestError("receipt registrar does not pin canonical creation code")
     for key, dependency in dependencies.items():
         code = client.code(dependency["target"])
         if not code or _digest(code, hash_) != dependency["runtimeCodeKeccak256"]:
@@ -1667,12 +2183,33 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
     source.add_argument("--from-broadcast", type=Path)
+    source.add_argument("--from-chain-receipt")
     parser.add_argument("--rpc-url")
+    parser.add_argument("--registrar")
+    parser.add_argument("--from-block", type=int, default=0)
+    parser.add_argument("--shared-manifest", type=Path, default=SELF_SERVE_MANIFEST)
     parser.add_argument("--operation-broadcast", type=Path)
     parser.add_argument("--out", type=Path, default=ROOT / "deployments/sepolia-economic-genesis.json")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--schema-only", action="store_true")
     args = parser.parse_args(argv)
+    if args.from_chain_receipt:
+        if args.schema_only or args.operation_broadcast or not args.rpc_url or not args.registrar:
+            raise ManifestError(
+                "--from-chain-receipt requires --rpc-url and --registrar and cannot be schema-only"
+            )
+        receipt_creation, prerequisite_creation = verified_creation_evidence()
+        manifest = manifest_from_chain(
+            args.from_chain_receipt,
+            args.registrar,
+            site_deployment.load_json(args.shared_manifest),
+            receipt_creation,
+            prerequisite_creation,
+            CastClient(args.rpc_url),
+            from_block=args.from_block,
+        )
+        site_deployment._write_or_check(args.out, manifest, args.check)
+        return 0
     if args.from_broadcast:
         if args.schema_only or args.operation_broadcast or not args.rpc_url:
             raise ManifestError("--from-broadcast requires --rpc-url and cannot be schema-only")

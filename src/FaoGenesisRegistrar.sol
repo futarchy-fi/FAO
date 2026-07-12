@@ -13,10 +13,7 @@ contract FaoGenesisRegistrar {
     error InvalidReceiptCode(bytes32 expected, bytes32 actual);
 
     event GenesisStaged(
-        address indexed receipt,
-        bytes32 indexed coreConfigHash,
-        bytes32 indexed flmConfigHash,
-        address stager
+        address indexed receipt, bytes32 indexed coreHash, bytes32 indexed flmHash, address stager
     );
 
     constructor(bytes32 receiptBaseCodeHash) {

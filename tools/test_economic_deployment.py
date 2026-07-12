@@ -71,6 +71,23 @@ class FakeClient:
     def receipt(self, tx_hash: str) -> dict:
         return self.receipts[tx_hash]
 
+    def logs(
+        self, emitter: str, topics: list[str | None], from_block: int
+    ) -> list[dict]:
+        matches = []
+        for receipt in self.receipts.values():
+            for log in receipt.get("logs", []):
+                if log["address"] != emitter or int(log["blockNumber"], 0) < from_block:
+                    continue
+                if all(
+                    expected is None
+                    or index < len(log["topics"])
+                    and log["topics"][index] == expected
+                    for index, expected in enumerate(topics)
+                ):
+                    matches.append(copy.deepcopy(log))
+        return matches
+
 
 class EconomicDeploymentTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -323,6 +340,7 @@ class EconomicDeploymentTest(unittest.TestCase):
             "to": target,
             "status": 1,
             "contractAddress": contract,
+            "logs": [],
         }
 
     def _put(self, target: str, signature: str, value: object, *args: str) -> None:
@@ -640,6 +658,116 @@ class EconomicDeploymentTest(unittest.TestCase):
             "receipts": [copy.deepcopy(self.client.receipts[evidence["hash"]])],
         }
 
+    def _event_log(
+        self,
+        name: str,
+        emitter: str,
+        topics: list[str],
+        data: bytes,
+    ) -> dict:
+        evidence = self.manifest["transactions"].get(name, self.manifest.get(name))
+        log = {
+            "address": emitter,
+            "topics": topics,
+            "data": "0x" + data.hex(),
+            "transactionHash": evidence["hash"],
+            "blockNumber": hex(evidence["block"]),
+        }
+        self.client.receipts[evidence["hash"]]["logs"].append(copy.deepcopy(log))
+        return log
+
+    def _registrar_evidence(self) -> tuple[str, dict]:
+        registrar = address(0x777)
+        commitments = bytes.fromhex(self.core_config_hash[2:] + self.flm_config_hash[2:])
+        salt = bytes.fromhex(economic_deployment._digest(commitments, self.hash)[2:])
+        initcode_hash = bytes.fromhex(
+            economic_deployment._digest(self.creation + commitments, self.hash)[2:]
+        )
+        create2_payload = (
+            b"\xff" + bytes.fromhex(registrar[2:]) + salt + initcode_hash
+        )
+        self.hash.overrides[create2_payload] = "0x" + "00" * 12 + self.receipt[2:]
+        self.assertEqual(
+            economic_deployment._create2_address(
+                registrar,
+                self.core_config_hash,
+                self.flm_config_hash,
+                self.creation,
+                self.hash,
+            ),
+            self.receipt,
+        )
+
+        registrar_code = b"registrar-runtime"
+        registrar_hash = economic_deployment._digest(registrar_code, self.hash)
+        self.client.codes[registrar] = registrar_code
+        self._put(
+            registrar,
+            "RECEIPT_CREATION_CODE_HASH()(bytes32)",
+            self.creation_hash,
+        )
+        stage = self.manifest["transactions"]["receiptCreate"]
+        self.client.transactions[stage["hash"]]["to"] = registrar
+        self.client.transactions[stage["hash"]]["input"] = "0x" + economic_deployment._encode_stage(
+            self.core_config_hash,
+            self.flm_config_hash,
+            self.creation,
+            self.hash,
+        ).hex()
+        self.client.receipts[stage["hash"]]["to"] = registrar
+        self.client.receipts[stage["hash"]]["contractAddress"] = None
+
+        self._event_log(
+            "receiptCreate",
+            registrar,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.GENESIS_STAGED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.receipt).hex(),
+                self.core_config_hash,
+                self.flm_config_hash,
+            ],
+            economic_deployment._address_word(self.deployer),
+        )
+        self._event_log(
+            "deployCore",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.CORE_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["vault"]).hex(),
+                "0x"
+                + economic_deployment._address_word(self.contracts["companyToken"]).hex(),
+                "0x" + economic_deployment._address_word(self.contracts["space"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("arbitration", "evaluator", "spotPool")
+            ),
+        )
+        self._event_log(
+            "deployFlm",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.FLM_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["manager"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("relay", "spotAdapter")
+            ),
+        )
+        expected = copy.deepcopy(self.manifest)
+        expected["receipt"]["registrar"] = {
+            "target": registrar,
+            "runtimeCodeKeccak256": registrar_hash,
+        }
+        return registrar, expected
+
     def _verify(self) -> None:
         economic_deployment.verify_rpc(
             self.manifest,
@@ -666,6 +794,71 @@ class EconomicDeploymentTest(unittest.TestCase):
             hash_=self.hash,
         )
         self.assertEqual(built, self.manifest)
+
+    def test_reconstructs_registrar_receipt_from_chain_without_broadcast(self) -> None:
+        registrar, expected = self._registrar_evidence()
+        built = economic_deployment.manifest_from_chain(
+            self.receipt,
+            registrar,
+            {"prerequisites": self.manifest["prerequisites"]},
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            from_block=10,
+            hash_=self.hash,
+        )
+        self.assertEqual(built, expected)
+
+    def test_registrar_manifest_rejects_changed_immutable_code_pin(self) -> None:
+        registrar, manifest = self._registrar_evidence()
+        self._put(
+            registrar,
+            "RECEIPT_CREATION_CODE_HASH()(bytes32)",
+            "0x" + "ff" * 32,
+        )
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError,
+            "does not pin canonical creation code",
+        ):
+            economic_deployment.verify_rpc(
+                manifest,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+    def test_reconstructs_live_registrar_receipt_from_finalized_event(self) -> None:
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 188,
+            "from": self.deployer,
+        }
+        self._chain_evidence(live=True)
+        registrar, expected = self._registrar_evidence()
+        self._event_log(
+            "finalization",
+            self.contracts["vault"],
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.FINALIZED_EVENT, self.hash
+                )
+            ],
+            b"".join(economic_deployment._word(value) for value in (1, 2, 3, 4, 5)),
+        )
+        built = economic_deployment.manifest_from_chain(
+            self.receipt,
+            registrar,
+            self.manifest["prerequisites"],
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            from_block=10,
+            hash_=self.hash,
+        )
+        self.assertEqual(built, expected)
 
     def test_cast_vector_places_static_flm_tuple_before_bytes_array_offset(self) -> None:
         codes = economic_deployment._decode_bytes_array_argument(
