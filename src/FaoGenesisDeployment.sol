@@ -65,6 +65,7 @@ contract FaoGenesisDeployment {
         uint256 arbitrationTimeout;
         uint256 siteMinActivationBond;
         uint256 treasuryMinActivationBond;
+        GenesisVault.AssetPolicyConfig[] assetPolicies;
         uint32 twapTimeout;
         uint32 twapWindow;
         uint256 spaceSaltNonce;
@@ -251,7 +252,8 @@ contract FaoGenesisDeployment {
             tokenMaxSupply: config.tokenMaxSupply,
             initialPrice: config.initialPrice,
             slope: config.slope,
-            bootstrapBps: config.bootstrapBps
+            bootstrapBps: config.bootstrapBps,
+            assetPolicies: config.assetPolicies
         });
         GenesisVault vault_ = GenesisVault(
             payable(_deploy(abi.encodePacked(baseCodes[1], abi.encode(vaultConfig, grants)), 1, 2))

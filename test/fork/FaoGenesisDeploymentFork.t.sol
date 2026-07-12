@@ -219,6 +219,7 @@ contract FaoGenesisDeploymentForkTest is Test {
             arbitrationTimeout: 30 minutes,
             siteMinActivationBond: 0.0001 ether,
             treasuryMinActivationBond: 0.0001 ether,
+            assetPolicies: _assetPolicies(),
             twapTimeout: 30 minutes,
             twapWindow: 15 minutes,
             spaceSaltNonce: 1,
@@ -241,6 +242,21 @@ contract FaoGenesisDeploymentForkTest is Test {
 
     function _flmConfig() private view returns (FaoGenesisDeployment.FlmConfig memory) {
         return FaoGenesisDeployment.FlmConfig({positionManager: _dependency(NPM)});
+    }
+
+    function _assetPolicies()
+        private
+        pure
+        returns (GenesisVault.AssetPolicyConfig[] memory policies)
+    {
+        policies = new GenesisVault.AssetPolicyConfig[](1);
+        policies[0] = GenesisVault.AssetPolicyConfig({
+            asset: WETH,
+            c1: 0.01 ether,
+            c2: 0.1 ether,
+            tapBudget: 0.01 ether,
+            tapBudgetMax: 0.1 ether
+        });
     }
 
     function _dependency(address target)

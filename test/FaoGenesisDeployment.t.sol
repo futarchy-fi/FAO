@@ -404,6 +404,14 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(address(vaultLike.ARBITRATION()), address(arbitrationLike));
         assertEq(address(vaultLike.BOOTSTRAP_HOOK()), address(receipt));
         assertEq(address(vaultLike.manager()), address(0));
+        assertEq(vaultLike.assetPolicyCount(), 1);
+        (uint128 c1, uint128 c2, uint128 tapBudget, uint128 tapBudgetMax, bool exists) =
+            vaultLike.assetPolicies(address(weth));
+        assertEq(c1, 0.1 ether);
+        assertEq(c2, 1 ether);
+        assertEq(tapBudget, 0.2 ether);
+        assertEq(tapBudgetMax, 2 ether);
+        assertTrue(exists);
 
         assertEq(address(gatewayLike.space()), address(spaceLike));
         assertEq(address(gatewayLike.executionStrategy()), address(releaseLike));
@@ -473,6 +481,7 @@ contract FaoGenesisDeploymentTest is Test {
             arbitrationTimeout: 3 days,
             siteMinActivationBond: ACTIVATION_BOND,
             treasuryMinActivationBond: TREASURY_BOND,
+            assetPolicies: _assetPolicies(),
             twapTimeout: 7 days,
             twapWindow: 1 days,
             spaceSaltNonce: 1,
@@ -510,6 +519,21 @@ contract FaoGenesisDeploymentTest is Test {
         grants = new GenesisVault.GrantConfig[](1);
         grants[0] = GenesisVault.GrantConfig({
             beneficiary: address(0xBEEF), start: 1, duration: uint64(365 days), amount: 10 ether
+        });
+    }
+
+    function _assetPolicies()
+        private
+        view
+        returns (GenesisVault.AssetPolicyConfig[] memory policies)
+    {
+        policies = new GenesisVault.AssetPolicyConfig[](1);
+        policies[0] = GenesisVault.AssetPolicyConfig({
+            asset: address(weth),
+            c1: 0.1 ether,
+            c2: 1 ether,
+            tapBudget: 0.2 ether,
+            tapBudgetMax: 2 ether
         });
     }
 
@@ -559,7 +583,8 @@ contract FaoGenesisDeploymentTest is Test {
             tokenMaxSupply: config.tokenMaxSupply,
             initialPrice: config.initialPrice,
             slope: config.slope,
-            bootstrapBps: config.bootstrapBps
+            bootstrapBps: config.bootstrapBps,
+            assetPolicies: config.assetPolicies
         });
     }
 }
