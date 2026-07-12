@@ -143,6 +143,18 @@ contract EconGatewayTest is Test {
 
         assertEq(gateway.treasuryActionHash(action), expectedHash);
         assertEq(gateway.treasuryProposalId(action), uint256(expectedHash));
+        assertEq(
+            gateway.treasuryEvaluationPayload(action),
+            abi.encode(
+                gateway.KIND_TREASURY(),
+                block.chainid,
+                VAULT,
+                action.target,
+                action.value,
+                dataHash,
+                action.salt
+            )
+        );
         assertEq(proposalId, uint256(expectedHash));
         assertEq(arbitration.lastProposalId(), proposalId);
         assertEq(arbitration.lastMinActivationBond(), TREASURY_BOND);

@@ -55,6 +55,15 @@ contract EconGateway is SXProposalGateway {
         return uint256(treasuryActionHash(action));
     }
 
+    /// @notice Exact payload supplied permissionlessly when this item enters market evaluation.
+    function treasuryEvaluationPayload(FAOTreasuryActions.TreasuryAction calldata action)
+        external
+        view
+        returns (bytes memory)
+    {
+        return FAOTreasuryActions.evaluationPayload(block.chainid, vault, action);
+    }
+
     /// @notice Permissionlessly creates an arbitration-only treasury proposal.
     function proposeTreasuryAction(FAOTreasuryActions.TreasuryAction calldata action)
         external
