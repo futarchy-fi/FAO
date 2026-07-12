@@ -13,7 +13,6 @@ cd "$repo_root"
 
 "${FORGE_BIN:-forge}" script \
   script/DeployFaoEconomicGenesis.s.sol:DeployFaoEconomicGenesis \
-  --force \
   --rpc-url "$SEPOLIA_RPC_URL" \
   "$@"
 
@@ -29,8 +28,7 @@ jq -e '
   .chain == 11155111
   and (.pending | length == 0)
   and (.transactions | length == 5)
-  and ([.transactions[] | select(
-    .transactionType == "CREATE" and .contractName == "FaoGenesisDeployment"
-  )] | length == 1)
+  and ([.transactions[] | select(.transactionType == "CREATE")] | length == 3)
+  and ([.transactions[] | select(.transactionType == "CALL")] | length == 2)
 ' "$run_file" >/dev/null
 printf 'Validated five-transaction economic-genesis artifact: %s\n' "$run_file"

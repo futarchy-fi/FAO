@@ -964,18 +964,12 @@ def _broadcast_records(broadcast: Any, client: Any) -> list[dict[str, Any]]:
     if len(set(declared_hashes)) != 5 or set(declared_hashes) != set(receipts):
         raise ManifestError("broadcast transaction/receipt hashes are incomplete or duplicated")
 
-    expected = (
-        ("CREATE", "FAOFutarchyProposal"),
-        ("CREATE", "FAOSiteStackDeployer"),
-        ("CREATE", RECEIPT_CONTRACT),
-        ("CALL", RECEIPT_CONTRACT),
-        ("CALL", RECEIPT_CONTRACT),
-    )
+    expected = ("CREATE", "CREATE", "CREATE", "CALL", "CALL")
     records = []
     used_hashes: set[str] = set()
-    for index, (raw, identity) in enumerate(zip(transactions, expected)):
+    for index, (raw, transaction_type) in enumerate(zip(transactions, expected)):
         outer = _require_dict(raw, f"broadcast.transactions[{index}]")
-        if (outer.get("transactionType"), outer.get("contractName")) != identity:
+        if outer.get("transactionType") != transaction_type:
             raise ManifestError(f"broadcast transaction {index} has the wrong staged identity")
         artifact_tx = _require_dict(
             outer.get("transaction"), f"broadcast.transactions[{index}].transaction"
@@ -1041,7 +1035,7 @@ def _broadcast_records(broadcast: Any, client: Any) -> list[dict[str, Any]]:
             != target
         ):
             raise ManifestError(f"broadcast transaction {index} receipt provenance is inconsistent")
-        is_create = identity[0] == "CREATE"
+        is_create = transaction_type == "CREATE"
         if (is_create and (target is not None or created is None or declared_contract != created)) or (
             not is_create
             and (target is None or created is not None or declared_contract != target)

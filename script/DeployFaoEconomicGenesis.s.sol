@@ -13,6 +13,7 @@ import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../src/GenesisVault.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
+import {EconomicDeploymentCodeHashes} from "../src/generated/EconomicDeploymentCodeHashes.sol";
 import {FlmCodeHashes} from "../src/generated/FlmCodeHashes.sol";
 
 /// @notice Stages the ownerless, no-vote Sepolia economic FAO without moving buyer funds.
@@ -48,6 +49,7 @@ contract DeployFaoEconomicGenesis is Script {
 
     error InvalidChain(uint256 chainId);
     error InvalidConfig();
+    error DeploymentFailed();
     error InvalidPinnedCode(address target, bytes32 expected, bytes32 actual);
 
     function run() external {
@@ -68,12 +70,23 @@ contract DeployFaoEconomicGenesis is Script {
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
         bytes[] memory coreCodes = _coreCodes();
         bytes[] memory flmCodes = _flmCodes();
+        bytes memory proposalCode =
+            vm.readFileBinary("metadata/economic-creation-code/proposal_implementation.bin");
+        bytes memory stackCode =
+            vm.readFileBinary("metadata/economic-creation-code/stack_deployer.bin");
+        bytes memory receiptCode = vm.readFileBinary("metadata/economic-creation-code/receipt.bin");
+        if (
+            keccak256(proposalCode) != EconomicDeploymentCodeHashes.PROPOSAL_IMPLEMENTATION
+                || keccak256(stackCode) != EconomicDeploymentCodeHashes.STACK_DEPLOYER
+                || keccak256(receiptCode) != EconomicDeploymentCodeHashes.RECEIPT
+        ) revert InvalidConfig();
         uint256 startNonce = vm.getNonce(deployer);
 
         vm.broadcast(privateKey);
-        FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
+        FAOFutarchyProposal proposalImplementation = FAOFutarchyProposal(_deploy(proposalCode));
         vm.broadcast(privateKey);
-        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
+        FAOSiteStackDeployer stackDeployer =
+            FAOSiteStackDeployer(_deploy(abi.encodePacked(stackCode, abi.encode(false))));
 
         uint256 saleCap = vm.envOr("SALE_CAP", uint256(100 ether));
         uint256 twapTimeout = vm.envOr("TWAP_TIMEOUT", uint256(30 minutes));
@@ -130,7 +143,9 @@ contract DeployFaoEconomicGenesis is Script {
         bytes32 coreHash = keccak256(abi.encode(core, grants));
         bytes32 flmHash = keccak256(abi.encode(flm));
         vm.broadcast(privateKey);
-        FaoGenesisDeployment receipt = new FaoGenesisDeployment(coreHash, flmHash);
+        FaoGenesisDeployment receipt = FaoGenesisDeployment(
+            _deploy(abi.encodePacked(receiptCode, abi.encode(coreHash, flmHash)))
+        );
         vm.broadcast(privateKey);
         receipt.deployCore(core, grants, coreCodes);
         vm.broadcast(privateKey);
@@ -167,6 +182,13 @@ contract DeployFaoEconomicGenesis is Script {
         _requireCodehash(WRAPPED_1155_FACTORY, WRAPPED_1155_FACTORY_CODEHASH);
         _requireCodehash(UNISWAP_V3_FACTORY, UNISWAP_V3_FACTORY_CODEHASH);
         _requireCodehash(NONFUNGIBLE_POSITION_MANAGER, NONFUNGIBLE_POSITION_MANAGER_CODEHASH);
+    }
+
+    function _deploy(bytes memory initcode) private returns (address deployed) {
+        assembly ("memory-safe") {
+            deployed := create(0, add(initcode, 0x20), mload(initcode))
+        }
+        if (deployed == address(0)) revert DeploymentFailed();
     }
 
     function _coreCodes() private pure returns (bytes[] memory codes) {

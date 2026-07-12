@@ -143,6 +143,15 @@ class EconomicCodeHashesTest(unittest.TestCase):
         with self.assertRaisesRegex(economic_code_hashes.GenerationError, "one solc/settings"):
             economic_code_hashes._output(mixed, fake_keccak)
 
+        solidity = economic_code_hashes._solidity(compiled, fake_keccak).decode()
+        for target in economic_code_hashes.DEPLOYMENT_TARGETS:
+            self.assertIn(f"constant {target.constant}", solidity)
+            self.assertIn(fake_keccak(compiled[economic_code_hashes.TARGETS.index(target)].code), solidity)
+            self.assertEqual(
+                economic_code_hashes.deployment_blob(target),
+                economic_code_hashes.BLOB_DIR / f"{target.constant.lower()}.bin",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
