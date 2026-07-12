@@ -8,6 +8,10 @@ solc = "0.8.20"
 auto_detect_solc = false
 auto_detect_remappings = false
 via_ir = true
+fs_permissions = [
+    { access = "read", path = "./metadata" },
+    { access = "read", path = "./deployments" },
+]
 
 remappings = [
     # Use SnapshotX-pinned OpenZeppelin versions (v4.x) to avoid OZ v5 init signature mismatches

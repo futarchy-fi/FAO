@@ -3,6 +3,7 @@
 /cache
 /lib
 /broadcast
+/build-info
 
 # Environment
 .env
