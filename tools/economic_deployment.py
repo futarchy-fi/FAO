@@ -1172,6 +1172,94 @@ def manifest_from_broadcast(
     return manifest
 
 
+def finalization_hash_from_broadcast(broadcast: Any, vault: str, client: Any) -> str:
+    broadcast = _require_dict(broadcast, "economic operation broadcast")
+    if _quantity(broadcast.get("chain"), "operation broadcast.chain") != CHAIN_ID:
+        raise ManifestError(f"operation broadcast chain must be Sepolia ({CHAIN_ID})")
+    if _require_list(broadcast.get("pending", []), "operation broadcast.pending"):
+        raise ManifestError("operation broadcast contains pending transactions")
+    transactions = _require_list(
+        broadcast.get("transactions"), "operation broadcast.transactions"
+    )
+    candidates = [
+        _hex(
+            _require_dict(raw, f"operation transaction {index}").get("hash"),
+            32,
+            f"operation transaction {index}.hash",
+        )
+        for index, raw in enumerate(transactions)
+    ]
+    if len(set(candidates)) != len(candidates):
+        raise ManifestError("operation broadcast hashes are duplicated")
+    finalizations = []
+    for index, raw in enumerate(transactions):
+        outer = _require_dict(raw, f"operation transaction {index}")
+        tx = _require_dict(outer.get("transaction"), f"operation transaction {index}.transaction")
+        input_ = _variable_bytes(tx.get("input"), f"operation transaction {index}.input")
+        target = flm_deployment._live_target(
+            tx.get("to"), f"operation transaction {index}.target"
+        )
+        if target == vault and input_.hex() == FINALIZE_SELECTOR:
+            finalizations.append(tx)
+    if len(finalizations) != 1:
+        raise ManifestError("operation broadcast must contain exactly one GenesisVault.finalize()")
+
+    expected = finalizations[0]
+    sender = _address(expected.get("from"), "operation finalization sender")
+    nonce = _quantity(expected.get("nonce"), "operation finalization nonce")
+    matches = []
+    for candidate in candidates:
+        live = _require_dict(client.transaction(candidate), f"live operation transaction {candidate}")
+        if (
+            _address(live.get("from"), f"live operation transaction {candidate}.from") == sender
+            and _quantity(live.get("nonce"), f"live operation transaction {candidate}.nonce") == nonce
+            and flm_deployment._live_target(
+                live.get("to"), f"live operation transaction {candidate}.to"
+            )
+            == vault
+            and _variable_bytes(
+                live.get("input"), f"live operation transaction {candidate}.input"
+            ).hex()
+            == FINALIZE_SELECTOR
+        ):
+            matches.append(candidate)
+    if len(matches) != 1:
+        raise ManifestError("operation finalization does not match exactly one live transaction")
+    return matches[0]
+
+
+def promote_live(
+    raw: Any,
+    finalization_hash: str,
+    receipt_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    *,
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> dict[str, Any]:
+    manifest = validate_manifest(raw, hash_=hash_)
+    if manifest["status"] != "sealed":
+        raise ManifestError("only a sealed economic manifest can be promoted to LIVE")
+    tx_hash = _canonical_hash(finalization_hash, "finalization hash")
+    tx = _require_dict(client.transaction(tx_hash), "live finalization transaction")
+    receipt = _require_dict(client.receipt(tx_hash), "live finalization receipt")
+    evidence = {
+        "hash": tx_hash,
+        "block": _quantity(receipt.get("blockNumber"), "finalization block"),
+        "nonce": _quantity(tx.get("nonce"), "finalization nonce"),
+        "from": _address(tx.get("from"), "finalization sender"),
+    }
+    live = {**manifest, "status": "live", "finalization": evidence}
+    verify_rpc(
+        live,
+        receipt_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_=hash_,
+    )
+    return live
+
+
 def _verify_prerequisites(
     manifest: dict[str, Any],
     client: Any,
@@ -1580,12 +1668,13 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--manifest", type=Path)
     source.add_argument("--from-broadcast", type=Path)
     parser.add_argument("--rpc-url")
+    parser.add_argument("--operation-broadcast", type=Path)
     parser.add_argument("--out", type=Path, default=ROOT / "deployments/sepolia-economic-genesis.json")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--schema-only", action="store_true")
     args = parser.parse_args(argv)
     if args.from_broadcast:
-        if args.schema_only or not args.rpc_url:
+        if args.schema_only or args.operation_broadcast or not args.rpc_url:
             raise ManifestError("--from-broadcast requires --rpc-url and cannot be schema-only")
         receipt_creation, prerequisite_creation = verified_creation_evidence()
         manifest = manifest_from_broadcast(
@@ -1599,6 +1688,25 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest = site_deployment.load_json(args.manifest)
     validate_manifest(manifest)
+    if args.operation_broadcast:
+        if args.schema_only or not args.rpc_url:
+            raise ManifestError("--operation-broadcast requires --rpc-url and cannot be schema-only")
+        receipt_creation, prerequisite_creation = verified_creation_evidence()
+        client = CastClient(args.rpc_url)
+        finalization_hash = finalization_hash_from_broadcast(
+            site_deployment.load_json(args.operation_broadcast),
+            manifest["contracts"]["vault"],
+            client,
+        )
+        live = promote_live(
+            manifest,
+            finalization_hash,
+            receipt_creation,
+            prerequisite_creation,
+            client,
+        )
+        site_deployment._write_or_check(args.out, live, args.check)
+        return 0
     if args.schema_only:
         return 0
     if not args.rpc_url:

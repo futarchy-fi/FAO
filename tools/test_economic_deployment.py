@@ -622,6 +622,24 @@ class EconomicDeploymentTest(unittest.TestCase):
             "receipts": receipts,
         }
 
+    def _operation_broadcast(self) -> dict:
+        evidence = self.manifest["finalization"]
+        tx = copy.deepcopy(self.client.transactions[evidence["hash"]])
+        return {
+            "chain": economic_deployment.CHAIN_ID,
+            "pending": [],
+            "transactions": [
+                {
+                    "hash": evidence["hash"],
+                    "transactionType": "CALL",
+                    "contractName": None,
+                    "contractAddress": tx["to"],
+                    "transaction": tx,
+                }
+            ],
+            "receipts": [copy.deepcopy(self.client.receipts[evidence["hash"]])],
+        }
+
     def _verify(self) -> None:
         economic_deployment.verify_rpc(
             self.manifest,
@@ -714,6 +732,30 @@ class EconomicDeploymentTest(unittest.TestCase):
             "999\n0\n0\n0\n120\n0\ntrue",
         )
         self._verify()
+
+    def test_promotes_sealed_manifest_from_operation_broadcast(self) -> None:
+        sealed = copy.deepcopy(self.manifest)
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 188,
+            "from": self.deployer,
+        }
+        self._chain_evidence(live=True)
+        operation = self._operation_broadcast()
+        tx_hash = economic_deployment.finalization_hash_from_broadcast(
+            operation, self.contracts["vault"], self.client
+        )
+        promoted = economic_deployment.promote_live(
+            sealed,
+            tx_hash,
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(promoted, self.manifest)
 
     def test_rejects_noncanonical_code_blob_hash(self) -> None:
         broken = copy.deepcopy(self.manifest)
