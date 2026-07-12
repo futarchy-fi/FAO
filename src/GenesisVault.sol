@@ -171,6 +171,7 @@ contract GenesisVault is ReentrancyGuard {
                 || config.minimumRaise == 0 || config.tokenMaxSupply == 0
                 || config.initialPrice == 0 || grantConfigs.length > MAX_VESTING_GRANTS
                 || config.bootstrapBps == 0 || config.bootstrapBps > BPS_DENOMINATOR
+                || Math.mulDiv(config.minimumRaise, config.bootstrapBps, BPS_DENOMINATOR) == 0
         ) revert InvalidConfig();
 
         WETH = config.weth;

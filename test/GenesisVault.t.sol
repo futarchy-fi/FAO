@@ -86,6 +86,17 @@ contract GenesisVaultTest is Test {
         assertEq(vault.COMPANY_TOKEN().totalSupply(), 0);
     }
 
+    function testRejectsSuccessThresholdThatCannotSeedAnyCollateral() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.Config memory config = _config(hook);
+        config.minimumRaise = 1;
+        config.bootstrapBps = 1;
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
     function testRevertingBootstrapStaysSealingThenDeadlineEnablesRefunds() public {
         GenesisVault vault = _deployVault();
         _buy(vault, BUYER, 400 ether);
@@ -329,7 +340,15 @@ contract GenesisVaultTest is Test {
             duration: uint64(10 days),
             amount: GRANT_AMOUNT
         });
-        GenesisVault.Config memory config = GenesisVault.Config({
+        vault = new GenesisVault(_config(hook), grantConfigs);
+    }
+
+    function _config(GenesisBootstrapHookMock hook)
+        internal
+        view
+        returns (GenesisVault.Config memory config)
+    {
+        config = GenesisVault.Config({
             tokenName: "Futarchy Autonomous Organization",
             tokenSymbol: "FAO",
             weth: weth,
@@ -345,7 +364,6 @@ contract GenesisVaultTest is Test {
             slope: SLOPE,
             bootstrapBps: BOOTSTRAP_BPS
         });
-        vault = new GenesisVault(config, grantConfigs);
     }
 
     function _bindManager(GenesisVault vault) internal returns (GenesisManagerMock manager) {
