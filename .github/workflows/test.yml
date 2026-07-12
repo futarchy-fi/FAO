@@ -21,6 +21,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ssh-key: ${{ secrets.FLM_SUBMODULE_SSH_KEY }}
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
