@@ -162,6 +162,16 @@ contract EconGatewayTest is Test {
         assertEq(space.calls(), 0);
     }
 
+    function testTreasuryRouteRejectsUnevaluableZeroTargetBeforeArbitration() public {
+        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
+            target: address(0), value: 0, data: "", salt: bytes32(uint256(1))
+        });
+
+        vm.expectRevert(SXProposalGateway.ZeroAddress.selector);
+        gateway.proposeTreasuryAction(action);
+        assertEq(arbitration.calls(), 0);
+    }
+
     function testTreasuryDomainPreventsCrossVaultAndCrossChainReplay() public {
         FAOTreasuryActions.TreasuryAction memory action = _treasuryAction(bytes32(uint256(1)));
         bytes32 original = gateway.treasuryActionHash(action);

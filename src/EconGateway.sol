@@ -69,6 +69,7 @@ contract EconGateway is SXProposalGateway {
         external
         returns (uint256 proposalId)
     {
+        if (action.target == address(0)) revert ZeroAddress();
         bytes32 actionHash = treasuryActionHash(action);
         proposalId = uint256(actionHash);
         arbitration.createProposalWithId(proposalId, treasuryMinActivationBond);
