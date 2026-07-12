@@ -15,6 +15,8 @@ contract MockAlgebraPoolLike is IAlgebraPoolLike {
     uint8 public communityFeeToken0;
     uint8 public communityFeeToken1;
     bool public unlocked;
+    int56 public oldTickCumulative;
+    int56 public newTickCumulative;
 
     constructor(address _token0, address _token1) {
         token0 = _token0;
@@ -28,6 +30,30 @@ contract MockAlgebraPoolLike is IAlgebraPoolLike {
 
     function setSqrtPriceX96(uint160 newSqrtPriceX96) external {
         sqrtPriceX96 = newSqrtPriceX96;
+    }
+
+    function setTickCumulatives(int56 oldValue, int56 newValue) external {
+        oldTickCumulative = oldValue;
+        newTickCumulative = newValue;
+    }
+
+    function getTimepoints(uint32[] calldata secondsAgos)
+        external
+        view
+        returns (
+            int56[] memory tickCumulatives,
+            uint160[] memory secondsPerLiquidityCumulatives,
+            uint112[] memory volatilityCumulatives,
+            uint256[] memory volumePerAvgLiquiditys
+        )
+    {
+        uint256 length = secondsAgos.length;
+        tickCumulatives = new int56[](length);
+        secondsPerLiquidityCumulatives = new uint160[](length);
+        volatilityCumulatives = new uint112[](length);
+        volumePerAvgLiquiditys = new uint256[](length);
+        if (length != 0) tickCumulatives[0] = oldTickCumulative;
+        if (length > 1) tickCumulatives[1] = newTickCumulative;
     }
 
     function globalState()
@@ -54,4 +80,3 @@ contract MockAlgebraPoolLike is IAlgebraPoolLike {
         );
     }
 }
-

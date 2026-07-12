@@ -1,0 +1,1 @@
+{"name":"No voting","description":"Compatibility-only Snapshot X strategy. It always returns zero voting power and never determines proposal status or execution.","properties":{"symbol":"NO-VOTE","decimals":0}}
