@@ -120,6 +120,22 @@ This is the canonical dry run. It forces one coherent Foundry build and validate
 script/deploy-fao-sepolia.sh --broadcast
 ```
 
+## Sepolia Economic Genesis
+
+The economic-genesis wrapper loads the four pinned metadata URIs from
+`metadata/sepolia-site-release/bundle.json`. Its canonical defaults expect deployer
+`0x693E3FB46Bb36eE43C702FE94f9463df0691b43d` at pending nonce `185`; before invoking Foundry it
+derives the receipt and release-strategy addresses and rejects any metadata or nonce drift.
+
+```bash
+SEPOLIA_RPC_URL=https://... PRIVATE_KEY=0x... \
+  script/deploy-fao-economic-sepolia.sh --broadcast
+```
+
+Override `ECONOMIC_METADATA_BUNDLE`, `EXPECTED_DEPLOYER`, and `EXPECTED_DEPLOYER_NONCE` together
+for a different deployment. The bundle must describe the release strategy derived from that
+deployer and nonce.
+
 ## Gnosis Liquidity Stack Deploy
 
 Deploy `FutarchyOfficialProposalSource`, two Swapr adapters (spot/conditional), and `FutarchyLiquidityManager`:
