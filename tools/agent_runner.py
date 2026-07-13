@@ -831,9 +831,13 @@ def canonical_json(value: Any) -> bytes:
 
 
 def write_evidence(path: Path, evidence: Any) -> str:
-    if not isinstance(evidence, dict) or evidence.get("kind") != "fao.agentwork.p1-evidence" or evidence.get("v") != "1":
-        raise RunnerError("P1 evidence kind or version is invalid")
-    drills = evidence.get("drills")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("kind") not in ("fao.agentwork.p1-evidence", "fao.agentwork.p2a-evidence")
+        or evidence.get("v") != "1"
+    ):
+        raise RunnerError("agent-work evidence kind or version is invalid")
+    drills = evidence.get("drills" if evidence["kind"] == "fao.agentwork.p1-evidence" else "gates")
     if not isinstance(drills, list) or not drills or any(item.get("status") != "pass" for item in drills):
         raise RunnerError("evidence may contain only drills that actually passed")
     raw = canonical_json(evidence) + b"\n"

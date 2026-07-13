@@ -5,6 +5,18 @@ canonical task/receipt/payment documents, and their exact binding to typed treas
 Its P1 reference agent recomputes finalized state on every tick and keeps signing behind an
 injected boundary; `python3 tools/agent_anvil_drill.py` regenerates the 16-drill evidence matrix.
 
+Lane 5 P2a adds a closed-world three-agent tournament with no new contracts, stored keys, or
+public broadcasts. CI rehearses it on plain Anvil; the sealed evidence is regenerated from one
+plain-local run plus two byte-identical runs at pinned Sepolia block 11,261,000:
+
+```bash
+python3 tools/agent_tournament.py
+```
+
+The tournament proves exact document binding, restart/race handling, and treasury accounting. It
+does not claim external work quality, demand, adoption, information aggregation, collusion
+resistance, or a sustainable subsidy.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
