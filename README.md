@@ -8,6 +8,25 @@ injected boundary; `python3 tools/agent_anvil_drill.py` regenerates the 16-drill
 The [wind-tunnel P0 control plane](docs/windtunnel-p0.md) indexes finalized multi-instance state,
 replays reorgs deterministically, and prepares at most one unsigned permissionless keeper crank.
 
+Lane 5 P2a adds a closed-world three-agent tournament with no new contracts, stored keys, or
+public broadcasts. CI rehearses it on plain Anvil; the sealed evidence is regenerated from one
+plain-local run plus two byte-identical runs at pinned Sepolia block 11,261,000:
+
+```bash
+python3 tools/agent_tournament.py
+```
+
+The tournament proves exact document binding, restart/race handling, and treasury accounting. It
+does not claim external work quality, demand, adoption, information aggregation, collusion
+resistance, or a sustainable subsidy.
+All six proposals receive an initial YES bond; the three challenged proposals then receive one
+graduation YES flip each, so the evidence reports six YES-bonded proposals, nine YES-bond
+transactions, and three graduation flips. Its complete ledger also includes the 12 stack-setup
+transactions and separately discloses every account, native-balance, and storage override.
+It also records every transaction/receipt/log and every timestamp/manual-mine control. That
+source-pinned Anvil transcript is internally cross-checked evidence, not an externally
+authenticated chain attestation.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts

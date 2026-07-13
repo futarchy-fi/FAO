@@ -19,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           persist-credentials: false
           submodules: recursive
           ssh-key: ${{ secrets.FLM_SUBMODULE_SSH_KEY }}
@@ -33,6 +34,9 @@ jobs:
 
       - name: Test deployment evidence tools
         run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+
+      - name: Rehearse Lane 5 P2a tournament on local Anvil
+        run: python3 tools/agent_tournament.py --local-only --output /tmp/agent-work-p2a-local.json
 
       - name: Verify sealed FLM code and compiler evidence
         run: python3 tools/flm_deployment.py prepare-build-info
