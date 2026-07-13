@@ -20,6 +20,9 @@ All six proposals receive an initial YES bond; the three challenged proposals th
 graduation YES flip each, so the evidence reports six YES-bonded proposals, nine YES-bond
 transactions, and three graduation flips. Its complete ledger also includes the 12 stack-setup
 transactions and separately discloses every account, native-balance, and storage override.
+It also records every transaction/receipt/log and every timestamp/manual-mine control. That
+source-pinned Anvil transcript is internally cross-checked evidence, not an externally
+authenticated chain attestation.
 
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 

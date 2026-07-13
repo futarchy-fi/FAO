@@ -17,12 +17,13 @@ def address(byte: str) -> str:
 
 
 class CodeRpc:
-    def __init__(self, codes: dict[str, bytes]) -> None:
+    def __init__(self, codes: dict[str, bytes], observation_block: int) -> None:
         self.codes = codes
+        self.observation_block = observation_block
 
     def request(self, method: str, params: list[str]) -> str:
-        if method != "eth_getCode":
-            raise AssertionError(method)
+        if method != "eth_getCode" or params[1] != hex(self.observation_block):
+            raise AssertionError((method, params))
         return "0x" + self.codes[params[0]].hex()
 
 
@@ -57,7 +58,7 @@ class AgentTournamentTest(unittest.TestCase):
 
     def test_t2_grader_reads_every_runtime_at_the_observation_block(self) -> None:
         value = stack()
-        rpc = CodeRpc(value.pop("_codes"))
+        rpc = CodeRpc(value.pop("_codes"), value["observationBlock"])
         blob = tournament.build_t2_artifact(value)
         self.assertTrue(tournament.grade_t2(blob, rpc, value))
         changed = bytearray(blob)
@@ -106,7 +107,10 @@ class AgentTournamentTest(unittest.TestCase):
     def test_committed_evidence_semantics_and_table_driven_mutations(self) -> None:
         baseline = json.loads(tournament.EVIDENCE_PATH.read_bytes())
         self.assertEqual(tournament.verify_evidence(), "0x" + hashlib.sha256(tournament.EVIDENCE_PATH.read_bytes()).hexdigest())
-        self.assertEqual((len(baseline["attemptLedger"]), len(baseline["anvilStateMutations"])), (66, 18))
+        self.assertEqual(
+            (len(baseline["attemptLedger"]), len(baseline["anvilStateMutations"]), len(baseline["anvilControls"])),
+            (66, 18, 78),
+        )
 
         def delete(name: str):
             return lambda value: value.pop(name)
@@ -122,11 +126,54 @@ class AgentTournamentTest(unittest.TestCase):
 
             return mutate
 
+        def synthetic_payment_proofs(value):
+            for proof in value["reconciliation"]["balanceProofs"].values():
+                proof.update(
+                    {
+                        "beforeBlock": "0",
+                        "afterBlock": "1",
+                        "executorBefore": proof["amount"],
+                        "executorAfter": "0",
+                        "recipientBefore": "0",
+                        "recipientAfter": proof["amount"],
+                    }
+                )
+
+        def move_both_rejected_snapshots(value):
+            for side in ("rejectedRecipientBefore", "rejectedRecipientAfter"):
+                value["reconciliation"][side]["B-T2"]["balance"] = "1"
+
+        def offset_all_bond_balances(value):
+            bonds = value["reconciliation"]["bonds"]
+            for side in ("actorBefore", "actorAfter"):
+                for actor, amount in bonds[side].items():
+                    bonds[side][actor] = str(int(amount) + 10)
+
+        def forge_recorded_receipt_gas(value):
+            attempt = value["attemptLedger"][0]
+            attempt["gasUsed"] = "1"
+            attempt["receipt"]["gasUsed"] = "1"
+            attempt["gasCostWei"] = attempt["effectiveGasPriceWei"]
+
+        def forge_timestamp_and_metric(value):
+            attempt = next(item for item in value["attemptLedger"] if item["kind"] == "propose:A-T1")
+            attempt["blockTimestamp"] = str(int(attempt["blockTimestamp"]) + 1)
+            value["metrics"] = tournament._derived_metrics(
+                value,
+                {item["id"]: item for item in tournament._expected_documents(tournament._stack_from_evidence(value))[1]},
+            )
+
         mutations = (
             ("empty ledger", lambda value: value["attemptLedger"].clear()),
             ("reversed FIFO", lambda value: value["evaluationFifo"].reverse()),
             ("impossible balance proof", set_value("reconciliation", "balanceProofs", "A-T1", "executorAfter", 1)),
+            ("coordinated synthetic payment proofs", synthetic_payment_proofs),
             ("rejected movement", set_value("reconciliation", "rejectedRecipientAfter", "B-T2", "1")),
+            ("coordinated rejected movement", move_both_rejected_snapshots),
+            ("coordinated bond balance offset", offset_all_bond_balances),
+            ("coordinated receipt gas forgery", forge_recorded_receipt_gas),
+            ("coordinated timestamp and metric forgery", forge_timestamp_and_metric),
+            ("malformed deployment data hash", set_value("attemptLedger", 4, "dataKeccak256", "not-a-hash")),
             ("removed metrics", delete("metrics")),
             (
                 "forged repository commit and index",
@@ -152,6 +199,8 @@ class AgentTournamentTest(unittest.TestCase):
                 with self.subTest(label=label):
                     value = copy.deepcopy(baseline)
                     mutate(value)
+                    if "recordedTranscriptSha256" in value:
+                        value["recordedTranscriptSha256"] = tournament._recorded_transcript_sha256(value)
                     if label != "forged deterministic digest":
                         value["deterministicTournamentSha256"] = tournament._deterministic_tournament_sha256(value)
                     path = Path(directory) / (label.replace(" ", "-") + ".json")

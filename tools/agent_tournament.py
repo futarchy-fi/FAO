@@ -30,8 +30,10 @@ EVIDENCE_PATH = ROOT / "metadata/agent-work-p2a-evidence.json"
 SEPOLIA_CHAIN_ID = 11_155_111
 SEPOLIA_FORK_BLOCK = 11_261_000
 SEPOLIA_FORK_HASH = "0xf64a8c502030a1a1d17795b3f41cae9de07eaaa9630fa994ae9f08470d089df9"
+SEPOLIA_FORK_TIMESTAMP = 1_783_910_556
 SEPOLIA_WETH = "0xfff9976782d46cc05630d1f6ebab18b2324d6b14"
 SEPOLIA_WETH_RUNTIME_HASH = "0xc864e10689f2da18833652a3b075d43106e87f0f90d95ee64f6f0b33bc026083"
+PINNED_FORK_TRANSCRIPT_SHA256 = "0xf044208e85c4b634943439e0ee9673eee8cd41bd0cbb0766e87c9ff821a08292"
 T1_SEED = "FAO_P2A_T1_V1"
 ONE_MILLIWETH = 10**15
 PAYMENTS = {
@@ -59,7 +61,7 @@ ROUND_ROBIN_ACTIONS = ("publish-receipt", "publish-payment", "propose", "place-y
 BASE_GATE_IDS = (
     "exact-documents-parentage",
     "six-bindings",
-    "four-log-balance-payments",
+    "four-recorded-receipt-log-balance-payments",
     "rejected-no-movement",
     "actor-bond-treasury-conservation",
     "complete-attempt-ledger",
@@ -98,6 +100,7 @@ FALSE_CLAIMS = {
     "sustainableSubsidy": False,
     "liveDeployment": False,
     "livePayment": False,
+    "cryptographicEphemeralChainAttestation": False,
 }
 ACTOR_ADDRESSES = {
     name: "0x100000000000000000000000000000000000%04x" % ordinal
@@ -355,14 +358,48 @@ def _prepare_actors(rpc: runner.JsonRpc, fork: bool, recorder: Recorder) -> None
             raise TournamentError("canonical Sepolia WETH runtime hash drifted")
 
 
-def _next_block(rpc: runner.JsonRpc, seconds: int = 1) -> None:
-    timestamp = _quantity(rpc.block("latest")["timestamp"])
-    rpc.request("evm_setNextBlockTimestamp", [timestamp + seconds])
+def _next_block(
+    rpc: runner.JsonRpc,
+    recorder: Recorder,
+    seconds: int,
+    purpose: str,
+    transaction_sequences: Sequence[int] = (),
+) -> None:
+    before = rpc.block("latest")
+    timestamp = _quantity(before["timestamp"])
+    next_timestamp = timestamp + seconds
+    rpc.request("evm_setNextBlockTimestamp", [next_timestamp])
+    recorder.controls.append(
+        {
+            "beforeBlock": str(_quantity(before["number"])),
+            "beforeTimestamp": str(timestamp),
+            "method": "evm_setNextBlockTimestamp",
+            "nextTimestamp": str(next_timestamp),
+            "purpose": purpose,
+            "transactionSequences": [str(value) for value in transaction_sequences],
+        }
+    )
 
 
-def _mine(rpc: runner.JsonRpc, seconds: int = 1) -> None:
-    _next_block(rpc, seconds)
+def _mine_ready(rpc: runner.JsonRpc, recorder: Recorder, purpose: str) -> None:
+    before = rpc.block("latest")
     rpc.request("evm_mine", [])
+    after = rpc.block("latest")
+    recorder.controls.append(
+        {
+            "afterBlock": str(_quantity(after["number"])),
+            "afterTimestamp": str(_quantity(after["timestamp"])),
+            "beforeBlock": str(_quantity(before["number"])),
+            "beforeTimestamp": str(_quantity(before["timestamp"])),
+            "method": "evm_mine",
+            "purpose": purpose,
+        }
+    )
+
+
+def _mine(rpc: runner.JsonRpc, recorder: Recorder, seconds: int, purpose: str) -> None:
+    _next_block(rpc, recorder, seconds, "set timestamp to " + purpose)
+    _mine_ready(rpc, recorder, purpose)
 
 
 def _deploy(
@@ -373,7 +410,13 @@ def _deploy(
     kind: str,
     arguments: Sequence[str] = (),
 ) -> str:
-    _next_block(recorder.rpc)
+    _next_block(
+        recorder.rpc,
+        recorder,
+        1,
+        "set timestamp for " + kind,
+        (len(recorder.attempts) + 1,),
+    )
     command = [
         "forge", "create", contract, "--rpc-url", url, "--unlocked", "--from", sender,
         "--broadcast", "--gas-limit", "30000000",
@@ -425,7 +468,9 @@ def _set_storage(
 
 def _stack(url: str, rpc: runner.JsonRpc, fork: bool, recorder: Recorder) -> dict[str, Any]:
     steward = ACTOR_ADDRESSES["steward"]
-    start_block = _quantity(rpc.block("latest")["number"])
+    start = rpc.block("latest")
+    start_block = _quantity(start["number"])
+    start_timestamp = _quantity(start["timestamp"])
     if fork:
         asset = SEPOLIA_WETH
         for name in ("steward", "agentA", "agentB", "agentC"):
@@ -479,7 +524,7 @@ def _stack(url: str, rpc: runner.JsonRpc, fork: bool, recorder: Recorder) -> dic
         "0x" + (bytes(12) + bytes.fromhex(steward[2:])).hex(),
         "bind the disposable house resolver without deploying a new evaluator",
     )
-    _mine(rpc)
+    _mine(rpc, recorder, 1, "commit Anvil storage overrides")
     for name in ("agentA", "agentB", "agentC"):
         recorder.send(
             "setup:approve:" + name, ACTOR_ADDRESSES[name], asset,
@@ -493,6 +538,7 @@ def _stack(url: str, rpc: runner.JsonRpc, fork: bool, recorder: Recorder) -> dic
     return {
         "chainId": rpc.chain_id(),
         "startBlock": start_block,
+        "startTimestamp": start_timestamp,
         "forkBlock": fork_block,
         "forkBlockHash": fork_hash,
         "observationBlock": observation,
@@ -541,12 +587,54 @@ class Recorder:
         gas = _quantity(receipt["gasUsed"])
         price = _quantity(receipt.get("effectiveGasPrice", "0x0"))
         block_number = _quantity(receipt["blockNumber"])
+        transaction = self.rpc.request("eth_getTransactionByHash", [tx_hash])
+        if not isinstance(transaction, dict):
+            raise TournamentError("recorded transaction disappeared before evidence capture")
+        transaction_view = {
+            "blockHash": transaction["blockHash"].lower(),
+            "blockNumber": str(_quantity(transaction["blockNumber"])),
+            "from": transaction["from"].lower(),
+            "gasLimit": str(_quantity(transaction["gas"])),
+            "hash": transaction["hash"].lower(),
+            "input": transaction["input"].lower(),
+            "nonce": str(_quantity(transaction["nonce"])),
+            "to": None if transaction.get("to") is None else transaction["to"].lower(),
+            "transactionIndex": str(_quantity(transaction["transactionIndex"])),
+            "type": str(_quantity(transaction.get("type", "0x0"))),
+            "valueWei": str(_quantity(transaction["value"])),
+        }
+        receipt_logs = [
+            {
+                "address": log["address"].lower(),
+                "blockHash": log["blockHash"].lower(),
+                "blockNumber": str(_quantity(log["blockNumber"])),
+                "data": log["data"].lower(),
+                "logIndex": str(_quantity(log["logIndex"])),
+                "removed": bool(log["removed"]),
+                "topics": [topic.lower() for topic in log["topics"]],
+                "transactionHash": log["transactionHash"].lower(),
+                "transactionIndex": str(_quantity(log["transactionIndex"])),
+            }
+            for log in receipt.get("logs", [])
+        ]
+        receipt_view = {
+            "blockHash": receipt["blockHash"].lower(),
+            "blockNumber": str(block_number),
+            "contractAddress": None if receipt.get("contractAddress") is None else receipt["contractAddress"].lower(),
+            "effectiveGasPriceWei": str(price),
+            "gasUsed": str(gas),
+            "logs": receipt_logs,
+            "status": str(_quantity(receipt["status"])),
+            "transactionHash": receipt["transactionHash"].lower(),
+            "transactionIndex": str(_quantity(receipt["transactionIndex"])),
+        }
         item = {
             "actor": self.roles.get(actor, actor),
             "blockHash": receipt["blockHash"].lower(),
             "blockNumber": str(block_number),
             "blockTimestamp": str(_block_timestamp(self.rpc, block_number)),
             "dataKeccak256": documents.keccak256(bytes.fromhex(data[2:])),
+            "effectiveGasPriceWei": str(price),
             "gasCostWei": str(gas * price),
             "gasUsed": str(gas),
             "kind": kind,
@@ -554,6 +642,8 @@ class Recorder:
             "status": str(_quantity(receipt["status"])),
             "target": target,
             "transactionHash": tx_hash.lower(),
+            "transaction": transaction_view,
+            "receipt": receipt_view,
             "valueWei": str(value),
         }
         if proposal is not None:
@@ -577,7 +667,13 @@ class Recorder:
             tx["gas"] = hex(25_000_000)
         else:
             self.rpc.call(tx, "latest")
-        _next_block(self.rpc)
+        _next_block(
+            self.rpc,
+            self,
+            1,
+            "set timestamp for " + kind,
+            (len(self.attempts) + 1,),
+        )
         tx_hash = self.rpc.request("eth_sendTransaction", [tx])
         receipt = drill._receipt(self.rpc, tx_hash)
         self.record(kind, actor, target, data, tx_hash, receipt, proposal, value=value)
@@ -724,12 +820,19 @@ def _race_queue(rpc: runner.JsonRpc, recorder: Recorder, submission: dict[str, A
     recorder.controls.append(
         {"after": automine_disabled, "before": automine_before, "method": "anvil_setAutomine", "purpose": "place both A-T3 queue attempts in one FIFO-ordered block"}
     )
-    _next_block(rpc)
+    next_sequence = len(recorder.attempts) + 1
+    _next_block(
+        rpc,
+        recorder,
+        1,
+        "set timestamp for same-block A-T3 queue race",
+        (next_sequence, next_sequence + 1),
+    )
     hashes = [
         rpc.request("eth_sendTransaction", [{"from": actor, "to": submission["config"]["vault"], "data": data, "value": "0x0", "gas": hex(5_000_000)}])
         for actor in actors
     ]
-    rpc.request("evm_mine", [])
+    _mine_ready(rpc, recorder, "mine same-block A-T3 queue race")
     rpc.request("anvil_setAutomine", [True])
     automine_after = rpc.request("anvil_getAutomine", [])
     recorder.controls.append(
@@ -760,6 +863,18 @@ def _race_queue(rpc: runner.JsonRpc, recorder: Recorder, submission: dict[str, A
 def _balance(rpc: runner.JsonRpc, token: str, account: str, block: int | str = "latest") -> int:
     tag = block if isinstance(block, str) else hex(block)
     return runner._uint_call(rpc, token, runner._call(runner.SELECTORS["balanceOf"], runner._address_word(account)), tag)
+
+
+def _balance_snapshot(rpc: runner.JsonRpc, token: str, account: str) -> dict[str, str]:
+    block = rpc.block("latest")
+    number = _quantity(block["number"])
+    return {
+        "account": account,
+        "asset": token,
+        "balance": str(_balance(rpc, token, account, number)),
+        "blockHash": block["hash"].lower(),
+        "blockNumber": str(number),
+    }
 
 
 def _block_timestamp(rpc: runner.JsonRpc, number: str | int) -> int:
@@ -993,20 +1108,43 @@ def _attempt_ledger_valid(
     expected = _expected_attempts(mode, stack, submissions)
     required = {
         "actor", "blockHash", "blockNumber", "blockTimestamp", "dataKeccak256", "gasCostWei",
-        "gasUsed", "kind", "sequence", "status", "target", "transactionHash", "valueWei",
+        "effectiveGasPriceWei", "gasUsed", "kind", "receipt", "sequence", "status", "target",
+        "transaction", "transactionHash", "valueWei",
     }
     if not isinstance(ledger, list) or len(ledger) != len(expected):
         return False
     hashes: set[str] = set()
     last_block = last_timestamp = -1
     block_facts: dict[str, tuple[str, str]] = {}
+    block_transaction_counts: dict[str, int] = {}
+    actor_nonces = {role: 0 for role in ACTOR_ADDRESSES}
+    transaction_fields = {
+        "blockHash", "blockNumber", "from", "gasLimit", "hash", "input", "nonce", "to",
+        "transactionIndex", "type", "valueWei",
+    }
+    receipt_fields = {
+        "blockHash", "blockNumber", "contractAddress", "effectiveGasPriceWei", "gasUsed", "logs",
+        "status", "transactionHash", "transactionIndex",
+    }
+    log_fields = {
+        "address", "blockHash", "blockNumber", "data", "logIndex", "removed", "topics",
+        "transactionHash", "transactionIndex",
+    }
     for index, (actual, wanted) in enumerate(zip(ledger, expected), 1):
         expected_fields = required | ({"proposalId"} if "proposalId" in wanted else set())
         if not isinstance(actual, dict) or set(actual) != expected_fields or actual["sequence"] != str(index):
             return False
         if any(actual.get(key) != value for key, value in wanted.items()):
             return False
-        if not re.fullmatch(r"0x[0-9a-f]{64}", actual["transactionHash"]):
+        transaction, receipt = actual["transaction"], actual["receipt"]
+        if (
+            not isinstance(transaction, dict)
+            or set(transaction) != transaction_fields
+            or not isinstance(receipt, dict)
+            or set(receipt) != receipt_fields
+            or not re.fullmatch(r"0x[0-9a-f]{64}", actual["transactionHash"])
+            or not re.fullmatch(r"0x[0-9a-f]{64}", actual["dataKeccak256"])
+        ):
             return False
         if actual["transactionHash"] in hashes or not re.fullmatch(r"0x[0-9a-f]{64}", actual["blockHash"]):
             return False
@@ -1015,18 +1153,168 @@ def _attempt_ledger_valid(
             block = int(actual["blockNumber"])
             timestamp = int(actual["blockTimestamp"])
             gas = int(actual["gasUsed"])
+            price = int(actual["effectiveGasPriceWei"])
             cost = int(actual["gasCostWei"])
-            int(actual["valueWei"])
+            value = int(actual["valueWei"])
+            gas_limit = int(transaction["gasLimit"])
+            nonce = int(transaction["nonce"])
+            transaction_index = int(transaction["transactionIndex"])
+            int(transaction["type"])
         except (TypeError, ValueError):
             return False
-        if block < last_block or timestamp < last_timestamp or gas <= 0 or cost < 0:
+        deploy = actual["kind"].startswith("setup:deploy:")
+        expected_to = None if deploy else actual["target"]
+        expected_contract = actual["target"] if deploy else None
+        if (
+            block < last_block
+            or timestamp < last_timestamp
+            or gas <= 0
+            or price < 0
+            or cost != gas * price
+            or gas_limit < gas
+            or nonce != actor_nonces[actual["actor"]]
+            or transaction["from"] != ACTOR_ADDRESSES[actual["actor"]]
+            or transaction["to"] != expected_to
+            or transaction["valueWei"] != str(value)
+            or transaction["hash"] != actual["transactionHash"]
+            or transaction["blockHash"] != actual["blockHash"]
+            or transaction["blockNumber"] != actual["blockNumber"]
+            or transaction["input"] == "0x"
+            or documents.keccak256(bytes.fromhex(transaction["input"][2:])) != actual["dataKeccak256"]
+            or receipt["transactionHash"] != actual["transactionHash"]
+            or receipt["blockHash"] != actual["blockHash"]
+            or receipt["blockNumber"] != actual["blockNumber"]
+            or receipt["transactionIndex"] != transaction["transactionIndex"]
+            or receipt["transactionIndex"] != str(transaction_index)
+            or receipt["contractAddress"] != expected_contract
+            or receipt["effectiveGasPriceWei"] != actual["effectiveGasPriceWei"]
+            or receipt["gasUsed"] != actual["gasUsed"]
+            or receipt["status"] != actual["status"]
+            or not isinstance(receipt["logs"], list)
+            or transaction_index != block_transaction_counts.get(actual["blockNumber"], 0)
+        ):
             return False
+        block_transaction_counts[actual["blockNumber"]] = transaction_index + 1
+        actor_nonces[actual["actor"]] += 1
+        last_log_index = -1
+        for log in receipt["logs"]:
+            if not isinstance(log, dict) or set(log) != log_fields:
+                return False
+            try:
+                log_index = int(log["logIndex"])
+            except (TypeError, ValueError):
+                return False
+            if (
+                log_index <= last_log_index
+                or log["removed"] is not False
+                or not re.fullmatch(r"0x[0-9a-f]{40}", log["address"])
+                or not re.fullmatch(r"0x(?:[0-9a-f]{2})*", log["data"])
+                or not isinstance(log["topics"], list)
+                or any(not re.fullmatch(r"0x[0-9a-f]{64}", topic) for topic in log["topics"])
+                or log["blockHash"] != actual["blockHash"]
+                or log["blockNumber"] != actual["blockNumber"]
+                or log["transactionHash"] != actual["transactionHash"]
+                or log["transactionIndex"] != transaction["transactionIndex"]
+            ):
+                return False
+            last_log_index = log_index
         fact = (actual["blockHash"], actual["blockTimestamp"])
         if actual["blockNumber"] in block_facts and block_facts[actual["blockNumber"]] != fact:
             return False
         block_facts[actual["blockNumber"]] = fact
         last_block, last_timestamp = block, timestamp
     return True
+
+
+def _controls_valid(value: dict[str, Any]) -> bool:
+    ledger = value.get("attemptLedger")
+    stack = value.get("stack", {})
+    if not isinstance(ledger, list):
+        return False
+    try:
+        block = int(stack["startBlock"])
+        timestamp = int(stack["startTimestamp"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    expected: list[dict[str, Any]] = [
+        {"after": "0", "before": "1", "method": "evm_setIntervalMining", "purpose": "replace wall-clock interval mining with explicit one-second timestamps"},
+        {"after": True, "before": False, "method": "anvil_setAutomine", "purpose": "mine each normal transaction at its explicit next-block timestamp"},
+    ]
+
+    def set_next(seconds: int, purpose: str, sequences: Sequence[int] = ()) -> None:
+        nonlocal timestamp
+        expected.append(
+            {
+                "beforeBlock": str(block),
+                "beforeTimestamp": str(timestamp),
+                "method": "evm_setNextBlockTimestamp",
+                "nextTimestamp": str(timestamp + seconds),
+                "purpose": purpose,
+                "transactionSequences": [str(value) for value in sequences],
+            }
+        )
+        timestamp += seconds
+
+    def mine(seconds: int, purpose: str) -> None:
+        nonlocal block
+        before_timestamp = timestamp
+        set_next(seconds, "set timestamp to " + purpose)
+        expected.append(
+            {
+                "afterBlock": str(block + 1),
+                "afterTimestamp": str(timestamp),
+                "beforeBlock": str(block),
+                "beforeTimestamp": str(before_timestamp),
+                "method": "evm_mine",
+                "purpose": purpose,
+            }
+        )
+        block += 1
+
+    index = 0
+    while index < len(ledger):
+        sequence = index + 1
+        if sequence == 10:
+            mine(1, "commit Anvil storage overrides")
+        if sequence == 52:
+            mine(11, "advance arbitration timeout")
+        if sequence == 60:
+            mine(1, "capture consecutive finalized-lineage snapshot")
+        if sequence == 61:
+            mine(86_400, "advance treasury execution grace")
+        attempt = ledger[index]
+        if sequence == 58:
+            expected.append(
+                {"after": False, "before": True, "method": "anvil_setAutomine", "purpose": "place both A-T3 queue attempts in one FIFO-ordered block"}
+            )
+            set_next(1, "set timestamp for same-block A-T3 queue race", (58, 59))
+            expected.append(
+                {
+                    "afterBlock": str(block + 1),
+                    "afterTimestamp": str(timestamp),
+                    "beforeBlock": str(block),
+                    "beforeTimestamp": str(timestamp - 1),
+                    "method": "evm_mine",
+                    "purpose": "mine same-block A-T3 queue race",
+                }
+            )
+            block += 1
+            expected.append(
+                {"after": True, "before": False, "method": "anvil_setAutomine", "purpose": "restore normal deterministic transaction mining after the race"}
+            )
+            if any(
+                item["blockNumber"] != str(block) or item["blockTimestamp"] != str(timestamp)
+                for item in ledger[index : index + 2]
+            ):
+                return False
+            index += 2
+            continue
+        set_next(1, "set timestamp for " + attempt["kind"], (sequence,))
+        block += 1
+        if attempt["blockNumber"] != str(block) or attempt["blockTimestamp"] != str(timestamp):
+            return False
+        index += 1
+    return value.get("anvilControls") == expected
 
 
 def _state_mutations_valid(value: dict[str, Any]) -> bool:
@@ -1076,24 +1364,72 @@ def _state_mutations_valid(value: dict[str, Any]) -> bool:
             or item.get("before") != "0x" + "00" * 32
         ):
             return False
-    return value.get("anvilControls") == [
-        {"after": "0", "before": "1", "method": "evm_setIntervalMining", "purpose": "replace wall-clock interval mining with explicit one-second timestamps"},
-        {"after": True, "before": False, "method": "anvil_setAutomine", "purpose": "mine each normal transaction at its explicit next-block timestamp"},
-        {"after": False, "before": True, "method": "anvil_setAutomine", "purpose": "place both A-T3 queue attempts in one FIFO-ordered block"},
-        {"after": True, "before": False, "method": "anvil_setAutomine", "purpose": "restore normal deterministic transaction mining after the race"},
+    return _controls_valid(value)
+
+
+def _bound_balance_proof(
+    proof: dict[str, Any],
+    attempt: dict[str, Any],
+    submission: dict[str, Any],
+    stack: dict[str, Any],
+) -> dict[str, str]:
+    proposal_topic = "0x" + int(submission["proposalId"]).to_bytes(32, "big").hex()
+    asset_topic = "0x" + bytes(12).hex() + submission["payment"]["asset"][2:]
+    recipient_topic = "0x" + bytes(12).hex() + submission["payment"]["recipient"][2:]
+    amount_data = "0x" + int(submission["payment"]["amount"]).to_bytes(32, "big").hex()
+    logs = [
+        log for log in attempt["receipt"]["logs"]
+        if log["address"] == stack["vault"]
+        and log["topics"] == [runner.TOPICS["executed"], proposal_topic, asset_topic, recipient_topic]
+        and log["data"] == amount_data
     ]
+    if len(logs) != 1:
+        raise TournamentError("paid attempt lacks one exact recorded execution log")
+    return {
+        "afterBlock": attempt["blockNumber"],
+        "amount": submission["payment"]["amount"],
+        "asset": submission["payment"]["asset"],
+        "beforeBlock": str(int(attempt["blockNumber"]) - 1),
+        "executionBlockHash": attempt["blockHash"],
+        "executionLogIndex": logs[0]["logIndex"],
+        "executionTransactionHash": attempt["transactionHash"],
+        "executor": stack["executor"],
+        "executorAfter": str(proof["executorAfter"]),
+        "executorBefore": str(proof["executorBefore"]),
+        "proposalId": submission["proposalId"],
+        "recipient": submission["payment"]["recipient"],
+        "recipientAfter": str(proof["recipientAfter"]),
+        "recipientBefore": str(proof["recipientBefore"]),
+    }
 
 
-def _balance_proofs_valid(proofs: Any, submissions: dict[str, dict[str, Any]]) -> bool:
+def _balance_proofs_valid(
+    proofs: Any,
+    submissions: dict[str, dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    stack: dict[str, Any],
+) -> bool:
     if not isinstance(proofs, dict) or set(proofs) != set(PAID_IDS):
         return False
+    attempts = {item["kind"]: item for item in ledger if item["kind"] != "queue-race:A-T3"}
     for submission_id, proof in proofs.items():
         if not isinstance(proof, dict) or set(proof) != {
-            "beforeBlock", "afterBlock", "executorBefore", "executorAfter", "recipientBefore", "recipientAfter"
+            "afterBlock", "amount", "asset", "beforeBlock", "executionBlockHash", "executionLogIndex",
+            "executionTransactionHash", "executor", "executorAfter", "executorBefore", "proposalId",
+            "recipient", "recipientAfter", "recipientBefore",
         }:
             return False
+        submission = submissions[submission_id]
+        attempt = attempts.get("execute:" + submission_id)
+        if attempt is None:
+            return False
         try:
-            amount = int(submissions[submission_id]["payment"]["amount"])
+            if proof != _bound_balance_proof(proof, attempt, submission, stack):
+                return False
+        except TournamentError:
+            return False
+        try:
+            amount = int(submission["payment"]["amount"])
             before_block, after_block = int(proof["beforeBlock"]), int(proof["afterBlock"])
             executor_before, executor_after = int(proof["executorBefore"]), int(proof["executorAfter"])
             recipient_before, recipient_after = int(proof["recipientBefore"]), int(proof["recipientAfter"])
@@ -1101,9 +1437,50 @@ def _balance_proofs_valid(proofs: Any, submissions: dict[str, dict[str, Any]]) -
             return False
         if (
             after_block != before_block + 1
+            or proof["amount"] != submission["payment"]["amount"]
+            or proof["asset"] != submission["payment"]["asset"]
+            or proof["recipient"] != submission["payment"]["recipient"]
+            or proof["proposalId"] != submission["proposalId"]
+            or proof["executor"] != stack["executor"]
             or executor_before - executor_after != amount
             or recipient_after - recipient_before != amount
             or executor_before + recipient_before != executor_after + recipient_after
+        ):
+            return False
+    return True
+
+
+def _rejected_reconciliation_valid(
+    before: Any,
+    after: Any,
+    submissions: dict[str, dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    stack: dict[str, Any],
+) -> bool:
+    if not isinstance(before, dict) or not isinstance(after, dict) or set(before) != set(REJECTED_IDS) or set(after) != set(REJECTED_IDS):
+        return False
+    attempts = {item["kind"]: item for item in ledger if item["kind"] != "queue-race:A-T3"}
+    before_anchor, after_anchor = attempts["timeout:C-T3"], attempts["execute:C-T3"]
+    fields = {"account", "asset", "balance", "blockHash", "blockNumber"}
+    for submission_id in REJECTED_IDS:
+        recipient = submissions[submission_id]["payment"]["recipient"]
+        if (
+            set(before[submission_id]) != fields
+            or set(after[submission_id]) != fields
+            or before[submission_id] != {
+                "account": recipient,
+                "asset": stack["asset"],
+                "balance": "0",
+                "blockHash": before_anchor["blockHash"],
+                "blockNumber": before_anchor["blockNumber"],
+            }
+            or after[submission_id] != {
+                "account": recipient,
+                "asset": stack["asset"],
+                "balance": "0",
+                "blockHash": after_anchor["blockHash"],
+                "blockNumber": after_anchor["blockNumber"],
+            }
         ):
             return False
     return True
@@ -1114,6 +1491,7 @@ def _bond_reconciliation_valid(
     submissions: dict[str, dict[str, Any]],
     evaluation_fifo: list[dict[str, Any]],
     min_activation_bond: int,
+    mode: str,
 ) -> bool:
     if not isinstance(bonds, dict) or set(bonds) != {
         "actorBefore", "actorAfter", "arbitrationBalance", "withdrawable"
@@ -1147,7 +1525,8 @@ def _bond_reconciliation_valid(
     except (TypeError, ValueError):
         return False
     return (
-        all(before[actor] - after[actor] == contributions[actor] for actor in actors)
+        all(before[actor] == (10**17 if mode == "sepolia-fork" else 1000) for actor in actors)
+        and all(before[actor] - after[actor] == contributions[actor] for actor in actors)
         and withdrawable == payouts
         and arbitration == sum(contributions.values()) == sum(payouts.values())
     )
@@ -1294,7 +1673,7 @@ def _run_tournament(
         if submission_id == "A-T2":
             restart.append(_state_pin("evaluated", url, submission))
 
-    _mine(rpc, 11)
+    _mine(rpc, recorder, 11, "advance arbitration timeout")
     for submission_id in TIMEOUT_IDS:
         submission = by_id[submission_id]
         recorder.send(
@@ -1312,7 +1691,9 @@ def _run_tournament(
         raise TournamentError("bond balances do not conserve exactly")
 
     rejected_before = {
-        submission_id: _balance(rpc, stack["asset"], by_id[submission_id]["payment"]["recipient"])
+        submission_id: _balance_snapshot(
+            rpc, stack["asset"], by_id[submission_id]["payment"]["recipient"]
+        )
         for submission_id in ("B-T2", "C-T1")
     }
     for submission_id in ("A-T1", "A-T2", "C-T3"):
@@ -1322,7 +1703,7 @@ def _run_tournament(
     race = _race_queue(rpc, recorder, by_id["A-T3"])
 
     lineage_a = LatestRpc(url).finalized_block()
-    _mine(rpc)
+    _mine(rpc, recorder, 1, "capture consecutive finalized-lineage snapshot")
     lineage_b = LatestRpc(url).finalized_block()
     if lineage_b["parentHash"].lower() != lineage_a["hash"].lower():
         raise TournamentError("consecutive finalized-lineage snapshots are discontinuous")
@@ -1347,14 +1728,16 @@ def _run_tournament(
     executor_after_initial = _balance(rpc, stack["asset"], stack["executor"])
     if executor_after_initial - executor_before_initial != 6 * ONE_MILLIWETH:
         raise TournamentError("initial executor funding delta drifted")
-    _mine(rpc, 86_400)
+    _mine(rpc, recorder, 86_400, "advance treasury execution grace")
     balance_proofs: dict[str, Any] = {}
     for submission_id in ("A-T1", "A-T2", "A-T3"):
         _tick(url, recorder, by_id[submission_id], "execute")
         state = _fresh_state(url, by_id[submission_id])
         if state["lifecycle"] != "PAID":
             raise TournamentError(submission_id + " did not reach PAID")
-        balance_proofs[submission_id] = state["views"]["balanceProof"]
+        balance_proofs[submission_id] = _bound_balance_proof(
+            state["views"]["balanceProof"], recorder.attempts[-1], by_id[submission_id], stack
+        )
         if submission_id == "A-T2":
             restart.append(_state_pin("paid", url, by_id[submission_id]))
 
@@ -1389,16 +1772,20 @@ def _run_tournament(
     c3_state = _fresh_state(url, c3)
     if c3_state["lifecycle"] != "PAID" or _balance(rpc, stack["asset"], stack["executor"]) != 0:
         raise TournamentError("C-T3 retry did not exactly consume the top-up")
-    balance_proofs["C-T3"] = c3_state["views"]["balanceProof"]
+    balance_proofs["C-T3"] = _bound_balance_proof(
+        c3_state["views"]["balanceProof"], recorder.attempts[-1], c3, stack
+    )
     funder_after = _balance(rpc, stack["asset"], ACTOR_ADDRESSES["steward"])
     if funder_before - funder_after != 12 * ONE_MILLIWETH:
         raise TournamentError("steward funding reconciliation drifted")
 
     rejected_after = {
-        submission_id: _balance(rpc, stack["asset"], by_id[submission_id]["payment"]["recipient"])
+        submission_id: _balance_snapshot(
+            rpc, stack["asset"], by_id[submission_id]["payment"]["recipient"]
+        )
         for submission_id in ("B-T2", "C-T1")
     }
-    if rejected_before != rejected_after:
+    if any(rejected_before[key]["balance"] != rejected_after[key]["balance"] for key in REJECTED_IDS):
         raise TournamentError("a rejected proposal moved treasury value")
     execution_attempts = [item for item in recorder.attempts if item["kind"].startswith("execute:")]
     paid = [item for item in execution_attempts if item["status"] == "1"]
@@ -1432,8 +1819,8 @@ def _run_tournament(
             "arbitrationBalance": str(arbitration_balance),
             "withdrawable": {key: str(value) for key, value in withdrawable.items()},
         },
-        "rejectedRecipientBefore": {key: str(value) for key, value in rejected_before.items()},
-        "rejectedRecipientAfter": {key: str(value) for key, value in rejected_after.items()},
+        "rejectedRecipientBefore": rejected_before,
+        "rejectedRecipientAfter": rejected_after,
     }
     funding = {
         "assetProvenance": "canonical-WETH deposit on pinned fork" if mode == "sepolia-fork" else "valueless local FAOSiteToken",
@@ -1465,6 +1852,7 @@ def _run_tournament(
         "miningClock": "one-second next-block timestamps; wall-clock interval disabled immediately after genesis",
         "pins": {
             "sepoliaForkBlock": str(SEPOLIA_FORK_BLOCK), "sepoliaForkBlockHash": SEPOLIA_FORK_HASH,
+            "sepoliaForkTimestamp": str(SEPOLIA_FORK_TIMESTAMP),
             "selectionFinalizedHead": "11261302",
             "selectionRule": "finalized head minus 64, rounded down to a multiple of 1000",
             "canonicalWeth": SEPOLIA_WETH, "canonicalWethRuntimeKeccak256": SEPOLIA_WETH_RUNTIME_HASH,
@@ -1474,6 +1862,7 @@ def _run_tournament(
             "chainId": str(stack["chainId"]), "forkBlock": str(stack["forkBlock"]),
             "forkBlockHash": stack["forkBlockHash"], "observationBlock": str(stack["observationBlock"]),
             "startBlock": str(stack["startBlock"]),
+            "startTimestamp": str(stack["startTimestamp"]),
             "asset": stack["asset"], "minActivationBond": str(stack["minActivationBond"]),
             **{name: stack[name] for name in ("index", "gateway", "arbitration", "vault", "executor")},
             "runtimeCodeKeccak256": stack["runtimeCodeKeccak256"],
@@ -1517,11 +1906,24 @@ def _run_tournament(
         "counts": {},
         "metrics": {},
         "publicBroadcasts": 0,
-        "observedMetadata": {"wallClockExcluded": True, "localPortExcluded": True, "processIdExcluded": True},
+        "recordedTranscriptSha256": "",
+        "observedMetadata": {
+            "localPortExcluded": True,
+            "processIdExcluded": True,
+            "rpcTranscriptAuthentication": "internally cross-checked and source-pinned; not an external cryptographic attestation",
+            "wallClockExcluded": True,
+        },
         "claims": dict(FALSE_CLAIMS),
     }
     evidence["counts"] = _derived_counts(evidence)
     evidence["metrics"] = _derived_metrics(evidence, by_id)
+    evidence["recordedTranscriptSha256"] = _recorded_transcript_sha256(evidence)
+    if (
+        mode == "sepolia-fork"
+        and int(PINNED_FORK_TRANSCRIPT_SHA256, 16) != 0
+        and evidence["recordedTranscriptSha256"] != PINNED_FORK_TRANSCRIPT_SHA256
+    ):
+        raise TournamentError("pinned fork transcript drifted")
     gate_conditions = _base_gate_conditions(evidence, submissions, grader)
     evidence["gates"] = [
         {"id": gate_id, "status": "pass" if gate_conditions[gate_id] else "fail"}
@@ -1604,6 +2006,14 @@ def _deterministic_tournament_sha256(value: dict[str, Any]) -> str:
     return "0x" + hashlib.sha256(runner.canonical_json(payload)).hexdigest()
 
 
+def _recorded_transcript_sha256(value: dict[str, Any]) -> str:
+    fields = (
+        "stack", "funding", "tasks", "evaluationFifo", "attemptLedger", "anvilControls",
+        "anvilStateMutations", "drills", "reconciliation", "counts", "metrics",
+    )
+    return "0x" + hashlib.sha256(runner.canonical_json({field: value[field] for field in fields})).hexdigest()
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise TournamentError(message)
@@ -1617,7 +2027,7 @@ def _decimal(value: Any, label: str) -> int:
 def _stack_from_evidence(value: dict[str, Any]) -> dict[str, Any]:
     stack = value.get("stack")
     expected_fields = {
-        "chainId", "startBlock", "forkBlock", "forkBlockHash", "observationBlock", "asset",
+        "chainId", "startBlock", "startTimestamp", "forkBlock", "forkBlockHash", "observationBlock", "asset",
         "minActivationBond", "index", "gateway", "arbitration", "vault", "executor", "runtimeCodeKeccak256",
     }
     _require(isinstance(stack, dict) and set(stack) == expected_fields, "P2a stack schema drifted")
@@ -1636,11 +2046,12 @@ def _stack_from_evidence(value: dict[str, Any]) -> dict[str, Any]:
         "P2a runtime hashes are incomplete, malformed or zero",
     )
     result = dict(stack)
-    for field in ("chainId", "startBlock", "forkBlock", "observationBlock", "minActivationBond"):
+    for field in ("chainId", "startBlock", "startTimestamp", "forkBlock", "observationBlock", "minActivationBond"):
         result[field] = _decimal(stack[field], "stack." + field)
     _require(
         result["chainId"] == SEPOLIA_CHAIN_ID
         and result["startBlock"] == SEPOLIA_FORK_BLOCK
+        and result["startTimestamp"] == SEPOLIA_FORK_TIMESTAMP
         and result["forkBlock"] == SEPOLIA_FORK_BLOCK
         and result["forkBlockHash"] == SEPOLIA_FORK_HASH
         and result["asset"] == SEPOLIA_WETH
@@ -1787,10 +2198,22 @@ def _base_gate_conditions(
     return {
         "exact-documents-parentage": value["submissions"] == _reported_submissions(configs, graders),
         "six-bindings": len({item["proposalId"] for item in value["submissions"]}) == len(SUBMISSION_FACTS),
-        "four-log-balance-payments": _balance_proofs_valid(reconciliation["balanceProofs"], by_id),
-        "rejected-no-movement": reconciliation["rejectedRecipientBefore"] == reconciliation["rejectedRecipientAfter"],
+        "four-recorded-receipt-log-balance-payments": _balance_proofs_valid(
+            reconciliation["balanceProofs"], by_id, value["attemptLedger"], value["stack"]
+        ),
+        "rejected-no-movement": _rejected_reconciliation_valid(
+            reconciliation["rejectedRecipientBefore"],
+            reconciliation["rejectedRecipientAfter"],
+            by_id,
+            value["attemptLedger"],
+            value["stack"],
+        ),
         "actor-bond-treasury-conservation": _bond_reconciliation_valid(
-            reconciliation["bonds"], by_id, value["evaluationFifo"], int(value["stack"]["minActivationBond"])
+            reconciliation["bonds"],
+            by_id,
+            value["evaluationFifo"],
+            int(value["stack"]["minActivationBond"]),
+            value["mode"],
         ),
         "complete-attempt-ledger": _attempt_ledger_valid(value["attemptLedger"], value["mode"], value["stack"], configs)
         and _state_mutations_valid(value),
@@ -1870,7 +2293,7 @@ def _verify_semantics(value: dict[str, Any], *, verify_repository: bool = True) 
         "pins", "stack", "actors", "funding", "tasks", "submissions", "artifactBlobs", "graderPolicy",
         "evaluationFifo", "roundRobinTicks", "attemptLedger", "anvilControls", "anvilStateMutations",
         "drills", "reconciliation", "counts", "metrics", "gates", "publicBroadcasts", "observedMetadata",
-        "claims", "deterministicTournamentSha256",
+        "claims", "deterministicTournamentSha256", "recordedTranscriptSha256",
     }
     _require(set(value) == top_fields, "P2a top-level evidence schema drifted")
     _require(value["kind"] == "fao.agentwork.p2a-evidence" and value["v"] == "1", "P2a kind/version drifted")
@@ -1885,6 +2308,7 @@ def _verify_semantics(value: dict[str, Any], *, verify_repository: bool = True) 
         value["pins"] == {
             "sepoliaForkBlock": str(SEPOLIA_FORK_BLOCK),
             "sepoliaForkBlockHash": SEPOLIA_FORK_HASH,
+            "sepoliaForkTimestamp": str(SEPOLIA_FORK_TIMESTAMP),
             "selectionFinalizedHead": "11261302",
             "selectionRule": "finalized head minus 64, rounded down to a multiple of 1000",
             "canonicalWeth": SEPOLIA_WETH,
@@ -1962,11 +2386,17 @@ def _verify_semantics(value: dict[str, Any], *, verify_repository: bool = True) 
     _require(
         isinstance(reconciliation, dict)
         and set(reconciliation) == {"balanceProofs", "bonds", "rejectedRecipientBefore", "rejectedRecipientAfter"}
-        and _balance_proofs_valid(reconciliation["balanceProofs"], by_id)
-        and _bond_reconciliation_valid(reconciliation["bonds"], by_id, fifo, stack["minActivationBond"])
-        and set(reconciliation["rejectedRecipientBefore"]) == set(REJECTED_IDS)
-        and reconciliation["rejectedRecipientBefore"] == reconciliation["rejectedRecipientAfter"]
-        and all(_decimal(amount, "rejected recipient balance") >= 0 for amount in reconciliation["rejectedRecipientBefore"].values()),
+        and _balance_proofs_valid(reconciliation["balanceProofs"], by_id, ledger, stack)
+        and _bond_reconciliation_valid(
+            reconciliation["bonds"], by_id, fifo, stack["minActivationBond"], value["mode"]
+        )
+        and _rejected_reconciliation_valid(
+            reconciliation["rejectedRecipientBefore"],
+            reconciliation["rejectedRecipientAfter"],
+            by_id,
+            ledger,
+            stack,
+        ),
         "P2a payment/bond/rejected reconciliation drifted",
     )
     funding = value["funding"]
@@ -1985,6 +2415,8 @@ def _verify_semantics(value: dict[str, Any], *, verify_repository: bool = True) 
             "before": "0", "after": str(6 * ONE_MILLIWETH), "amount": str(6 * ONE_MILLIWETH),
             "transactionHash": attempts["fund-executor:topup"]["transactionHash"],
         }
+        and funding["funderBefore"] == str(10**17)
+        and funding["funderAfter"] == str(10**17 - 12 * ONE_MILLIWETH)
         and _decimal(funding["funderBefore"], "funding.funderBefore")
         - _decimal(funding["funderAfter"], "funding.funderAfter") == 12 * ONE_MILLIWETH
         and funding["treasurySpend"] == str(12 * ONE_MILLIWETH)
@@ -2039,9 +2471,20 @@ def _verify_semantics(value: dict[str, Any], *, verify_repository: bool = True) 
 
     _require(value["counts"] == _derived_counts(value), "P2a derived scenario counts drifted")
     _require(value["metrics"] == _derived_metrics(value, by_id), "P2a derived tournament metrics drifted")
+    _require(
+        value["recordedTranscriptSha256"]
+        == _recorded_transcript_sha256(value)
+        == PINNED_FORK_TRANSCRIPT_SHA256,
+        "P2a recorded fork transcript pin drifted",
+    )
     _require(value["publicBroadcasts"] == 0, "P2a public broadcast count drifted")
     _require(
-        value["observedMetadata"] == {"wallClockExcluded": True, "localPortExcluded": True, "processIdExcluded": True},
+        value["observedMetadata"] == {
+            "localPortExcluded": True,
+            "processIdExcluded": True,
+            "rpcTranscriptAuthentication": "internally cross-checked and source-pinned; not an external cryptographic attestation",
+            "wallClockExcluded": True,
+        },
         "P2a deterministic exclusion disclosure drifted",
     )
     _require(value["claims"] == FALSE_CLAIMS, "P2a exact false-claim schema drifted")
