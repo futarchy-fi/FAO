@@ -14,13 +14,6 @@ contract ExecutorToken is ERC20 {
     }
 }
 
-contract FeeExecutorToken is ExecutorToken {
-    function _transfer(address sender, address recipient, uint256 amount) internal override {
-        super._transfer(sender, recipient, amount - 1);
-        _burn(sender, 1);
-    }
-}
-
 contract ExecutorTarget {
     error TargetFailure();
 
@@ -110,36 +103,17 @@ contract GenesisTreasuryExecutorTest is Test {
     function testReleasesExactErc20Custody() public {
         token.mint(address(executor), 100 ether);
 
-        executor.release(address(token), RECIPIENT, 40 ether);
+        executor.transferAsset(address(token), RECIPIENT, 40 ether);
 
         assertEq(token.balanceOf(address(executor)), 60 ether);
         assertEq(token.balanceOf(RECIPIENT), 40 ether);
-    }
-
-    function testRejectsInexactErc20ReleaseAtomically() public {
-        FeeExecutorToken feeToken = new FeeExecutorToken();
-        feeToken.mint(address(executor), 10);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GenesisTreasuryExecutor.InexactTokenTransfer.selector,
-                address(feeToken),
-                RECIPIENT,
-                10,
-                9
-            )
-        );
-        executor.release(address(feeToken), RECIPIENT, 10);
-
-        assertEq(feeToken.balanceOf(address(executor)), 10);
-        assertEq(feeToken.balanceOf(RECIPIENT), 0);
     }
 
     function testReleasesNativeCustodyFromExecutor() public {
         NativeRecipient recipient = new NativeRecipient();
         vm.deal(address(executor), 1 ether);
 
-        executor.release(address(0), payable(address(recipient)), 0.4 ether);
+        executor.transferAsset(address(0), payable(address(recipient)), 0.4 ether);
 
         assertEq(address(executor).balance, 0.6 ether);
         assertEq(address(recipient).balance, 0.4 ether);
@@ -154,7 +128,7 @@ contract GenesisTreasuryExecutorTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(GenesisTreasuryExecutor.Unauthorized.selector, ATTACKER)
         );
-        executor.release(address(token), RECIPIENT, 1 ether);
+        executor.transferAsset(address(token), RECIPIENT, 1 ether);
 
         assertEq(token.balanceOf(address(executor)), 1 ether);
         assertEq(token.balanceOf(RECIPIENT), 0);

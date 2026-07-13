@@ -3,6 +3,10 @@ pragma solidity ^0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+interface IFaoTokenBurnAuthorizer {
+    function consumeTokenBurnAuthorization(address account, uint256 amount) external;
+}
+
 /// @notice Capped FAO token whose immutable genesis vault controls issuance and ragequit burns.
 contract FaoToken is ERC20 {
     error InvalidVault();
@@ -40,6 +44,7 @@ contract FaoToken is ERC20 {
     /// @dev The immutable vault burns only the ragequitting caller's tokens.
     function burnFromVault(address account, uint256 amount) external {
         if (msg.sender != vault) revert OnlyVault();
+        IFaoTokenBurnAuthorizer(vault).consumeTokenBurnAuthorization(account, amount);
         _burn(account, amount);
     }
 }

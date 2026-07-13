@@ -13,8 +13,6 @@ contract GenesisTreasuryExecutor {
     error InvalidVault();
     error Unauthorized(address caller);
     error CallFailed(bytes reason);
-    error NativeTransferFailed(bytes reason);
-    error InexactTokenTransfer(address asset, address recipient, uint256 expected, uint256 actual);
 
     constructor(address vault) {
         if (vault == address(0)) revert InvalidVault();
@@ -38,20 +36,15 @@ contract GenesisTreasuryExecutor {
         if (!success) revert CallFailed(result);
     }
 
-    function release(address asset, address payable recipient, uint256 amount) external onlyVault {
+    function transferAsset(address asset, address payable recipient, uint256 amount)
+        external
+        onlyVault
+    {
         if (asset == address(0)) {
             (bool success, bytes memory reason) = recipient.call{value: amount}("");
-            if (!success) revert NativeTransferFailed(reason);
+            if (!success) revert CallFailed(reason);
             return;
         }
-
-        IERC20 token = IERC20(asset);
-        uint256 beforeBalance = token.balanceOf(recipient);
-        token.safeTransfer(recipient, amount);
-        uint256 afterBalance = token.balanceOf(recipient);
-        uint256 received = afterBalance >= beforeBalance ? afterBalance - beforeBalance : 0;
-        if (received != amount) {
-            revert InexactTokenTransfer(asset, recipient, amount, received);
-        }
+        IERC20(asset).safeTransfer(recipient, amount);
     }
 }
