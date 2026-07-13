@@ -257,10 +257,10 @@ contract FaoGenesisDeploymentTest is Test {
         FaoGenesisDeployment receipt = _newReceipt();
         receipt.deployCore(_coreConfig(), _grants(), _coreCodes());
 
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
-            target: address(0xBEEF), value: 0, data: "", salt: bytes32(uint256(1))
+        FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+            asset: address(weth), recipient: address(0xBEEF), amount: 1, salt: bytes32(uint256(1))
         });
-        uint256 proposalId = EconGateway(receipt.proposalGateway()).proposeTreasuryAction(action);
+        uint256 proposalId = EconGateway(receipt.proposalGateway()).proposeTransfer(action);
         FutarchyArbitration arbitrationLike = FutarchyArbitration(receipt.arbitration());
         weth.mint(address(this), TREASURY_BOND * 2 + GRADUATION_THRESHOLD);
         weth.approve(address(arbitrationLike), type(uint256).max);

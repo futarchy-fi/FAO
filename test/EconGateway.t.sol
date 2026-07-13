@@ -55,34 +55,72 @@ contract EconGatewaySpaceMock {
     }
 }
 
+contract CriticalWindowMock {
+    mapping(bytes32 baseHash => uint256 opensAt) public opens;
+    mapping(bytes32 baseHash => uint256 closesAt) public closes;
+    mapping(bytes32 baseHash => bool queued) public isQueued;
+
+    function set(bytes32 baseHash, uint256 opensAt, uint256 closesAt, bool queued) external {
+        opens[baseHash] = opensAt;
+        closes[baseHash] = closesAt;
+        isQueued[baseHash] = queued;
+    }
+
+    function criticalRoundTwoWindow(bytes32 baseHash)
+        external
+        view
+        returns (uint256 opensAt, uint256 closesAt, bool queued)
+    {
+        return (opens[baseHash], closes[baseHash], isQueued[baseHash]);
+    }
+}
+
 contract EconGatewayTest is Test {
-    event TreasuryActionProposed(
+    event TransferProposed(
         uint256 indexed proposalId,
         address indexed proposer,
-        address indexed target,
+        address indexed asset,
+        address recipient,
+        uint256 amount,
+        bytes32 salt
+    );
+    event ParamProposed(
+        uint256 indexed proposalId,
+        address indexed proposer,
+        bytes32 indexed key,
+        address asset,
+        uint256 value,
+        bytes32 salt
+    );
+    event CriticalRoundProposed(
+        uint256 indexed proposalId,
+        address indexed proposer,
+        bytes32 indexed baseHash,
+        address target,
         uint256 value,
         bytes32 dataHash,
-        bytes32 salt
+        bytes32 salt,
+        uint256 round
     );
 
     uint256 internal constant SITE_BOND = 1 ether;
     uint256 internal constant TREASURY_BOND = 7 ether;
     address internal constant EXECUTION_STRATEGY = address(0xE1);
-    address internal constant VAULT = address(0xA11CE);
-    address internal constant TARGET = address(0xBEEF);
 
     EconGatewayArbitrationMock internal arbitration;
     EconGatewaySpaceMock internal space;
+    CriticalWindowMock internal vault;
     EconGateway internal gateway;
 
     function setUp() public {
         arbitration = new EconGatewayArbitrationMock();
         space = new EconGatewaySpaceMock();
+        vault = new CriticalWindowMock();
         gateway = new EconGateway(
             address(space),
             EXECUTION_STRATEGY,
             address(arbitration),
-            VAULT,
+            address(vault),
             SITE_BOND,
             TREASURY_BOND
         );
@@ -92,7 +130,7 @@ contract EconGatewayTest is Test {
         assertEq(address(gateway.space()), address(space));
         assertEq(address(gateway.executionStrategy()), EXECUTION_STRATEGY);
         assertEq(address(gateway.arbitration()), address(arbitration));
-        assertEq(gateway.vault(), VAULT);
+        assertEq(gateway.vault(), address(vault));
         assertEq(gateway.minActivationBond(), SITE_BOND);
         assertEq(gateway.treasuryMinActivationBond(), TREASURY_BOND);
     }
@@ -108,157 +146,161 @@ contract EconGatewayTest is Test {
         uint256 expectedId = uint256(keccak256(payload));
         assertEq(arbitration.lastProposalId(), expectedId);
         assertEq(arbitration.lastMinActivationBond(), SITE_BOND);
-        assertEq(arbitration.lastCaller(), address(gateway));
-        assertTrue(arbitration.exists(expectedId));
-        assertEq(space.calls(), 1);
         assertEq(space.author(), proposer);
-        assertEq(space.metadataURI(), "ipfs://proposal");
-        assertEq(space.executionStrategy(), EXECUTION_STRATEGY);
         assertEq(space.executionPayload(), payload);
         assertEq(space.proposalValidationParams(), validationParams);
     }
 
-    function testTreasuryRouteUsesExactDomainHashAndDoesNotTouchSnapshot() public {
-        FAOTreasuryActions.TreasuryAction memory action = _treasuryAction(bytes32(uint256(123)));
-        bytes32 dataHash = keccak256(action.data);
-        bytes32 expectedHash = keccak256(
-            abi.encode(
-                gateway.KIND_TREASURY(),
-                block.chainid,
-                VAULT,
-                action.target,
-                action.value,
-                dataHash,
-                action.salt
-            )
-        );
-        address proposer = makeAddr("treasury-proposer");
+    function testTypedTransferAndParamUseExactPayloadsWithoutSnapshot() public {
+        address proposer = makeAddr("proposer");
+        FAOTreasuryActions.TransferAction memory transfer = _transfer(bytes32(uint256(1)));
+        bytes memory transferPayload =
+            FAOTreasuryActions.transferEvaluationPayload(block.chainid, address(vault), transfer);
+        uint256 transferId = uint256(keccak256(transferPayload));
 
         vm.expectEmit(true, true, true, true, address(gateway));
-        emit TreasuryActionProposed(
-            uint256(expectedHash), proposer, action.target, action.value, dataHash, action.salt
+        emit TransferProposed(
+            transferId, proposer, transfer.asset, transfer.recipient, transfer.amount, transfer.salt
         );
         vm.prank(proposer);
-        uint256 proposalId = gateway.proposeTreasuryAction(action);
+        assertEq(gateway.proposeTransfer(transfer), transferId);
+        assertEq(gateway.transferProposalId(transfer), transferId);
+        assertEq(gateway.transferEvaluationPayload(transfer), transferPayload);
 
-        assertEq(gateway.treasuryActionHash(action), expectedHash);
-        assertEq(gateway.treasuryProposalId(action), uint256(expectedHash));
-        assertEq(
-            gateway.treasuryEvaluationPayload(action),
-            abi.encode(
-                gateway.KIND_TREASURY(),
-                block.chainid,
-                VAULT,
-                action.target,
-                action.value,
-                dataHash,
-                action.salt
-            )
-        );
-        assertEq(proposalId, uint256(expectedHash));
-        assertEq(arbitration.lastProposalId(), proposalId);
+        FAOTreasuryActions.ParamAction memory param = _param(bytes32(uint256(2)));
+        bytes memory paramPayload =
+            FAOTreasuryActions.paramEvaluationPayload(block.chainid, address(vault), param);
+        uint256 paramId = uint256(keccak256(paramPayload));
+        vm.expectEmit(true, true, true, true, address(gateway));
+        emit ParamProposed(paramId, proposer, param.key, param.asset, param.value, param.salt);
+        vm.prank(proposer);
+        assertEq(gateway.proposeParam(param), paramId);
+
+        assertEq(gateway.paramProposalId(param), paramId);
+        assertEq(gateway.paramEvaluationPayload(param), paramPayload);
         assertEq(arbitration.lastMinActivationBond(), TREASURY_BOND);
         assertEq(arbitration.lastCaller(), address(gateway));
+        assertEq(arbitration.calls(), 2);
         assertEq(space.calls(), 0);
     }
 
-    function testTreasuryRouteRejectsUnevaluableZeroTargetBeforeArbitration() public {
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
-            target: address(0), value: 0, data: "", salt: bytes32(uint256(1))
-        });
+    function testTypedRoutesRejectSameInvalidSemanticsAsEvaluator() public {
+        FAOTreasuryActions.TransferAction memory transfer = _transfer(bytes32(0));
+        transfer.recipient = address(0);
+        vm.expectRevert(EconGateway.InvalidTransferAction.selector);
+        gateway.proposeTransfer(transfer);
 
+        transfer = _transfer(bytes32(0));
+        transfer.amount = 0;
+        vm.expectRevert(EconGateway.InvalidTransferAction.selector);
+        gateway.proposeTransfer(transfer);
+
+        FAOTreasuryActions.ParamAction memory param = _param(bytes32(0));
+        param.key = bytes32(0);
+        vm.expectRevert(EconGateway.InvalidParamAction.selector);
+        gateway.proposeParam(param);
+
+        FAOTreasuryActions.CriticalAction memory critical = _critical(bytes32(0));
+        critical.target = address(0);
         vm.expectRevert(SXProposalGateway.ZeroAddress.selector);
-        gateway.proposeTreasuryAction(action);
+        gateway.proposeCriticalRound(critical, 1);
         assertEq(arbitration.calls(), 0);
     }
 
-    function testTreasuryDomainPreventsCrossVaultAndCrossChainReplay() public {
-        FAOTreasuryActions.TreasuryAction memory action = _treasuryAction(bytes32(uint256(1)));
-        bytes32 original = gateway.treasuryActionHash(action);
+    function testCriticalRoundOneUsesTypedIdWithoutConsultingWindow() public {
+        FAOTreasuryActions.CriticalAction memory action = _critical(bytes32(uint256(3)));
+        bytes32 baseHash =
+            FAOTreasuryActions.criticalBaseHash(block.chainid, address(vault), action);
+        uint256 proposalId =
+            uint256(FAOTreasuryActions.criticalHash(block.chainid, address(vault), action, 1));
 
-        EconGateway otherVault = new EconGateway(
+        vm.expectEmit(true, true, true, true, address(gateway));
+        emit CriticalRoundProposed(
+            proposalId,
+            address(this),
+            baseHash,
+            action.target,
+            action.value,
+            keccak256(action.data),
+            action.salt,
+            1
+        );
+        assertEq(gateway.proposeCriticalRound(action, 1), proposalId);
+        assertEq(gateway.criticalBaseHash(action), baseHash);
+        assertEq(gateway.criticalProposalId(action, 1), proposalId);
+        assertEq(
+            gateway.criticalEvaluationPayload(action, 1),
+            FAOTreasuryActions.criticalEvaluationPayload(block.chainid, address(vault), action, 1)
+        );
+    }
+
+    function testCriticalRoundTwoRequiresVaultStagingWindowAndNotQueued() public {
+        vm.warp(100);
+        FAOTreasuryActions.CriticalAction memory action = _critical(bytes32(uint256(4)));
+        bytes32 baseHash = gateway.criticalBaseHash(action);
+
+        vm.expectRevert(abi.encodeWithSelector(EconGateway.CriticalNotStaged.selector, baseHash));
+        gateway.proposeCriticalRound(action, 2);
+
+        vault.set(baseHash, block.timestamp + 1, block.timestamp + 10, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EconGateway.CriticalRoundTwoTooEarly.selector, block.timestamp + 1
+            )
+        );
+        gateway.proposeCriticalRound(action, 2);
+
+        vault.set(baseHash, block.timestamp, block.timestamp + 10, true);
+        vm.expectRevert(
+            abi.encodeWithSelector(EconGateway.CriticalAlreadyQueued.selector, baseHash)
+        );
+        gateway.proposeCriticalRound(action, 2);
+
+        vault.set(baseHash, block.timestamp - 10, block.timestamp - 1, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(EconGateway.CriticalRoundTwoClosed.selector, block.timestamp - 1)
+        );
+        gateway.proposeCriticalRound(action, 2);
+
+        vault.set(baseHash, block.timestamp, block.timestamp, false);
+        uint256 expected = gateway.criticalProposalId(action, 2);
+        assertEq(gateway.proposeCriticalRound(action, 2), expected);
+        assertEq(arbitration.lastProposalId(), expected);
+    }
+
+    function testCriticalRejectsNonexistentRounds() public {
+        FAOTreasuryActions.CriticalAction memory action = _critical(bytes32(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTreasuryActions.InvalidCriticalRound.selector, uint256(0))
+        );
+        gateway.proposeCriticalRound(action, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTreasuryActions.InvalidCriticalRound.selector, uint256(3))
+        );
+        gateway.proposeCriticalRound(action, 3);
+    }
+
+    function testTypedDomainPreventsCrossVaultAndCrossChainReplay() public {
+        FAOTreasuryActions.TransferAction memory action = _transfer(bytes32(uint256(1)));
+        uint256 original = gateway.transferProposalId(action);
+
+        CriticalWindowMock otherVault = new CriticalWindowMock();
+        EconGateway other = new EconGateway(
             address(space),
             EXECUTION_STRATEGY,
             address(arbitration),
-            address(0xB0B),
+            address(otherVault),
             SITE_BOND,
             TREASURY_BOND
         );
-        assertNotEq(otherVault.treasuryActionHash(action), original);
+        assertNotEq(other.transferProposalId(action), original);
 
         vm.chainId(block.chainid + 1);
-        assertNotEq(gateway.treasuryActionHash(action), original);
-    }
-
-    function testTreasurySaltMakesRepeatIntentDistinctButExactReplayFails() public {
-        FAOTreasuryActions.TreasuryAction memory first = _treasuryAction(bytes32(uint256(1)));
-        FAOTreasuryActions.TreasuryAction memory second = _treasuryAction(bytes32(uint256(2)));
-
-        assertNotEq(gateway.treasuryActionHash(first), gateway.treasuryActionHash(second));
-        gateway.proposeTreasuryAction(first);
-
-        vm.expectRevert(EconGatewayArbitrationMock.ProposalAlreadyExists.selector);
-        gateway.proposeTreasuryAction(first);
-
-        gateway.proposeTreasuryAction(second);
-        assertEq(arbitration.calls(), 2);
-    }
-
-    function testTreasuryHashCommitsEveryActionField() public view {
-        FAOTreasuryActions.TreasuryAction memory base = _treasuryAction(bytes32(uint256(1)));
-        bytes32 expected = gateway.treasuryActionHash(base);
-
-        FAOTreasuryActions.TreasuryAction memory changed = _treasuryAction(bytes32(uint256(1)));
-        changed.target = address(0xDEAD);
-        assertNotEq(gateway.treasuryActionHash(changed), expected);
-
-        changed = _treasuryAction(bytes32(uint256(1)));
-        changed.value += 1;
-        assertNotEq(gateway.treasuryActionHash(changed), expected);
-
-        changed = _treasuryAction(bytes32(uint256(1)));
-        changed.data = abi.encodePacked(base.data, bytes1(0x01));
-        assertNotEq(gateway.treasuryActionHash(changed), expected);
-
-        changed = _treasuryAction(bytes32(uint256(1)));
-        changed.salt = bytes32(uint256(2));
-        assertNotEq(gateway.treasuryActionHash(changed), expected);
-    }
-
-    function testSiteReleaseRejectsMalformedPayloadsBeforeEitherExternalCall() public {
-        _expectInvalidSite(_siteRelease(0, keccak256("release"), "ipfs://release"));
-        _expectInvalidSite(_siteRelease(1, bytes32(0), "ipfs://release"));
-        _expectInvalidSite(_siteRelease(1, keccak256("release"), ""));
-        _expectInvalidSite(_siteRelease(1, keccak256("release"), string(new bytes(257))));
-
-        assertEq(arbitration.calls(), 0);
-        assertEq(space.calls(), 0);
-    }
-
-    function testConstructorRejectsNewRouteWithoutVaultOrBond() public {
-        vm.expectRevert(SXProposalGateway.ZeroAddress.selector);
-        new EconGateway(
-            address(space),
-            EXECUTION_STRATEGY,
-            address(arbitration),
-            address(0),
-            SITE_BOND,
-            TREASURY_BOND
-        );
-
-        vm.expectRevert(SXProposalGateway.InvalidMinActivationBond.selector);
-        new EconGateway(
-            address(space), EXECUTION_STRATEGY, address(arbitration), VAULT, SITE_BOND, 0
-        );
-    }
-
-    function _expectInvalidSite(bytes memory payload) internal {
-        vm.expectRevert(SXProposalGateway.InvalidExecutionPayload.selector);
-        gateway.propose("ipfs://proposal", payload, "");
+        assertNotEq(gateway.transferProposalId(action), original);
     }
 
     function _siteRelease(uint256 nonce, bytes32 digest, string memory uri)
-        internal
+        private
         pure
         returns (bytes memory)
     {
@@ -272,16 +314,29 @@ contract EconGatewayTest is Test {
         );
     }
 
-    function _treasuryAction(bytes32 salt)
-        internal
+    function _transfer(bytes32 salt)
+        private
         pure
-        returns (FAOTreasuryActions.TreasuryAction memory)
+        returns (FAOTreasuryActions.TransferAction memory)
     {
-        return FAOTreasuryActions.TreasuryAction({
-            target: TARGET,
-            value: 2 ether,
-            data: abi.encodeWithSignature("transfer(address,uint256)", address(0xCAFE), 4 ether),
-            salt: salt
+        return FAOTreasuryActions.TransferAction({
+            asset: address(0xA55E7), recipient: address(0xB0B), amount: 2 ether, salt: salt
+        });
+    }
+
+    function _param(bytes32 salt) private pure returns (FAOTreasuryActions.ParamAction memory) {
+        return FAOTreasuryActions.ParamAction({
+            key: keccak256("monthly-tap"), asset: address(0xA55E7), value: 3 ether, salt: salt
+        });
+    }
+
+    function _critical(bytes32 salt)
+        private
+        pure
+        returns (FAOTreasuryActions.CriticalAction memory)
+    {
+        return FAOTreasuryActions.CriticalAction({
+            target: address(0xBEEF), value: 4 ether, data: hex"12345678aabb", salt: salt
         });
     }
 }

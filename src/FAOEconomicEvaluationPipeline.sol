@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-import {FAOTreasuryActions} from "./FAOTreasuryActions.sol";
 import {IFutarchyArbitrationEvaluator} from "./IFutarchyArbitrationEvaluator.sol";
 import {
     IFAOSiteEvaluationArbitration,
@@ -15,11 +14,30 @@ import {
 import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.sol";
 
 /// @notice Immutable bridge from either EconGateway route to the Sepolia UniV3 futarchy stack.
-/// @dev Callers provide only the payload already committed by the active arbitration id.
 contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     using Strings for uint256;
 
-    struct TreasuryEvaluation {
+    struct TransferEvaluation {
+        bytes32 kind;
+        uint256 chainId;
+        address vault;
+        address asset;
+        address recipient;
+        uint256 amount;
+        bytes32 salt;
+    }
+
+    struct ParamEvaluation {
+        bytes32 kind;
+        uint256 chainId;
+        address vault;
+        bytes32 key;
+        address asset;
+        uint256 value;
+        bytes32 salt;
+    }
+
+    struct CriticalEvaluation {
         bytes32 kind;
         uint256 chainId;
         address vault;
@@ -27,13 +45,17 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         uint256 value;
         bytes32 dataHash;
         bytes32 salt;
+        uint256 round;
     }
 
     uint256 internal constant MAX_RELEASE_URI_BYTES = 256;
-    uint256 internal constant TREASURY_PAYLOAD_BYTES = 7 * 32;
+    uint256 internal constant STANDARD_ACTION_PAYLOAD_BYTES = 7 * 32;
+    uint256 internal constant CRITICAL_ACTION_PAYLOAD_BYTES = 8 * 32;
 
     bytes32 public constant KIND_SITE_RELEASE = keccak256("FAO_SX_SITE_RELEASE_V1");
-    bytes32 public constant KIND_TREASURY = FAOTreasuryActions.KIND_TREASURY;
+    bytes32 public constant KIND_TRANSFER = keccak256("FAO_ECON_TREASURY_TRANSFER_V1");
+    bytes32 public constant KIND_PARAM = keccak256("FAO_ECON_TREASURY_PARAM_V1");
+    bytes32 public constant KIND_CRITICAL = keccak256("FAO_ECON_TREASURY_CRITICAL_V2");
 
     address public immutable arbitrationContract;
     address public immutable vault;
@@ -100,7 +122,6 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         return arbitrationContract;
     }
 
-    /// @notice Permissionlessly create the evaluation market for either active EconGateway item.
     function startEvaluation(uint256 proposalId, bytes calldata evaluationPayload) external {
         _assertActive(proposalId);
         if (futarchyProposalOf[proposalId] != address(0)) {
@@ -112,67 +133,28 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
             revert PayloadHashMismatch(proposalId, payloadHash);
         }
 
-        bytes32 firstWord;
+        bytes32 kind;
         if (evaluationPayload.length >= 32) {
             assembly ("memory-safe") {
-                firstWord := calldataload(evaluationPayload.offset)
+                kind := calldataload(evaluationPayload.offset)
             }
         }
 
         string memory marketName;
         string memory description;
-        bytes32 payloadKind;
-        bytes32 payloadCommitment;
+        bytes32 commitment;
 
-        if (firstWord == KIND_TREASURY) {
-            if (evaluationPayload.length != TREASURY_PAYLOAD_BYTES) {
-                revert InvalidTreasuryPayload();
-            }
-            TreasuryEvaluation memory action = abi.decode(evaluationPayload, (TreasuryEvaluation));
-            if (action.chainId != block.chainid) {
-                revert WrongTreasuryChain(block.chainid, action.chainId);
-            }
-            if (action.vault != vault) revert WrongTreasuryVault(vault, action.vault);
-            if (action.target == address(0)) revert InvalidTreasuryPayload();
-
-            marketName =
-                string.concat("FAO treasury action to ", Strings.toHexString(action.target));
-            description = string.concat(
-                "chain=",
-                action.chainId.toString(),
-                "; vault=",
-                Strings.toHexString(action.vault),
-                "; target=",
-                Strings.toHexString(action.target),
-                "; value=",
-                action.value.toString(),
-                "; data-hash=",
-                Strings.toHexString(uint256(action.dataHash), 32),
-                "; salt=",
-                Strings.toHexString(uint256(action.salt), 32)
-            );
-            payloadKind = KIND_TREASURY;
-            payloadCommitment = action.dataHash;
+        if (kind == KIND_TRANSFER) {
+            (marketName, description) = _transferText(evaluationPayload);
+            commitment = payloadHash;
+        } else if (kind == KIND_PARAM) {
+            (marketName, description) = _paramText(evaluationPayload);
+            commitment = payloadHash;
+        } else if (kind == KIND_CRITICAL) {
+            (marketName, description, commitment) = _criticalText(evaluationPayload);
         } else {
-            SXArbitrationExecutionStrategy.SiteRelease memory release =
-                abi.decode(evaluationPayload, (SXArbitrationExecutionStrategy.SiteRelease));
-            uint256 uriLength = bytes(release.artifactURI).length;
-            if (
-                release.nonce == 0 || release.artifactDigest == bytes32(0) || uriLength == 0
-                    || uriLength > MAX_RELEASE_URI_BYTES
-            ) revert InvalidReleasePayload();
-
-            marketName = string.concat("FAO site release #", release.nonce.toString());
-            description = string.concat(
-                "expected-current=",
-                Strings.toHexString(uint256(release.expectedCurrentDigest), 32),
-                "; artifact=",
-                Strings.toHexString(uint256(release.artifactDigest), 32),
-                "; uri=",
-                release.artifactURI
-            );
-            payloadKind = KIND_SITE_RELEASE;
-            payloadCommitment = release.artifactDigest;
+            (marketName, description, commitment) = _siteText(evaluationPayload);
+            kind = KIND_SITE_RELEASE;
         }
 
         (uint256 futarchyProposalId, address futarchyProposal) =
@@ -181,11 +163,10 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
 
         futarchyProposalOf[proposalId] = futarchyProposal;
         emit EvaluationMarketCreated(
-            proposalId, futarchyProposalId, futarchyProposal, payloadKind, payloadCommitment
+            proposalId, futarchyProposalId, futarchyProposal, kind, commitment
         );
     }
 
-    /// @notice Permissionlessly resolve the active evaluation once its fixed TWAP window ends.
     function resolve(uint256 proposalId) external returns (bool accepted) {
         _assertActive(proposalId);
 
@@ -208,8 +189,137 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
 
         accepted = yesNumerator > noNumerator;
         IFAOSiteEvaluationArbitration(arbitrationContract).resolveActiveEvaluation(accepted);
-
         emit EvaluationResolved(proposalId, futarchyProposal, conditionId, accepted);
+    }
+
+    function _transferText(bytes calldata payload)
+        private
+        view
+        returns (string memory name, string memory description)
+    {
+        if (payload.length != STANDARD_ACTION_PAYLOAD_BYTES) revert InvalidTreasuryPayload();
+        TransferEvaluation memory action = abi.decode(payload, (TransferEvaluation));
+        _checkDomain(action.chainId, action.vault);
+        if (action.recipient == address(0) || action.amount == 0) revert InvalidTreasuryPayload();
+
+        name = string.concat("FAO treasury transfer to ", Strings.toHexString(action.recipient));
+        description = string.concat(
+            "chain=",
+            action.chainId.toString(),
+            "; vault=",
+            Strings.toHexString(action.vault),
+            "; asset=",
+            Strings.toHexString(action.asset),
+            "; recipient=",
+            Strings.toHexString(action.recipient),
+            "; amount=",
+            action.amount.toString(),
+            "; salt=",
+            Strings.toHexString(uint256(action.salt), 32)
+        );
+    }
+
+    function _paramText(bytes calldata payload)
+        private
+        view
+        returns (string memory name, string memory description)
+    {
+        if (payload.length != STANDARD_ACTION_PAYLOAD_BYTES) revert InvalidTreasuryPayload();
+        ParamEvaluation memory action = abi.decode(payload, (ParamEvaluation));
+        _checkDomain(action.chainId, action.vault);
+        if (action.key == bytes32(0)) revert InvalidTreasuryPayload();
+
+        name =
+            string.concat("FAO treasury parameter ", Strings.toHexString(uint256(action.key), 32));
+        description = string.concat(
+            "chain=",
+            action.chainId.toString(),
+            "; vault=",
+            Strings.toHexString(action.vault),
+            "; key=",
+            Strings.toHexString(uint256(action.key), 32),
+            "; asset=",
+            Strings.toHexString(action.asset),
+            "; value=",
+            action.value.toString(),
+            "; salt=",
+            Strings.toHexString(uint256(action.salt), 32)
+        );
+    }
+
+    function _criticalText(bytes calldata payload)
+        private
+        view
+        returns (string memory name, string memory description, bytes32 baseHash)
+    {
+        if (payload.length != CRITICAL_ACTION_PAYLOAD_BYTES) revert InvalidTreasuryPayload();
+        CriticalEvaluation memory action = abi.decode(payload, (CriticalEvaluation));
+        _checkDomain(action.chainId, action.vault);
+        if (action.target == address(0) || (action.round != 1 && action.round != 2)) {
+            revert InvalidTreasuryPayload();
+        }
+
+        baseHash = keccak256(
+            abi.encode(
+                KIND_CRITICAL,
+                action.chainId,
+                action.vault,
+                action.target,
+                action.value,
+                action.dataHash,
+                action.salt
+            )
+        );
+        name = string.concat("FAO critical action round ", action.round.toString(), "/2");
+        description = string.concat(
+            "chain=",
+            action.chainId.toString(),
+            "; vault=",
+            Strings.toHexString(action.vault),
+            "; action-hash=",
+            Strings.toHexString(uint256(baseHash), 32),
+            "; target=",
+            Strings.toHexString(action.target),
+            "; value=",
+            action.value.toString(),
+            "; data-hash=",
+            Strings.toHexString(uint256(action.dataHash), 32),
+            "; salt=",
+            Strings.toHexString(uint256(action.salt), 32),
+            "; round=",
+            action.round.toString(),
+            " of 2"
+        );
+    }
+
+    function _siteText(bytes calldata payload)
+        private
+        pure
+        returns (string memory name, string memory description, bytes32 commitment)
+    {
+        SXArbitrationExecutionStrategy.SiteRelease memory release =
+            abi.decode(payload, (SXArbitrationExecutionStrategy.SiteRelease));
+        uint256 uriLength = bytes(release.artifactURI).length;
+        if (
+            release.nonce == 0 || release.artifactDigest == bytes32(0) || uriLength == 0
+                || uriLength > MAX_RELEASE_URI_BYTES
+        ) revert InvalidReleasePayload();
+
+        name = string.concat("FAO site release #", release.nonce.toString());
+        description = string.concat(
+            "expected-current=",
+            Strings.toHexString(uint256(release.expectedCurrentDigest), 32),
+            "; artifact=",
+            Strings.toHexString(uint256(release.artifactDigest), 32),
+            "; uri=",
+            release.artifactURI
+        );
+        commitment = release.artifactDigest;
+    }
+
+    function _checkDomain(uint256 chainId, address payloadVault) private view {
+        if (chainId != block.chainid) revert WrongTreasuryChain(block.chainid, chainId);
+        if (payloadVault != vault) revert WrongTreasuryVault(vault, payloadVault);
     }
 
     function _assertActive(uint256 proposalId) private view {
