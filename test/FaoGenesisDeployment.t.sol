@@ -27,6 +27,7 @@ import {FAOTwapResolver} from "../src/FAOTwapResolver.sol";
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 import {GenesisVault, IGenesisArbitration, IGenesisBootstrapHook} from "../src/GenesisVault.sol";
+import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {IUniswapV3FactoryLike} from "../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../src/interfaces/IUniswapV3PoolLike.sol";
@@ -187,10 +188,16 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(receipt.votingStrategy(), _createAddress(address(receipt), 4));
         assertEq(receipt.proposalGateway(), _createAddress(address(receipt), 5));
         assertEq(receipt.evaluator(), _createAddress(address(receipt), 6));
-        assertEq(receipt.companyToken(), _createAddress(receipt.vault(), 2));
+        assertEq(receipt.companyToken(), _createAddress(receipt.vault(), 3));
+        GenesisTreasuryExecutor executor =
+            GenesisVault(payable(receipt.vault())).TREASURY_EXECUTOR();
+        assertEq(address(executor), _createAddress(receipt.vault(), 1));
+        assertEq(executor.VAULT(), receipt.vault());
+        GenesisTreasuryExecutor canonical = new GenesisTreasuryExecutor(receipt.vault());
+        assertEq(address(executor).codehash, address(canonical).codehash);
         assertEq(GenesisVault(payable(receipt.vault())).grantCount(), 1);
         (address vestingWallet,,,) = GenesisVault(payable(receipt.vault())).grants(0);
-        assertEq(vestingWallet, _createAddress(receipt.vault(), 1));
+        assertEq(vestingWallet, _createAddress(receipt.vault(), 2));
         assertEq(Space(receipt.space()).owner(), address(0));
         assertEq(FutarchyArbitration(receipt.arbitration()).owner(), address(0));
         assertEq(

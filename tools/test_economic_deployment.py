@@ -204,11 +204,14 @@ class EconomicDeploymentTest(unittest.TestCase):
                 *economic_deployment.FLM_CHILDREN,
             )
         }
+        treasury_executor = economic_deployment._create_address(
+            derived["vault"], 1, self.hash
+        )
         wallets = [
             economic_deployment._create_address(derived["vault"], nonce, self.hash)
-            for nonce in (1, 2)
+            for nonce in (2, 3)
         ]
-        company_token = economic_deployment._create_address(derived["vault"], 3, self.hash)
+        company_token = economic_deployment._create_address(derived["vault"], 4, self.hash)
         spot_pool = economic_deployment._pool_address(
             self.dependencies["uniswapV3Factory"]["target"],
             company_token,
@@ -219,6 +222,7 @@ class EconomicDeploymentTest(unittest.TestCase):
             "space": address(0x201),
             "arbitration": derived["arbitration"],
             "vault": derived["vault"],
+            "treasuryExecutor": treasury_executor,
             "companyToken": company_token,
             "proposalGateway": derived["proposalGateway"],
             "releaseStrategy": derived["releaseStrategy"],
@@ -236,6 +240,10 @@ class EconomicDeploymentTest(unittest.TestCase):
             "manager": derived["manager"],
             "vestingWallets": wallets,
         }
+        self.executor_runtime = economic_deployment._executor_runtime_code(derived["vault"])
+        self.executor_runtime_hash = economic_deployment._digest(
+            self.executor_runtime, self.hash
+        )
         self.manifest = self._manifest()
         self._chain_evidence(live=False)
 
@@ -307,7 +315,8 @@ class EconomicDeploymentTest(unittest.TestCase):
             },
         }
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 3,
+            "creationRoute": "create",
             "status": "sealed",
             "network": "sepolia",
             "chainId": economic_deployment.CHAIN_ID,
@@ -350,6 +359,9 @@ class EconomicDeploymentTest(unittest.TestCase):
             "observationCardinality": economic_deployment.OBSERVATION_CARDINALITY,
             "contracts": self.contracts,
             "codeBlobs": {"core": self.core_hashes, "flm": self.flm_hashes},
+            "runtimeCodeHashes": {
+                "treasuryExecutor": self.executor_runtime_hash,
+            },
             "finalization": None,
         }
 
@@ -428,6 +440,7 @@ class EconomicDeploymentTest(unittest.TestCase):
                         self.client.codes[wallet] = b"vesting-runtime"
                 else:
                     self.client.codes[target] = f"runtime-{key}".encode()
+        self.client.codes[self.contracts["treasuryExecutor"]] = self.executor_runtime
         if live:
             self.client.codes[self.contracts["spotPool"]] = b"pool-runtime"
 
@@ -480,7 +493,9 @@ class EconomicDeploymentTest(unittest.TestCase):
             (c["vault"], "ASSEMBLER()(address)", self.receipt),
             (c["vault"], "ARBITRATION()(address)", c["arbitration"]),
             (c["vault"], "BOOTSTRAP_HOOK()(address)", self.receipt),
+            (c["vault"], "TREASURY_EXECUTOR()(address)", c["treasuryExecutor"]),
             (c["vault"], "manager()(address)", c["manager"]),
+            (c["treasuryExecutor"], "VAULT()(address)", c["vault"]),
             (c["proposalGateway"], "space()(address)", c["space"]),
             (c["proposalGateway"], "executionStrategy()(address)", c["releaseStrategy"]),
             (c["proposalGateway"], "arbitration()(address)", c["arbitration"]),
@@ -831,7 +846,6 @@ class EconomicDeploymentTest(unittest.TestCase):
             ),
         )
         expected = copy.deepcopy(self.manifest)
-        expected["schemaVersion"] = 2
         expected["creationRoute"] = "registrar"
         expected["receipt"]["stageNonce"] = expected["receipt"].pop("createNonce")
         expected["receipt"]["registrar"] = {
@@ -869,6 +883,53 @@ class EconomicDeploymentTest(unittest.TestCase):
 
     def test_sealed_manifest_verifies_staged_deployment(self) -> None:
         self._verify()
+
+    def test_executor_address_immutable_and_runtime_hash_are_all_verified(self) -> None:
+        self.assertNotEqual(
+            self.executor_runtime,
+            economic_deployment._executor_runtime_code(address(0xBAD)),
+        )
+
+        broken = copy.deepcopy(self.manifest)
+        broken["runtimeCodeHashes"]["treasuryExecutor"] = "0x" + "11" * 32
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "executor runtime code hash mismatch"
+        ):
+            economic_deployment.verify_rpc(
+                broken,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+        self.client.codes[self.contracts["treasuryExecutor"]] = b"wrong-runtime"
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "executor runtime code hash mismatch"
+        ):
+            self._verify()
+        self.client.codes[self.contracts["treasuryExecutor"]] = self.executor_runtime
+
+        self._put(
+            self.contracts["vault"],
+            "TREASURY_EXECUTOR()(address)",
+            address(0xBAD),
+        )
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "public wiring mismatch"):
+            self._verify()
+        self._put(
+            self.contracts["vault"],
+            "TREASURY_EXECUTOR()(address)",
+            self.contracts["treasuryExecutor"],
+        )
+
+        self._put(
+            self.contracts["treasuryExecutor"],
+            "VAULT()(address)",
+            address(0xBAD),
+        )
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "public wiring mismatch"):
+            self._verify()
 
     def test_builds_and_verifies_manifest_from_exact_five_transaction_broadcast(self) -> None:
         broadcast = self._broadcast()
@@ -1121,19 +1182,24 @@ class EconomicDeploymentTest(unittest.TestCase):
                         hash_=self.hash,
                     )
 
-    def test_schema_v2_names_registrar_route_nonce_while_direct_v1_stays_unchanged(self) -> None:
+    def test_schema_v3_names_both_creation_routes_and_rejects_legacy_manifests(self) -> None:
         economic_deployment.validate_manifest(self.manifest, hash_=self.hash)
         shared, registrar_manifest, _ = self._registrar_evidence()
         del shared
         economic_deployment.validate_manifest(registrar_manifest, hash_=self.hash)
         self.assertIn("createNonce", self.manifest["receipt"])
-        self.assertNotIn("creationRoute", self.manifest)
+        self.assertEqual(self.manifest["creationRoute"], "create")
         self.assertIn("stageNonce", registrar_manifest["receipt"])
         self.assertNotIn("createNonce", registrar_manifest["receipt"])
         broken = copy.deepcopy(registrar_manifest)
         del broken["creationRoute"]
         with self.assertRaises(economic_deployment.ManifestError):
             economic_deployment.validate_manifest(broken, hash_=self.hash)
+        for legacy_version in (1, 2):
+            broken = copy.deepcopy(self.manifest)
+            broken["schemaVersion"] = legacy_version
+            with self.assertRaisesRegex(economic_deployment.ManifestError, "schema version 3"):
+                economic_deployment.validate_manifest(broken, hash_=self.hash)
 
     def test_discovery_cli_has_a_separate_default_output(self) -> None:
         result = {"status": "stage-only"}

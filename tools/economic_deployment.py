@@ -139,6 +139,7 @@ CONTRACT_KEYS = (
     "space",
     "arbitration",
     "vault",
+    "treasuryExecutor",
     "companyToken",
     "proposalGateway",
     "releaseStrategy",
@@ -158,6 +159,7 @@ CONTRACT_KEYS = (
 )
 MANIFEST_KEYS = {
     "schemaVersion",
+    "creationRoute",
     "status",
     "network",
     "chainId",
@@ -172,8 +174,10 @@ MANIFEST_KEYS = {
     "observationCardinality",
     "contracts",
     "codeBlobs",
+    "runtimeCodeHashes",
     "finalization",
 }
+RUNTIME_CODE_HASH_KEYS = ("treasuryExecutor",)
 SELF_SERVE_KEYS = {"schemaVersion", "network", "chainId", "registrar", "prerequisites"}
 
 ManifestError = site_deployment.ManifestError
@@ -767,22 +771,17 @@ def validate_manifest(
 ) -> dict[str, Any]:
     manifest = _require_dict(raw, "economic deployment manifest")
     schema_version = _json_integer(manifest.get("schemaVersion"), "schemaVersion")
-    registrar_route = schema_version == 2
-    _expect_keys(
-        manifest,
-        MANIFEST_KEYS | ({"creationRoute"} if registrar_route else set()),
-        "economic deployment manifest",
-    )
+    _expect_keys(manifest, MANIFEST_KEYS, "economic deployment manifest")
     if (
-        schema_version not in {1, 2}
+        schema_version != 3
         or manifest["network"] != "sepolia"
         or _json_integer(manifest["chainId"], "chainId") != CHAIN_ID
         or manifest["status"] not in {"sealed", "live"}
     ):
-        raise ManifestError("manifest must be sealed/live Sepolia schema version 1 or 2")
-    if registrar_route:
-        if manifest["creationRoute"] != "registrar":
-            raise ManifestError("schema version 2 requires the registrar creation route")
+        raise ManifestError("manifest must be sealed/live Sepolia schema version 3")
+    if manifest["creationRoute"] not in {"create", "registrar"}:
+        raise ManifestError("schema version 3 requires a create or registrar route")
+    registrar_route = manifest["creationRoute"] == "registrar"
     expected_core, expected_flm, canonical_creations = _canonical_blob_hashes()
 
     transactions = _require_dict(manifest["transactions"], "transactions")
@@ -938,6 +937,14 @@ def validate_manifest(
             if _canonical_hash(section[key], f"codeBlobs.{section_name}.{key}") != expected[key]:
                 raise ManifestError(f"codeBlobs.{section_name}.{key} is not canonical")
 
+    runtime_hashes = _require_dict(manifest["runtimeCodeHashes"], "runtimeCodeHashes")
+    if tuple(runtime_hashes) != RUNTIME_CODE_HASH_KEYS:
+        raise ManifestError("runtimeCodeHashes is not in canonical order")
+    _canonical_hash(
+        runtime_hashes["treasuryExecutor"],
+        "runtimeCodeHashes.treasuryExecutor",
+    )
+
     finalization = manifest["finalization"]
     if manifest["status"] == "sealed":
         if finalization is not None:
@@ -964,6 +971,49 @@ def _create_address(sender: str, nonce: int, hash_: Callable[[bytes], str]) -> s
     payload = b"\x94" + bytes.fromhex(_address(sender, "CREATE sender")[2:]) + encoded_nonce
     digest = _digest(bytes([0xC0 + len(payload)]) + payload, hash_)
     return "0x" + digest[-40:]
+
+
+def _executor_runtime_code(vault: str) -> bytes:
+    try:
+        deployed_candidates = []
+        for path in sorted((ROOT / economic_code_hashes.BUILD_INFO_PATH).glob("*.json")):
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            contract = raw["output"]["contracts"].get("src/GenesisTreasuryExecutor.sol", {}).get(
+                "GenesisTreasuryExecutor"
+            )
+            if contract is not None:
+                deployed_candidates.append(contract["evm"]["deployedBytecode"])
+        if deployed_candidates:
+            deployed = deployed_candidates[0]
+            if any(item != deployed for item in deployed_candidates[1:]):
+                raise ManifestError("ambiguous treasury executor runtime compiler evidence")
+        else:
+            artifact = ROOT / "out/GenesisTreasuryExecutor.sol/GenesisTreasuryExecutor.json"
+            raw = json.loads(artifact.read_text(encoding="utf-8"))
+            deployed = raw["deployedBytecode"]
+        code = bytearray.fromhex(deployed["object"].removeprefix("0x"))
+        references = [
+            reference
+            for source_references in deployed["immutableReferences"].values()
+            for reference in source_references
+        ]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise ManifestError("cannot read treasury executor runtime compiler evidence") from exc
+    immutable = _address_word(_address(vault, "treasury executor vault"))
+    if not references:
+        raise ManifestError("treasury executor runtime has no immutable VAULT references")
+    for reference in references:
+        start, length = reference.get("start"), reference.get("length")
+        if (
+            not isinstance(start, int)
+            or length != 32
+            or start < 0
+            or start + length > len(code)
+            or any(code[start : start + length])
+        ):
+            raise ManifestError("treasury executor immutable references are malformed")
+        code[start : start + length] = immutable
+    return bytes(code)
 
 
 def _create2_address(
@@ -1422,6 +1472,24 @@ def _broadcast_records(broadcast: Any, client: Any) -> list[dict[str, Any]]:
     return records
 
 
+def _deployed_contracts(
+    receipt: str,
+    grant_count: int,
+    client: Any,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    contracts: dict[str, Any] = {}
+    for key in CONTRACT_KEYS[:-1]:
+        target = contracts["vault"] if key == "treasuryExecutor" else receipt
+        signature = "TREASURY_EXECUTOR" if key == "treasuryExecutor" else key
+        contracts[key] = _call_address(client, target, f"{signature}()(address)")
+    contracts["vestingWallets"] = [
+        _create_address(contracts["vault"], index, hash_)
+        for index in range(2, grant_count + 2)
+    ]
+    return contracts
+
+
 def manifest_from_broadcast(
     broadcast: Any,
     receipt_creation_code: bytes,
@@ -1477,21 +1545,16 @@ def manifest_from_broadcast(
 
     core_config, grants, core_codes = _decode_deploy_core(deploy_core["input"])
     flm_config, flm_codes = _decode_deploy_flm(deploy_flm["input"])
-    getter_keys = CONTRACT_KEYS[:-1]
-    contracts = {
-        key: _call_address(client, receipt_address, f"{key}()(address)") for key in getter_keys
-    }
-    contracts["vestingWallets"] = [
-        _create_address(contracts["vault"], index, hash_)
-        for index in range(1, len(grants) + 1)
-    ]
+    contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
+    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
 
     core_hashes = {
         key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)
     }
     flm_hashes = {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)}
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 3,
+        "creationRoute": "create",
         "status": "sealed",
         "network": "sepolia",
         "chainId": CHAIN_ID,
@@ -1519,6 +1582,7 @@ def manifest_from_broadcast(
         "observationCardinality": OBSERVATION_CARDINALITY,
         "contracts": contracts,
         "codeBlobs": {"core": core_hashes, "flm": flm_hashes},
+        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
         "finalization": None,
     }
     verify_rpc(
@@ -1904,14 +1968,8 @@ def manifest_from_chain(
     core_config, grants, core_codes = core["config"], core["grants"], core["codes"]
     flm_config, flm_codes = flm["config"], flm["codes"]
     receipt_address = discovered["receipt"]
-    contracts = {
-        key: _call_address(client, receipt_address, f"{key}()(address)")
-        for key in CONTRACT_KEYS[:-1]
-    }
-    contracts["vestingWallets"] = [
-        _create_address(contracts["vault"], index, hash_)
-        for index in range(1, len(grants) + 1)
-    ]
+    contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
+    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
     _validate_seal_log(
         core["log"],
         CORE_SEALED_EVENT,
@@ -1946,7 +2004,7 @@ def manifest_from_chain(
     )
     registrar = discovered["registrar"]
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "creationRoute": "registrar",
         "status": "live" if discovered["status"] == "live" else "sealed",
         "network": "sepolia",
@@ -1982,6 +2040,7 @@ def manifest_from_chain(
             "core": {key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)},
             "flm": {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)},
         },
+        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
         "finalization": None
         if discovered["finalization"] is None
         else discovered["finalization"]["evidence"],
@@ -2257,11 +2316,13 @@ def _verify_addresses(manifest: dict[str, Any], client: Any, hash_: Callable[[by
         if contracts[name] != _create_address(receipt, nonce, hash_):
             raise ManifestError(f"contracts.{name} is not receipt CREATE nonce {nonce}")
     vault = contracts["vault"]
-    for index, wallet in enumerate(contracts["vestingWallets"], start=1):
+    if contracts["treasuryExecutor"] != _create_address(vault, 1, hash_):
+        raise ManifestError("treasury executor is not vault CREATE nonce 1")
+    for index, wallet in enumerate(contracts["vestingWallets"], start=2):
         if wallet != _create_address(vault, index, hash_):
             raise ManifestError(f"vesting wallet is not vault CREATE nonce {index}")
     if contracts["companyToken"] != _create_address(
-        vault, len(contracts["vestingWallets"]) + 1, hash_
+        vault, len(contracts["vestingWallets"]) + 2, hash_
     ):
         raise ManifestError("company token is not the vault CREATE after grant wallets")
 
@@ -2318,6 +2379,14 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
     for index, wallet in enumerate(c["vestingWallets"]):
         if not client.code(wallet):
             raise ManifestError(f"vesting wallet {index} has no deployed code")
+    executor_code = client.code(c["treasuryExecutor"])
+    executor_hash = _digest(executor_code, hash_)
+    expected_executor_hash = _digest(_executor_runtime_code(c["vault"]), hash_)
+    if (
+        executor_hash != expected_executor_hash
+        or executor_hash != manifest["runtimeCodeHashes"]["treasuryExecutor"]
+    ):
+        raise ManifestError("treasury executor runtime code hash mismatch")
 
     if not _call_bool(client, receipt, "coreSealed()(bool)") or not _call_bool(
         client, receipt, "flmSealed()(bool)"
@@ -2373,7 +2442,9 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
         (c["vault"], "ASSEMBLER()(address)", receipt),
         (c["vault"], "ARBITRATION()(address)", c["arbitration"]),
         (c["vault"], "BOOTSTRAP_HOOK()(address)", receipt),
+        (c["vault"], "TREASURY_EXECUTOR()(address)", c["treasuryExecutor"]),
         (c["vault"], "manager()(address)", c["manager"]),
+        (c["treasuryExecutor"], "VAULT()(address)", c["vault"]),
         (c["proposalGateway"], "space()(address)", c["space"]),
         (c["proposalGateway"], "executionStrategy()(address)", c["releaseStrategy"]),
         (c["proposalGateway"], "arbitration()(address)", c["arbitration"]),
@@ -2547,10 +2618,10 @@ def verify_rpc(
     manifest = validate_manifest(raw, hash_=hash_)
     if client.chain_id() != CHAIN_ID:
         raise ManifestError(f"RPC chain must be Sepolia ({CHAIN_ID})")
-    if manifest["schemaVersion"] == 2:
+    if manifest["creationRoute"] == "registrar":
         if shared_deployment is None or registrar_creation_code is None:
             raise ManifestError(
-                "schema version 2 verification requires the canonical shared manifest"
+                "registrar verification requires the canonical shared manifest"
             )
         shared = _shared_deployment(
             shared_deployment,
@@ -2654,10 +2725,10 @@ def main(argv: list[str] | None = None) -> int:
             prerequisite_creation,
             client,
             shared_deployment=site_deployment.load_json(SELF_SERVE_MANIFEST)
-            if manifest["schemaVersion"] == 2
+            if manifest["creationRoute"] == "registrar"
             else None,
             registrar_creation_code=registrar_creation
-            if manifest["schemaVersion"] == 2
+            if manifest["creationRoute"] == "registrar"
             else None,
         )
         site_deployment._write_or_check(output, live, args.check)
@@ -2673,10 +2744,10 @@ def main(argv: list[str] | None = None) -> int:
         prerequisite_creation,
         CastClient(args.rpc_url),
         shared_deployment=site_deployment.load_json(SELF_SERVE_MANIFEST)
-        if manifest["schemaVersion"] == 2
+        if manifest["creationRoute"] == "registrar"
         else None,
         registrar_creation_code=registrar_creation
-        if manifest["schemaVersion"] == 2
+        if manifest["creationRoute"] == "registrar"
         else None,
     )
     return 0

@@ -208,7 +208,7 @@ contract FaoGenesisDeployment {
         _validateCoreBaseCodes(baseCodes);
 
         address predictedVault = _createAddress(address(this), 2);
-        address predictedToken = _createAddress(predictedVault, grants.length + 1);
+        address predictedToken = _createAddress(predictedVault, grants.length + 2);
         address predictedPool =
             _poolAddress(config.uniswapV3Factory.target, predictedToken, config.weth.target);
         _sqrtPriceX96For(predictedToken, config.weth.target, config.initialPrice);
