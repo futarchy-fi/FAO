@@ -178,7 +178,7 @@ MANIFEST_KEYS = {
     "runtimeCodeHashes",
     "finalization",
 }
-RUNTIME_CODE_HASH_KEYS = ("treasuryExecutor",)
+RUNTIME_CODE_HASH_KEYS = ("vault", "proposalGateway", "arbitration", "treasuryExecutor")
 SELF_SERVE_KEYS = {"schemaVersion", "network", "chainId", "registrar", "prerequisites"}
 
 ManifestError = site_deployment.ManifestError
@@ -774,14 +774,14 @@ def validate_manifest(
     schema_version = _json_integer(manifest.get("schemaVersion"), "schemaVersion")
     _expect_keys(manifest, MANIFEST_KEYS, "economic deployment manifest")
     if (
-        schema_version != 3
+        schema_version != 4
         or manifest["network"] != "sepolia"
         or _json_integer(manifest["chainId"], "chainId") != CHAIN_ID
         or manifest["status"] not in {"sealed", "live"}
     ):
-        raise ManifestError("manifest must be sealed/live Sepolia schema version 3")
+        raise ManifestError("manifest must be sealed/live Sepolia schema version 4")
     if manifest["creationRoute"] not in {"create", "registrar"}:
-        raise ManifestError("schema version 3 requires a create or registrar route")
+        raise ManifestError("schema version 4 requires a create or registrar route")
     registrar_route = manifest["creationRoute"] == "registrar"
     expected_core, expected_flm, canonical_creations = _canonical_blob_hashes()
 
@@ -941,10 +941,8 @@ def validate_manifest(
     runtime_hashes = _require_dict(manifest["runtimeCodeHashes"], "runtimeCodeHashes")
     if tuple(runtime_hashes) != RUNTIME_CODE_HASH_KEYS:
         raise ManifestError("runtimeCodeHashes is not in canonical order")
-    _canonical_hash(
-        runtime_hashes["treasuryExecutor"],
-        "runtimeCodeHashes.treasuryExecutor",
-    )
+    for key in RUNTIME_CODE_HASH_KEYS:
+        _canonical_hash(runtime_hashes[key], f"runtimeCodeHashes.{key}")
 
     finalization = manifest["finalization"]
     if manifest["status"] == "sealed":
@@ -961,6 +959,18 @@ def validate_manifest(
 
 def _digest(value: bytes, hash_: Callable[[bytes], str]) -> str:
     return _canonical_hash(hash_(value), "Keccak-256 digest")
+
+
+def _runtime_code_hashes(
+    contracts: dict[str, Any], client: Any, hash_: Callable[[bytes], str]
+) -> dict[str, str]:
+    hashes = {}
+    for key in RUNTIME_CODE_HASH_KEYS:
+        code = client.code(contracts[key])
+        if not code:
+            raise ManifestError(f"contracts.{key} has no deployed code")
+        hashes[key] = _digest(code, hash_)
+    return hashes
 
 
 def _create_address(sender: str, nonce: int, hash_: Callable[[bytes], str]) -> str:
@@ -1593,14 +1603,14 @@ def manifest_from_broadcast(
     core_config, grants, core_codes = _decode_deploy_core(deploy_core["input"])
     flm_config, flm_codes = _decode_deploy_flm(deploy_flm["input"])
     contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
-    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
+    runtime_code_hashes = _runtime_code_hashes(contracts, client, hash_)
 
     core_hashes = {
         key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)
     }
     flm_hashes = {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)}
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "creationRoute": "create",
         "status": "sealed",
         "network": "sepolia",
@@ -1629,7 +1639,7 @@ def manifest_from_broadcast(
         "observationCardinality": OBSERVATION_CARDINALITY,
         "contracts": contracts,
         "codeBlobs": {"core": core_hashes, "flm": flm_hashes},
-        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
+        "runtimeCodeHashes": runtime_code_hashes,
         "finalization": None,
     }
     verify_rpc(
@@ -2016,7 +2026,7 @@ def manifest_from_chain(
     flm_config, flm_codes = flm["config"], flm["codes"]
     receipt_address = discovered["receipt"]
     contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
-    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
+    runtime_code_hashes = _runtime_code_hashes(contracts, client, hash_)
     _validate_seal_log(
         core["log"],
         CORE_SEALED_EVENT,
@@ -2051,7 +2061,7 @@ def manifest_from_chain(
     )
     registrar = discovered["registrar"]
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "creationRoute": "registrar",
         "status": "live" if discovered["status"] == "live" else "sealed",
         "network": "sepolia",
@@ -2087,7 +2097,7 @@ def manifest_from_chain(
             "core": {key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)},
             "flm": {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)},
         },
-        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
+        "runtimeCodeHashes": runtime_code_hashes,
         "finalization": None
         if discovered["finalization"] is None
         else discovered["finalization"]["evidence"],
@@ -2426,13 +2436,13 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
     for index, wallet in enumerate(c["vestingWallets"]):
         if not client.code(wallet):
             raise ManifestError(f"vesting wallet {index} has no deployed code")
-    executor_code = client.code(c["treasuryExecutor"])
-    executor_hash = _digest(executor_code, hash_)
+    live_runtime_hashes = _runtime_code_hashes(c, client, hash_)
+    for key in RUNTIME_CODE_HASH_KEYS:
+        if live_runtime_hashes[key] != manifest["runtimeCodeHashes"][key]:
+            raise ManifestError(f"{key} runtime code hash mismatch")
+    executor_hash = live_runtime_hashes["treasuryExecutor"]
     expected_executor_hash = _digest(_executor_runtime_code(c["vault"]), hash_)
-    if (
-        executor_hash != expected_executor_hash
-        or executor_hash != manifest["runtimeCodeHashes"]["treasuryExecutor"]
-    ):
+    if executor_hash != expected_executor_hash:
         raise ManifestError("treasury executor runtime code hash mismatch")
 
     if not _call_bool(client, receipt, "coreSealed()(bool)") or not _call_bool(

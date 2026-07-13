@@ -58,6 +58,8 @@ A receipt uses `parentDigest = taskDigest`:
 
 Each artifact commits to the exact artifact bytes with Keccak-256. Its URI is advisory and limited
 to 256 UTF-8 bytes by the v1 tools; `note` is optional. No CID or IPFS dependency exists.
+The on-chain kind is permanently `FAO_AGENT_RECEIPT_V1`. “Submission” is only explanatory prose
+for this work receipt; it is not a fourth document kind.
 
 A payment envelope uses `parentDigest = receiptDigest`:
 
@@ -85,3 +87,26 @@ The dependency-free implementations and shared golden vectors are
 The separate singleton build, runtime hash, CREATE2 salt, and predicted address are pinned in
 [`metadata/agent-work-index.json`](../metadata/agent-work-index.json); verify them with
 `python3 tools/agent_work_index_code_hashes.py --check`.
+The address is a CREATE2 prediction, not deployment evidence. A pinned runtime hash or predicted
+address must never be presented as deployed until a chain receipt and matching live code prove it.
+
+## Stateless reference agent
+
+[`tools/agent_runner.py`](../tools/agent_runner.py) is the dependency-free P1 reference agent. Each
+tick starts from finalized logs and views, chooses at most one action, simulates and cap-checks it,
+then passes the unsigned transaction to an injected sender. It holds no key or authoritative local
+state. Accepted, executable, and paid are deliberately separate: acceptance needs a matching view
+and finalized arbitration log; executability needs a live queue window and successful exact
+`eth_call`; payment needs the exact execution log and conserved balance deltas.
+
+The executable unit, fake-RPC, Anvil, and Sepolia-fork matrix is:
+
+```sh
+python3 -m unittest tools.test_agent_documents tools.test_agent_runner
+python3 tools/agent_anvil_drill.py
+```
+
+The latter regenerates
+[`metadata/agent-work-p1-evidence.json`](../metadata/agent-work-p1-evidence.json) and its SHA-256
+sidecar. These are house-wallet engineering fixtures. They do not prove a live index deployment,
+live payment, useful work, external demand, or guaranteed payment.

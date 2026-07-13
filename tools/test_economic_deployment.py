@@ -318,7 +318,7 @@ class EconomicDeploymentTest(unittest.TestCase):
             },
         }
         return {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "creationRoute": "create",
             "status": "sealed",
             "network": "sepolia",
@@ -363,7 +363,13 @@ class EconomicDeploymentTest(unittest.TestCase):
             "contracts": self.contracts,
             "codeBlobs": {"core": self.core_hashes, "flm": self.flm_hashes},
             "runtimeCodeHashes": {
-                "treasuryExecutor": self.executor_runtime_hash,
+                key: economic_deployment._digest(
+                    self.executor_runtime
+                    if key == "treasuryExecutor"
+                    else f"runtime-{key}".encode(),
+                    self.hash,
+                )
+                for key in economic_deployment.RUNTIME_CODE_HASH_KEYS
             },
             "finalization": None,
         }
@@ -939,25 +945,28 @@ class EconomicDeploymentTest(unittest.TestCase):
                 ):
                     economic_deployment._executor_runtime_code(self.contracts["vault"])
 
-        broken = copy.deepcopy(self.manifest)
-        broken["runtimeCodeHashes"]["treasuryExecutor"] = "0x" + "11" * 32
-        with self.assertRaisesRegex(
-            economic_deployment.ManifestError, "executor runtime code hash mismatch"
-        ):
-            economic_deployment.verify_rpc(
-                broken,
-                self.creation,
-                self.prerequisite_creation,
-                self.client,
-                hash_=self.hash,
-            )
+        for key in economic_deployment.RUNTIME_CODE_HASH_KEYS:
+            with self.subTest(runtime_hash=key):
+                broken = copy.deepcopy(self.manifest)
+                broken["runtimeCodeHashes"][key] = "0x" + "11" * 32
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, f"{key} runtime code hash mismatch"
+                ):
+                    economic_deployment.verify_rpc(
+                        broken,
+                        self.creation,
+                        self.prerequisite_creation,
+                        self.client,
+                        hash_=self.hash,
+                    )
 
-        self.client.codes[self.contracts["treasuryExecutor"]] = b"wrong-runtime"
-        with self.assertRaisesRegex(
-            economic_deployment.ManifestError, "executor runtime code hash mismatch"
-        ):
-            self._verify()
-        self.client.codes[self.contracts["treasuryExecutor"]] = self.executor_runtime
+                original = self.client.codes[self.contracts[key]]
+                self.client.codes[self.contracts[key]] = b"wrong-runtime"
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, f"{key} runtime code hash mismatch"
+                ):
+                    self._verify()
+                self.client.codes[self.contracts[key]] = original
 
         self._put(
             self.contracts["vault"],
@@ -1231,7 +1240,7 @@ class EconomicDeploymentTest(unittest.TestCase):
                         hash_=self.hash,
                     )
 
-    def test_schema_v3_names_both_creation_routes_and_rejects_legacy_manifests(self) -> None:
+    def test_schema_v4_names_both_creation_routes_and_rejects_legacy_manifests(self) -> None:
         economic_deployment.validate_manifest(self.manifest, hash_=self.hash)
         shared, registrar_manifest, _ = self._registrar_evidence()
         del shared
@@ -1244,10 +1253,19 @@ class EconomicDeploymentTest(unittest.TestCase):
         del broken["creationRoute"]
         with self.assertRaises(economic_deployment.ManifestError):
             economic_deployment.validate_manifest(broken, hash_=self.hash)
-        for legacy_version in (1, 2):
+        broken = copy.deepcopy(self.manifest)
+        broken["runtimeCodeHashes"] = dict(reversed(tuple(broken["runtimeCodeHashes"].items())))
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "canonical order"):
+            economic_deployment.validate_manifest(broken, hash_=self.hash)
+        for key in economic_deployment.RUNTIME_CODE_HASH_KEYS:
+            broken = copy.deepcopy(self.manifest)
+            del broken["runtimeCodeHashes"][key]
+            with self.assertRaisesRegex(economic_deployment.ManifestError, "canonical order"):
+                economic_deployment.validate_manifest(broken, hash_=self.hash)
+        for legacy_version in (1, 2, 3):
             broken = copy.deepcopy(self.manifest)
             broken["schemaVersion"] = legacy_version
-            with self.assertRaisesRegex(economic_deployment.ManifestError, "schema version 3"):
+            with self.assertRaisesRegex(economic_deployment.ManifestError, "schema version 4"):
                 economic_deployment.validate_manifest(broken, hash_=self.hash)
 
     def test_discovery_cli_has_a_separate_default_output(self) -> None:
