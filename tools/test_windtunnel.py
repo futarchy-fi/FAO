@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from tools.windtunnel import funding, keeper, schema
-from tools.windtunnel.indexer import Indexer, IndexerError
+from tools.windtunnel.indexer import Indexer, IndexerError, RpcCallError, SELECTORS
 
 
 def addr(byte: str) -> str:
@@ -93,9 +93,11 @@ STAGER = addr("c")
 BIDDER_YES = addr("d")
 BIDDER_NO = addr("e")
 MARKET = addr("f")
+GATEWAY = "0x" + "12" * 20
+RELEASE = "0x" + "13" * 20
 
 
-def chain(market=MARKET, fork=0, removed=None):
+def chain(market=MARKET, fork=0, removed=None, proposal_id=1, include_gateway=False):
     blocks = []
     parent = digest(9)
     for number in range(10, 22):
@@ -144,7 +146,7 @@ def chain(market=MARKET, fork=0, removed=None):
             0,
             ARBITRATION,
             "arbitration.proposalCreated",
-            {"proposalId": 1, "creator": VAULT, "minActivationBond": 10},
+            {"proposalId": proposal_id, "creator": VAULT, "minActivationBond": 10},
         ),
         event_log(
             by_number[14],
@@ -152,7 +154,7 @@ def chain(market=MARKET, fork=0, removed=None):
             ARBITRATION,
             "arbitration.bondPlaced",
             {
-                "proposalId": 1,
+                "proposalId": proposal_id,
                 "newState": 1,
                 "bidder": BIDDER_YES,
                 "amount": 10,
@@ -166,7 +168,7 @@ def chain(market=MARKET, fork=0, removed=None):
             ARBITRATION,
             "arbitration.bondPlaced",
             {
-                "proposalId": 1,
+                "proposalId": proposal_id,
                 "newState": 2,
                 "bidder": BIDDER_NO,
                 "amount": 10,
@@ -180,7 +182,7 @@ def chain(market=MARKET, fork=0, removed=None):
             ARBITRATION,
             "arbitration.bondPlaced",
             {
-                "proposalId": 1,
+                "proposalId": proposal_id,
                 "newState": 1,
                 "bidder": BIDDER_YES,
                 "amount": 20,
@@ -193,14 +195,14 @@ def chain(market=MARKET, fork=0, removed=None):
             1,
             ARBITRATION,
             "arbitration.proposalGraduated",
-            {"proposalId": 1, "queuePosition": 1, "requiredYesBond": 20, "yesBondAmount": 20},
+            {"proposalId": proposal_id, "queuePosition": 1, "requiredYesBond": 20, "yesBondAmount": 20},
         ),
         event_log(
             by_number[17],
             0,
             ARBITRATION,
             "arbitration.evaluationStarted",
-            {"proposalId": 1},
+            {"proposalId": proposal_id},
         ),
         event_log(
             by_number[18],
@@ -208,7 +210,7 @@ def chain(market=MARKET, fork=0, removed=None):
             EVALUATOR,
             "evaluator.economicMarketCreated",
             {
-                "proposalId": 1,
+                "proposalId": proposal_id,
                 "futarchyProposalId": 7,
                 "futarchyProposal": market,
                 "payloadKind": digest(110),
@@ -227,7 +229,7 @@ def chain(market=MARKET, fork=0, removed=None):
             0,
             ARBITRATION,
             "arbitration.evaluationResolved",
-            {"proposalId": 1, "accepted": True, "winner": BIDDER_YES, "payout": 30},
+            {"proposalId": proposal_id, "accepted": True, "winner": BIDDER_YES, "payout": 30},
         ),
         event_log(
             by_number[20],
@@ -235,7 +237,7 @@ def chain(market=MARKET, fork=0, removed=None):
             EVALUATOR,
             "evaluator.evaluationResolved",
             {
-                "proposalId": 1,
+                "proposalId": proposal_id,
                 "futarchyProposal": market,
                 "conditionId": digest(112),
                 "accepted": True,
@@ -249,9 +251,102 @@ def chain(market=MARKET, fork=0, removed=None):
             {"proposalId": 7, "conditionalRemoved": 160, "spotAdded": 82},
         ),
     ]
+    if include_gateway:
+        logs.insert(
+            4,
+            event_log(
+                by_number[13],
+                1,
+                GATEWAY,
+                "gateway.transferProposed",
+                {
+                    "proposalId": proposal_id,
+                    "proposer": BIDDER_YES,
+                    "asset": TOKEN,
+                    "recipient": "0x" + "ab" * 20,
+                    "amount": 10,
+                    "salt": digest(123),
+                },
+            ),
+        )
     if removed is not None:
         logs.append(removed(by_number))
     return blocks, logs
+
+
+def abi_words(*values):
+    return "0x" + b"".join(
+        word("address", value)
+        if isinstance(value, str) and len(value) == 42
+        else word("bytes32", value)
+        if isinstance(value, str)
+        else int(value).to_bytes(32, "big")
+        for value in values
+    ).hex()
+
+
+class HydratedFakeRpc(FakeRpc):
+    def __init__(self, blocks, logs, active):
+        super().__init__(blocks, logs)
+        self.active = active
+
+    def call(self, transaction, block="latest"):
+        target = transaction["to"]
+        data = transaction["data"]
+        selector = data[2:10]
+        if target == REGISTRAR:
+            return abi_words(digest(999))
+        if target == RECEIPT:
+            values = {
+                SELECTORS["coreHash"]: digest(100),
+                SELECTORS["flmHash"]: digest(101),
+                SELECTORS["coreSealed"]: 1,
+                SELECTORS["flmSealed"]: 1,
+                SELECTORS["proposalGateway"]: GATEWAY,
+                SELECTORS["releaseStrategy"]: RELEASE,
+            }
+            return abi_words(values[selector])
+        if target == ARBITRATION:
+            if selector == SELECTORS["getProposal"]:
+                return abi_words(
+                    10,
+                    BIDDER_YES,
+                    20,
+                    BIDDER_NO,
+                    10,
+                    4,
+                    170,
+                    0,
+                    0,
+                    1,
+                    1,
+                )
+            values = {
+                SELECTORS["timeout"]: 10,
+                SELECTORS["baseX"]: 20,
+                SELECTORS["maxQueue"]: 16,
+                SELECTORS["activeEvaluation"]: self.active,
+            }
+            return abi_words(values[selector])
+        if target == EVALUATOR:
+            return abi_words(addr("0"))
+        if target == RELAY:
+            return abi_words(*([0] * 13))
+        if target == MANAGER:
+            values = {
+                SELECTORS["inConditionalMode"]: 0,
+                SELECTORS["activeProposalId"]: 0,
+                SELECTORS["emergencyExitArmedAt"]: 0,
+                SELECTORS["emergencyExitExecuted"]: 0,
+                SELECTORS["initialized"]: 1,
+                SELECTORS["totalSupply"]: 100,
+                SELECTORS["spotLiquidity"]: 10,
+                SELECTORS["conditionalYesLiquidity"]: 0,
+                SELECTORS["conditionalNoLiquidity"]: 0,
+                SELECTORS["sync"]: 0,
+            }
+            return abi_words(values[selector])
+        return "0x"
 
 
 class WindtunnelIndexerTest(unittest.TestCase):
@@ -309,6 +404,82 @@ class WindtunnelIndexerTest(unittest.TestCase):
         with Indexer(":memory:") as indexer:
             with self.assertRaisesRegex(IndexerError, "lineage"):
                 indexer.sync(FakeRpc(blocks, logs), 10, [REGISTRAR])
+
+    def test_hydrated_keeper_uses_only_event_committed_payload_and_persists_race(self):
+        proposal_id = int(
+            "d8c898acea826f42be384cdbcbdf67bf76f78e8f3bfd013adbdfa5125bd043b7", 16
+        )
+        blocks, logs = chain(proposal_id=proposal_id, include_gateway=True)
+        blocks = [block for block in blocks if int(block["number"], 16) <= 17]
+        logs = [log for log in logs if int(log["blockNumber"], 16) <= 17]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hydrated.sqlite"
+            with Indexer(path) as indexer:
+                indexer.sync(HydratedFakeRpc(blocks, logs, proposal_id), 10, [REGISTRAR])
+                state = indexer.keeper_state(RECEIPT)
+                action = indexer.next_action(RECEIPT)
+                self.assertEqual(action.kind, "startEvaluation")
+                self.assertEqual(
+                    state["proposals"][0]["evaluationPayload"],
+                    "0x"
+                    + "27e49851e3b79673e847d7c12acc52a3936006b8517243a42df902b3df4e902e"
+                    + ("%064x" % 11155111)
+                    + "00" * 12
+                    + VAULT[2:]
+                    + "00" * 12
+                    + TOKEN[2:]
+                    + "00" * 12
+                    + ("ab" * 20)
+                    + ("%064x" % 10)
+                    + ("%064x" % 123),
+                )
+
+                simulated = indexer.staticcall_action(
+                    HydratedFakeRpc(blocks, logs, proposal_id), action, addr("1")
+                )
+                self.assertEqual(simulated["classification"], "ok")
+                indexer.record_attempt(action, addr("1"), "send", "submitted")
+                indexer.record_attempt(action, addr("2"), "send", "submitted")
+
+                winner = indexer.record_attempt(
+                    action,
+                    addr("1"),
+                    "receipt",
+                    "landed",
+                    tx_hash=digest(700),
+                )
+                loser = indexer.record_attempt(
+                    action,
+                    addr("2"),
+                    "receipt",
+                    "revert",
+                    revert_data="0xbaf3f0f7",
+                    tx_hash=digest(701),
+                )
+                self.assertEqual(loser["classification"], "race-candidate")
+                loser = indexer.classify_race(
+                    winner["attempt_id"], loser["attempt_id"], postcondition_satisfied=True
+                )
+                self.assertEqual(loser["classification"], "benign-race")
+
+                manifest = funding_manifest()
+                budget = funding.FundingBudget(manifest)
+                budget.spend("keeper", RECEIPT, 30, "1")
+                with self.assertRaises(funding.FundingError):
+                    budget.spend("keeper", RECEIPT, 1, "1")
+                indexer.record_attempt(
+                    action, addr("5"), "funding", "refused", detail="market funding cap exhausted"
+                )
+                before = indexer.report_bytes()
+                self.assertEqual(indexer.replay(), before)
+
+            with Indexer(path) as restarted:
+                self.assertEqual(restarted.report_bytes(), before)
+                attempts = restarted.report()["attempts"]
+                self.assertEqual(
+                    [item["classification"] for item in attempts],
+                    ["ok", "submitted", "submitted", "landed", "benign-race", "refused"],
+                )
 
 
 def keeper_state():
@@ -387,6 +558,42 @@ class KeeperTest(unittest.TestCase):
             {"proposalId": value, "state": "QUEUED"} for value in range(1, 17)
         ]
         self.assertEqual(keeper.decide(state).proposal_id, 1)
+
+    def test_space_event_decoder_recovers_exact_committed_dynamic_payload(self):
+        metadata = b"ipfs"
+        payload = bytes.fromhex("123456")
+        head = [
+            word("uint256", 9),
+            word("address", BIDDER_YES),
+            word("address", BIDDER_YES),
+            word("uint256", 1),
+            word("address", RELEASE),
+            word("uint256", 2),
+            word("uint256", 3),
+            word("uint256", 0),
+            word("bytes32", digest(555)),
+            word("uint256", 1),
+            word("uint256", 12 * 32),
+            word("uint256", 14 * 32),
+        ]
+        dynamic = (
+            word("uint256", len(metadata))
+            + metadata
+            + bytes(28)
+            + word("uint256", len(payload))
+            + payload
+            + bytes(29)
+        )
+        spec, decoded = schema.decode_event(
+            {
+                "topics": [EVENTS_BY_ID["space.proposalCreated"]["topic0"]],
+                "data": "0x" + (b"".join(head) + dynamic).hex(),
+            }
+        )
+        self.assertEqual(spec["id"], "space.proposalCreated")
+        self.assertEqual(decoded["executionStrategy"], RELEASE)
+        self.assertEqual(decoded["evaluationPayload"], "0x123456")
+        self.assertEqual(decoded["arbitrationId"], 555)
 
 
 def funding_manifest():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import urllib.error
 import urllib.request
@@ -15,10 +16,33 @@ from .schema import EVENTS, SchemaError, address, canonical_log, decode_event, h
 
 MAX_QUEUE = 16
 STATE_NAMES = ("INACTIVE", "YES", "NO", "QUEUED", "EVALUATING", "SETTLED")
+TRANSFER_KIND = "0x27e49851e3b79673e847d7c12acc52a3936006b8517243a42df902b3df4e902e"
+PARAM_KIND = "0x755dc82832a5b7ea3d4cab445bc2350333d8767db30d0e3ae26bca262bd09df8"
+CRITICAL_KIND = "0xecf8eeca4c3b543587a2cd1790f9870174ebb99982cfd26c51b7440d47b6834a"
+
+
+def _payload_word(value: Any) -> bytes:
+    if isinstance(value, int):
+        if value < 0 or value >= 1 << 256:
+            raise IndexerError("payload integer is out of range")
+        return value.to_bytes(32, "big")
+    if isinstance(value, str) and len(value) == 42:
+        return bytes(12) + bytes.fromhex(address(value, "payload address")[2:])
+    return bytes.fromhex(hex_bytes(value, 32, "payload word")[2:])
+
+
+def _static_payload(*values: Any) -> str:
+    return "0x" + b"".join(_payload_word(value) for value in values).hex()
 
 
 class IndexerError(ValueError):
     pass
+
+
+class RpcCallError(IndexerError):
+    def __init__(self, message: str, data: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.data = data
 
 
 class JsonRpc:
@@ -45,7 +69,9 @@ class JsonRpc:
         if not isinstance(value, dict) or value.get("id") != self._id:
             raise IndexerError("JSON-RPC response envelope is invalid")
         if value.get("error") is not None:
-            raise IndexerError("JSON-RPC %s failed: %s" % (method, value["error"]))
+            error = value["error"]
+            data = error.get("data") if isinstance(error, dict) else None
+            raise RpcCallError("JSON-RPC %s failed: %s" % (method, error), data)
         return value.get("result")
 
     def chain_id(self) -> int:
@@ -119,14 +145,41 @@ CREATE TABLE IF NOT EXISTS proposals (
   no_bidder TEXT, no_bond_amount TEXT NOT NULL DEFAULT '0', queue_position INTEGER NOT NULL DEFAULT 0,
   enqueued_block INTEGER, enqueued_log_index INTEGER, settled INTEGER NOT NULL DEFAULT 0,
   accepted INTEGER, futarchy_proposal TEXT, futarchy_proposal_id TEXT, condition_id TEXT,
-  payload_kind TEXT, payload_commitment TEXT,
+  payload_kind TEXT, payload_commitment TEXT, evaluation_payload TEXT, payload_source TEXT,
   PRIMARY KEY (chain_id, arbitration, proposal_id)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS flm_state (
   chain_id INTEGER NOT NULL, manager TEXT NOT NULL, mode TEXT NOT NULL,
-  active_proposal_id TEXT NOT NULL,
+  active_proposal_id TEXT NOT NULL, restore_needed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (chain_id, manager)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS instance_views (
+  chain_id INTEGER NOT NULL, receipt TEXT NOT NULL, block_number INTEGER NOT NULL,
+  block_hash TEXT NOT NULL, registrar_code_hash TEXT NOT NULL, proposal_gateway TEXT NOT NULL,
+  release_strategy TEXT NOT NULL, timeout TEXT NOT NULL, base_x TEXT NOT NULL,
+  max_queue INTEGER NOT NULL, active_proposal_id TEXT NOT NULL, evaluator_market TEXT,
+  relay_proposal_id TEXT NOT NULL, relay_proposal TEXT, relay_exists INTEGER NOT NULL,
+  relay_settled INTEGER NOT NULL, flm_mode TEXT NOT NULL, flm_active_proposal_id TEXT NOT NULL,
+  emergency_armed_at TEXT NOT NULL, emergency_executed INTEGER NOT NULL,
+  initialized INTEGER NOT NULL, total_supply TEXT NOT NULL, spot_liquidity TEXT NOT NULL,
+  conditional_yes_liquidity TEXT NOT NULL, conditional_no_liquidity TEXT NOT NULL,
+  sync_action INTEGER NOT NULL, resolution_ready INTEGER NOT NULL, restore_call_ok INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, receipt)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS proposal_views (
+  chain_id INTEGER NOT NULL, arbitration TEXT NOT NULL, proposal_id TEXT NOT NULL,
+  block_number INTEGER NOT NULL, state TEXT NOT NULL, last_state_change_at INTEGER NOT NULL,
+  yes_bidder TEXT, yes_bond_amount TEXT NOT NULL, no_bidder TEXT, no_bond_amount TEXT NOT NULL,
+  queue_position INTEGER NOT NULL, settled INTEGER NOT NULL, accepted INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, arbitration, proposal_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS attempts (
+  attempt_id INTEGER PRIMARY KEY, chain_id INTEGER NOT NULL, action_sha256 TEXT NOT NULL,
+  keeper TEXT NOT NULL, phase TEXT NOT NULL, outcome TEXT NOT NULL, classification TEXT NOT NULL,
+  action_kind TEXT NOT NULL, target TEXT NOT NULL, data TEXT NOT NULL, proposal_id TEXT,
+  tx_hash TEXT, revert_data TEXT, detail TEXT NOT NULL, race_winner_attempt_id INTEGER,
+  postcondition_satisfied INTEGER
+);
 """
 
 
@@ -144,6 +197,86 @@ def _block(value: Any) -> Dict[str, Any]:
         raise IndexerError(str(exc)) from exc
 
 
+SELECTORS = {
+    "registrarCodeHash": "831c4e7b",
+    "coreHash": "b1b4fc36",
+    "flmHash": "1092769f",
+    "coreSealed": "73797f98",
+    "flmSealed": "e05abb68",
+    "proposalGateway": "04e31dfb",
+    "releaseStrategy": "f8fb4b87",
+    "timeout": "70dea79a",
+    "baseX": "5761c182",
+    "maxQueue": "3f7b5e40",
+    "activeEvaluation": "833d9770",
+    "getProposal": "c7f758a8",
+    "futarchyProposalOf": "0964ee77",
+    "officialProposalExtended": "0e0e6911",
+    "inConditionalMode": "e43f2504",
+    "activeProposalId": "a81160c0",
+    "emergencyExitArmedAt": "d13fac6e",
+    "emergencyExitExecuted": "cde354cc",
+    "initialized": "42447a4f",
+    "totalSupply": "18160ddd",
+    "spotLiquidity": "26e2caf6",
+    "conditionalYesLiquidity": "043b300a",
+    "conditionalNoLiquidity": "3e61972e",
+    "sync": "fff6cae9",
+    "restore": "adc637be",
+    "resolve": "4f896d4f",
+}
+
+
+def _call_data(selector: str, argument: Optional[int] = None) -> str:
+    return "0x" + selector + ("" if argument is None else argument.to_bytes(32, "big").hex())
+
+
+def _rpc_words(rpc: Any, target: str, data: str, block_number: int) -> List[bytes]:
+    raw = rpc.call({"to": target, "data": data}, hex(block_number))
+    if not isinstance(raw, str) or not re.fullmatch(r"0x(?:[0-9a-fA-F]{64})+", raw):
+        raise IndexerError("eth_call returned noncanonical static ABI")
+    decoded = bytes.fromhex(raw[2:])
+    return [decoded[index : index + 32] for index in range(0, len(decoded), 32)]
+
+
+def _uint_word(words: List[bytes], index: int, label: str) -> int:
+    if index >= len(words):
+        raise IndexerError("%s output is truncated" % label)
+    return int.from_bytes(words[index], "big")
+
+
+def _bool_word(words: List[bytes], index: int, label: str) -> bool:
+    value = _uint_word(words, index, label)
+    if value not in (0, 1):
+        raise IndexerError("%s is not boolean" % label)
+    return bool(value)
+
+
+def _address_word(words: List[bytes], index: int, label: str, zero_none: bool = False) -> Optional[str]:
+    if index >= len(words) or any(words[index][:12]):
+        raise IndexerError("%s is not an ABI address" % label)
+    value = "0x" + words[index][12:].hex()
+    return None if zero_none and value == "0x" + "00" * 20 else value
+
+
+BENIGN_RACE_ERRORS = {
+    "0xbaf3f0f7",  # FutarchyArbitration.InvalidState()
+    "0xb46f8394",  # EvaluationAlreadyStarted(uint256)
+    "0x52e39725",  # EvaluationNotStarted(uint256)
+    "0xb7083f88",  # NoActiveEvaluation()
+    "0x0d2725de",  # WrongProposalId(uint256,uint256)
+}
+
+
+def _attempt_classification(outcome: str, revert_data: Optional[str]) -> str:
+    if outcome != "revert":
+        return outcome
+    selector = None
+    if isinstance(revert_data, str) and re.fullmatch(r"0x[0-9a-fA-F]{8,}", revert_data):
+        selector = revert_data[:10].lower()
+    return "race-candidate" if selector in BENIGN_RACE_ERRORS else "fatal-revert"
+
+
 class Indexer:
     def __init__(self, path: Union[str, Path]) -> None:
         self.path = str(path)
@@ -152,9 +285,15 @@ class Indexer:
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(SCHEMA)
         version = self._meta("schemaVersion")
-        if version not in (None, "1"):
+        if version not in (None, "1", "2"):
             raise IndexerError("unsupported index schema")
-        self._set_meta("schemaVersion", "1")
+        if version == "1":
+            self.db.execute("ALTER TABLE proposals ADD COLUMN evaluation_payload TEXT")
+            self.db.execute("ALTER TABLE proposals ADD COLUMN payload_source TEXT")
+            self.db.execute(
+                "ALTER TABLE flm_state ADD COLUMN restore_needed INTEGER NOT NULL DEFAULT 0"
+            )
+        self._set_meta("schemaVersion", "2")
         self.db.commit()
 
     def close(self) -> None:
@@ -203,6 +342,297 @@ class Indexer:
         ).fetchone()[0] == 0:
             raise IndexerError("at least one registrar is required")
 
+    def _hydrate(self, rpc: Any, chain_id: int, block: Dict[str, Any]) -> None:
+        if not hasattr(rpc, "call"):
+            return
+        for instance in self.db.execute(
+            "SELECT * FROM instances WHERE chain_id=? ORDER BY receipt", (chain_id,)
+        ).fetchall():
+            if any(instance[key] is None for key in ("arbitration", "evaluator", "manager", "relay")):
+                continue
+            registrar_hash = "0x" + _rpc_words(
+                rpc,
+                instance["registrar"],
+                _call_data(SELECTORS["registrarCodeHash"]),
+                block["number"],
+            )[0].hex()
+            core_hash = "0x" + _rpc_words(
+                rpc, instance["receipt"], _call_data(SELECTORS["coreHash"]), block["number"]
+            )[0].hex()
+            flm_hash = "0x" + _rpc_words(
+                rpc, instance["receipt"], _call_data(SELECTORS["flmHash"]), block["number"]
+            )[0].hex()
+            core_sealed = _bool_word(
+                _rpc_words(
+                    rpc,
+                    instance["receipt"],
+                    _call_data(SELECTORS["coreSealed"]),
+                    block["number"],
+                ),
+                0,
+                "coreSealed",
+            )
+            flm_sealed = _bool_word(
+                _rpc_words(
+                    rpc,
+                    instance["receipt"],
+                    _call_data(SELECTORS["flmSealed"]),
+                    block["number"],
+                ),
+                0,
+                "flmSealed",
+            )
+            if core_hash != instance["core_hash"] or flm_hash != instance["flm_hash"]:
+                raise IndexerError("receipt config getters disagree with GenesisStaged")
+            if not core_sealed or not flm_sealed or registrar_hash == "0x" + "00" * 32:
+                raise IndexerError("sealed instance views are incomplete")
+            gateway = _address_word(
+                _rpc_words(
+                    rpc,
+                    instance["receipt"],
+                    _call_data(SELECTORS["proposalGateway"]),
+                    block["number"],
+                ),
+                0,
+                "proposalGateway",
+            )
+            release_strategy = _address_word(
+                _rpc_words(
+                    rpc,
+                    instance["receipt"],
+                    _call_data(SELECTORS["releaseStrategy"]),
+                    block["number"],
+                ),
+                0,
+                "releaseStrategy",
+            )
+
+            arbitration = instance["arbitration"]
+            timeout = _uint_word(
+                _rpc_words(rpc, arbitration, _call_data(SELECTORS["timeout"]), block["number"]),
+                0,
+                "timeout",
+            )
+            base_x = _uint_word(
+                _rpc_words(rpc, arbitration, _call_data(SELECTORS["baseX"]), block["number"]),
+                0,
+                "baseX",
+            )
+            max_queue = _uint_word(
+                _rpc_words(rpc, arbitration, _call_data(SELECTORS["maxQueue"]), block["number"]),
+                0,
+                "MAX_QUEUE",
+            )
+            active = _uint_word(
+                _rpc_words(
+                    rpc, arbitration, _call_data(SELECTORS["activeEvaluation"]), block["number"]
+                ),
+                0,
+                "activeEvaluationProposalId",
+            )
+            if max_queue != MAX_QUEUE:
+                raise IndexerError("arbitration MAX_QUEUE view is not canonical")
+
+            self.db.execute(
+                "DELETE FROM proposal_views WHERE chain_id=? AND arbitration=?",
+                (chain_id, arbitration),
+            )
+            for proposal in self.db.execute(
+                "SELECT proposal_id FROM proposals WHERE chain_id=? AND arbitration=?",
+                (chain_id, arbitration),
+            ).fetchall():
+                proposal_id = int(proposal[0])
+                words = _rpc_words(
+                    rpc,
+                    arbitration,
+                    _call_data(SELECTORS["getProposal"], proposal_id),
+                    block["number"],
+                )
+                if len(words) != 11 or not _bool_word(words, 10, "proposal.exists"):
+                    raise IndexerError("getProposal returned an invalid static tuple")
+                state = _uint_word(words, 5, "proposal.state")
+                if state >= len(STATE_NAMES):
+                    raise IndexerError("getProposal returned an invalid state")
+                self.db.execute(
+                    "INSERT INTO proposal_views(chain_id,arbitration,proposal_id,block_number,state,"
+                    "last_state_change_at,yes_bidder,yes_bond_amount,no_bidder,no_bond_amount,"
+                    "queue_position,settled,accepted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        chain_id,
+                        arbitration,
+                        str(proposal_id),
+                        block["number"],
+                        STATE_NAMES[state],
+                        _uint_word(words, 6, "proposal.lastStateChangeAt"),
+                        _address_word(words, 1, "proposal.yesBidder", True),
+                        str(_uint_word(words, 2, "proposal.yesAmount")),
+                        _address_word(words, 3, "proposal.noBidder", True),
+                        str(_uint_word(words, 4, "proposal.noAmount")),
+                        _uint_word(words, 9, "proposal.queuePosition"),
+                        int(_bool_word(words, 7, "proposal.settled")),
+                        int(_bool_word(words, 8, "proposal.accepted")),
+                    ),
+                )
+
+            evaluator_market = None
+            resolution_ready = False
+            if active:
+                evaluator_market = _address_word(
+                    _rpc_words(
+                        rpc,
+                        instance["evaluator"],
+                        _call_data(SELECTORS["futarchyProposalOf"], active),
+                        block["number"],
+                    ),
+                    0,
+                    "futarchyProposalOf",
+                    True,
+                )
+                if evaluator_market is not None:
+                    try:
+                        _rpc_words(
+                            rpc,
+                            instance["evaluator"],
+                            _call_data(SELECTORS["resolve"], active),
+                            block["number"],
+                        )
+                        resolution_ready = True
+                    except RpcCallError:
+                        pass
+
+            relay = _rpc_words(
+                rpc,
+                instance["relay"],
+                _call_data(SELECTORS["officialProposalExtended"]),
+                block["number"],
+            )
+            if len(relay) != 13:
+                raise IndexerError("officialProposalExtended returned an invalid tuple")
+            relay_id = _uint_word(relay, 0, "relay.proposalId")
+            relay_proposal = _address_word(relay, 1, "relay.proposal", True)
+            relay_exists = _bool_word(relay, 3, "relay.exists")
+            relay_settled = _bool_word(relay, 4, "relay.settled")
+
+            manager = instance["manager"]
+            flm_mode = _bool_word(
+                _rpc_words(
+                    rpc, manager, _call_data(SELECTORS["inConditionalMode"]), block["number"]
+                ),
+                0,
+                "inConditionalMode",
+            )
+            flm_active = _uint_word(
+                _rpc_words(
+                    rpc, manager, _call_data(SELECTORS["activeProposalId"]), block["number"]
+                ),
+                0,
+                "FLM activeProposalId",
+            )
+            flm_row = self.db.execute(
+                "SELECT mode,active_proposal_id,restore_needed FROM flm_state "
+                "WHERE chain_id=? AND manager=?",
+                (chain_id, manager),
+            ).fetchone()
+            expected_mode = "conditional" if flm_mode else "spot"
+            emergency_armed = _uint_word(
+                _rpc_words(
+                    rpc,
+                    manager,
+                    _call_data(SELECTORS["emergencyExitArmedAt"]),
+                    block["number"],
+                ),
+                0,
+                "emergencyExitArmedAt",
+            )
+            emergency_executed = _bool_word(
+                _rpc_words(
+                    rpc,
+                    manager,
+                    _call_data(SELECTORS["emergencyExitExecuted"]),
+                    block["number"],
+                ),
+                0,
+                "emergencyExitExecuted",
+            )
+            initialized = _bool_word(
+                _rpc_words(
+                    rpc, manager, _call_data(SELECTORS["initialized"]), block["number"]
+                ),
+                0,
+                "initializedFromBootstrap",
+            )
+            totals = []
+            for name in (
+                "totalSupply",
+                "spotLiquidity",
+                "conditionalYesLiquidity",
+                "conditionalNoLiquidity",
+            ):
+                totals.append(
+                    _uint_word(
+                        _rpc_words(rpc, manager, _call_data(SELECTORS[name]), block["number"]),
+                        0,
+                        name,
+                    )
+                )
+            sync_action = -1
+            try:
+                sync_action = _uint_word(
+                    _rpc_words(rpc, manager, _call_data(SELECTORS["sync"]), block["number"]),
+                    0,
+                    "sync action",
+                )
+                if sync_action not in (0, 1, 2):
+                    raise IndexerError("sync returned an invalid action")
+            except RpcCallError:
+                pass
+            restore_ok = False
+            if flm_row["restore_needed"]:
+                try:
+                    result = rpc.call(
+                        {"to": manager, "data": _call_data(SELECTORS["restore"])},
+                        hex(block["number"]),
+                    )
+                    restore_ok = isinstance(result, str) and result.lower() == "0x"
+                except RpcCallError:
+                    pass
+
+            self.db.execute(
+                "INSERT OR REPLACE INTO instance_views VALUES("
+                + ",".join("?" for _ in range(28))
+                + ")",
+                (
+                    chain_id,
+                    instance["receipt"],
+                    block["number"],
+                    block["hash"],
+                    registrar_hash,
+                    gateway,
+                    release_strategy,
+                    str(timeout),
+                    str(base_x),
+                    max_queue,
+                    str(active),
+                    evaluator_market,
+                    str(relay_id),
+                    relay_proposal,
+                    int(relay_exists),
+                    int(relay_settled),
+                    expected_mode,
+                    str(flm_active),
+                    str(emergency_armed),
+                    int(emergency_executed),
+                    int(initialized),
+                    str(totals[0]),
+                    str(totals[1]),
+                    str(totals[2]),
+                    str(totals[3]),
+                    sync_action,
+                    int(resolution_ready),
+                    int(restore_ok),
+                ),
+            )
+
     def _lca(self, rpc: Any, chain_id: int, start: int, remote_final: int) -> int:
         row = self.db.execute(
             "SELECT MAX(number) FROM blocks WHERE chain_id=?", (chain_id,)
@@ -233,6 +663,12 @@ class Indexer:
             (chain_id,),
         ):
             watched.update(value for value in row if value is not None)
+        watched.update(
+            row[0]
+            for row in self.db.execute(
+                "SELECT proposal_gateway FROM instance_views WHERE chain_id=?", (chain_id,)
+            )
+        )
         return watched
 
     def sync(
@@ -276,6 +712,7 @@ class Indexer:
                     previous_hash = current["hash"]
 
                 self._replay(chain_id)
+                self._hydrate(rpc, chain_id, final)
                 seen_watchers: Set[str] = set()
                 for _ in range(8):
                     watched = self._watched(chain_id)
@@ -325,14 +762,31 @@ class Indexer:
                             ),
                         )
                     self._replay(chain_id)
+                    self._hydrate(rpc, chain_id, final)
                 else:
                     raise IndexerError("event address discovery did not converge")
 
+                self._validate_view_alignment(chain_id)
                 self._set_meta("cursorNumber", final["number"])
                 self._set_meta("cursorHash", final["hash"])
             return self.report()
         except sqlite3.IntegrityError as exc:
             raise IndexerError("derived state violates uniqueness") from exc
+
+    def _validate_view_alignment(self, chain_id: int) -> None:
+        for row in self.db.execute(
+            "SELECT i.active_evaluation_proposal_id,v.active_proposal_id,f.mode,"
+            "f.active_proposal_id AS flm_event_id,v.flm_mode,v.flm_active_proposal_id "
+            "FROM instances i JOIN instance_views v ON v.chain_id=i.chain_id AND v.receipt=i.receipt "
+            "JOIN flm_state f ON f.chain_id=i.chain_id AND f.manager=i.manager WHERE i.chain_id=?",
+            (chain_id,),
+        ):
+            if (
+                row["active_evaluation_proposal_id"] != row["active_proposal_id"]
+                or row["mode"] != row["flm_mode"]
+                or row["flm_event_id"] != row["flm_active_proposal_id"]
+            ):
+                raise IndexerError("finalized contract views disagree with replayed event state")
 
     def replay(self) -> bytes:
         chain = self._meta("chainId")
@@ -341,6 +795,227 @@ class Indexer:
         with self.db:
             self._replay(int(chain))
         return self.report_bytes()
+
+    def keeper_state(self, receipt: str) -> Dict[str, Any]:
+        chain = self._meta("chainId")
+        if chain is None:
+            raise IndexerError("database is not bound to a chain")
+        chain_id = int(chain)
+        try:
+            receipt = address(receipt, "receipt")
+        except SchemaError as exc:
+            raise IndexerError(str(exc)) from exc
+        instance = self.db.execute(
+            "SELECT i.*,v.* FROM instances i JOIN instance_views v "
+            "ON v.chain_id=i.chain_id AND v.receipt=i.receipt "
+            "WHERE i.chain_id=? AND i.receipt=?",
+            (chain_id, receipt),
+        ).fetchone()
+        if instance is None:
+            raise IndexerError("instance has no finalized hydrated view")
+        proposals = []
+        rows = self.db.execute(
+            "SELECT p.*,v.state AS view_state,v.last_state_change_at AS view_changed,"
+            "v.yes_bond_amount AS view_yes,v.no_bond_amount AS view_no,v.settled AS view_settled "
+            "FROM proposals p JOIN proposal_views v ON v.chain_id=p.chain_id "
+            "AND v.arbitration=p.arbitration AND v.proposal_id=p.proposal_id "
+            "WHERE p.chain_id=? AND p.arbitration=?",
+            (chain_id, instance["arbitration"]),
+        ).fetchall()
+        rows.sort(key=lambda row: int(row["proposal_id"]))
+        for proposal in rows:
+            proposals.append(
+                {
+                    "proposalId": int(proposal["proposal_id"]),
+                    "state": proposal["view_state"],
+                    "lastStateChangeAt": proposal["view_changed"],
+                    "yesBondAmount": int(proposal["view_yes"]),
+                    "noBondAmount": int(proposal["view_no"]),
+                    "settled": bool(proposal["view_settled"]),
+                    "futarchyProposal": proposal["futarchy_proposal"],
+                    "evaluationPayload": proposal["evaluation_payload"],
+                    "payloadSource": proposal["payload_source"],
+                    "resolutionReady": bool(instance["resolution_ready"])
+                    and proposal["proposal_id"] == instance["active_proposal_id"],
+                }
+            )
+        queued = sorted(
+            (row for row in rows if row["view_state"] == "QUEUED"),
+            key=lambda row: (row["enqueued_block"], row["enqueued_log_index"]),
+        )
+        block_row = self.db.execute(
+            "SELECT timestamp FROM blocks WHERE chain_id=? AND number=?",
+            (chain_id, instance["block_number"]),
+        ).fetchone()
+        if block_row is None:
+            raise IndexerError("hydrated view block is not canonical")
+        flm = self.db.execute(
+            "SELECT restore_needed FROM flm_state WHERE chain_id=? AND manager=?",
+            (chain_id, instance["manager"]),
+        ).fetchone()
+        emergency = bool(int(instance["emergency_armed_at"])) or bool(
+            instance["emergency_executed"]
+        )
+        return {
+            "arbitration": instance["arbitration"],
+            "evaluator": instance["evaluator"],
+            "manager": instance["manager"],
+            "now": block_row[0],
+            "timeout": int(instance["timeout"]),
+            "baseX": int(instance["base_x"]),
+            "activeEvaluationProposalId": int(instance["active_proposal_id"]),
+            "queue": [int(row["proposal_id"]) for row in queued],
+            "proposals": proposals,
+            "flm": {
+                "syncReady": instance["sync_action"] in (1, 2),
+                "restoreNeeded": bool(flm[0]) and bool(instance["restore_call_ok"]),
+                "emergency": emergency,
+            },
+        }
+
+    def next_action(self, receipt: str) -> Any:
+        from .keeper import decide
+
+        return decide(self.keeper_state(receipt))
+
+    def record_attempt(
+        self,
+        action: Any,
+        keeper: str,
+        phase: str,
+        outcome: str,
+        *,
+        revert_data: Optional[str] = None,
+        tx_hash: Optional[str] = None,
+        detail: str = "",
+    ) -> Dict[str, Any]:
+        chain = self._meta("chainId")
+        if chain is None:
+            raise IndexerError("database is not bound to a chain")
+        if phase not in ("staticcall", "send", "receipt", "funding"):
+            raise IndexerError("attempt phase is invalid")
+        if outcome not in ("ok", "revert", "submitted", "landed", "refused"):
+            raise IndexerError("attempt outcome is invalid")
+        try:
+            keeper = address(keeper, "keeper")
+            target = address(action.to, "action target")
+        except (AttributeError, SchemaError) as exc:
+            raise IndexerError("attempt action or keeper is invalid") from exc
+        if (
+            not isinstance(action.kind, str)
+            or not action.kind
+            or len(action.kind) > 64
+            or not isinstance(action.data, str)
+            or not re.fullmatch(r"0x(?:[0-9a-fA-F]{2})*", action.data)
+        ):
+            raise IndexerError("attempt action fields are invalid")
+        if not isinstance(detail, str) or len(detail.encode("utf-8")) > 512:
+            raise IndexerError("attempt detail exceeds 512 UTF-8 bytes")
+        if tx_hash is not None:
+            try:
+                tx_hash = hex_bytes(tx_hash, 32, "transaction hash")
+            except SchemaError as exc:
+                raise IndexerError(str(exc)) from exc
+        if revert_data is not None and (
+            not isinstance(revert_data, str)
+            or not re.fullmatch(r"0x(?:[0-9a-fA-F]{2})*", revert_data)
+        ):
+            raise IndexerError("revert data must be byte hex")
+        classification = _attempt_classification(outcome, revert_data)
+        canonical = json.dumps(
+            {
+                "kind": action.kind,
+                "to": target,
+                "data": action.data,
+                "proposalId": action.proposal_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        fingerprint = "0x" + hashlib.sha256(canonical).hexdigest()
+        with self.db:
+            attempt_id = self.db.execute("SELECT COALESCE(MAX(attempt_id),0)+1 FROM attempts").fetchone()[0]
+            self.db.execute(
+                "INSERT INTO attempts VALUES(" + ",".join("?" for _ in range(16)) + ")",
+                (
+                    attempt_id,
+                    int(chain),
+                    fingerprint,
+                    keeper,
+                    phase,
+                    outcome,
+                    classification,
+                    action.kind,
+                    target,
+                    action.data,
+                    None if action.proposal_id is None else str(action.proposal_id),
+                    tx_hash,
+                    None if revert_data is None else revert_data.lower(),
+                    detail,
+                    None,
+                    None,
+                ),
+            )
+            if phase == "receipt" and outcome == "landed" and action.kind == "flmRestore":
+                self.db.execute(
+                    "UPDATE flm_state SET restore_needed=0 WHERE chain_id=? AND manager=?",
+                    (int(chain), target),
+                )
+        return dict(self.db.execute("SELECT * FROM attempts WHERE attempt_id=?", (attempt_id,)).fetchone())
+
+    def staticcall_action(self, rpc: Any, action: Any, keeper: str) -> Dict[str, Any]:
+        cursor = self._meta("cursorNumber")
+        if cursor is None:
+            raise IndexerError("database has no finalized cursor")
+        try:
+            keeper = address(keeper, "keeper")
+        except SchemaError as exc:
+            raise IndexerError(str(exc)) from exc
+        transaction = {"from": keeper, "to": action.to, "data": action.data, "value": "0x0"}
+        try:
+            result = rpc.call(transaction, hex(int(cursor)))
+            return self.record_attempt(
+                action, keeper, "staticcall", "ok", detail="return=" + str(result)[:256]
+            )
+        except RpcCallError as exc:
+            return self.record_attempt(
+                action,
+                keeper,
+                "staticcall",
+                "revert",
+                revert_data=exc.data,
+                detail=str(exc)[:512],
+            )
+
+    def classify_race(
+        self, winner_attempt_id: int, loser_attempt_id: int, postcondition_satisfied: bool
+    ) -> Dict[str, Any]:
+        winner = self.db.execute(
+            "SELECT * FROM attempts WHERE attempt_id=?", (winner_attempt_id,)
+        ).fetchone()
+        loser = self.db.execute(
+            "SELECT * FROM attempts WHERE attempt_id=?", (loser_attempt_id,)
+        ).fetchone()
+        if (
+            winner is None
+            or loser is None
+            or winner["action_sha256"] != loser["action_sha256"]
+            or winner["outcome"] != "landed"
+            or loser["outcome"] != "revert"
+            or not postcondition_satisfied
+        ):
+            raise IndexerError("benign race requires one matching winner and satisfied post-state")
+        with self.db:
+            self.db.execute(
+                "UPDATE attempts SET classification='benign-race',race_winner_attempt_id=?,"
+                "postcondition_satisfied=1 WHERE attempt_id=?",
+                (winner_attempt_id, loser_attempt_id),
+            )
+        return dict(
+            self.db.execute(
+                "SELECT * FROM attempts WHERE attempt_id=?", (loser_attempt_id,)
+            ).fetchone()
+        )
 
     def _replay(self, chain_id: int) -> None:
         # ponytail: full replay is the safest P0; checkpoint only after load tiers show it is needed.
@@ -370,6 +1045,11 @@ class Indexer:
                     continue
                 raise IndexerError(str(exc)) from exc
             self._apply(chain_id, row["timestamp"], log, spec["id"], spec["emitterRole"], event)
+        self.db.execute(
+            "DELETE FROM instance_views WHERE chain_id=? AND receipt NOT IN "
+            "(SELECT receipt FROM instances WHERE chain_id=?)",
+            (chain_id, chain_id),
+        )
 
     def _role_instance(self, chain_id: int, emitter: str, role: str) -> Optional[sqlite3.Row]:
         if role == "registrar":
@@ -378,7 +1058,20 @@ class Indexer:
                 "WHERE chain_id=? AND address=?)",
                 (chain_id, emitter),
             ).fetchone()
-        column = {"receipt": "receipt", "arbitration": "arbitration", "evaluator": "evaluator", "manager": "manager"}[role]
+        if role == "gateway":
+            return self.db.execute(
+                "SELECT i.* FROM instances i JOIN instance_views v "
+                "ON v.chain_id=i.chain_id AND v.receipt=i.receipt "
+                "WHERE i.chain_id=? AND v.proposal_gateway=?",
+                (chain_id, emitter),
+            ).fetchone()
+        column = {
+            "receipt": "receipt",
+            "space": "space",
+            "arbitration": "arbitration",
+            "evaluator": "evaluator",
+            "manager": "manager",
+        }[role]
         return self.db.execute(
             "SELECT * FROM instances WHERE chain_id=? AND %s=?" % column,
             (chain_id, emitter),
@@ -539,7 +1232,10 @@ class Indexer:
                 "arbitration.finalizedByTimeout",
             ):
                 if event_id.endswith("evaluationResolved"):
-                    if proposal["state"] != "EVALUATING" or instance["active_evaluation_proposal_id"] != str(event["proposalId"]):
+                    if (
+                        proposal["state"] != "EVALUATING"
+                        or instance["active_evaluation_proposal_id"] != str(event["proposalId"])
+                    ):
                         raise IndexerError("evaluation resolution does not match active proposal")
                     self.db.execute(
                         "UPDATE instances SET active_evaluation_proposal_id='0' "
@@ -560,6 +1256,57 @@ class Indexer:
                     ),
                 )
                 return
+
+        if role == "gateway":
+            proposal = self._proposal(chain_id, instance["arbitration"], event["proposalId"])
+            if event_id == "gateway.transferProposed":
+                payload = _static_payload(
+                    TRANSFER_KIND,
+                    chain_id,
+                    instance["vault"],
+                    event["asset"],
+                    event["recipient"],
+                    event["amount"],
+                    event["salt"],
+                )
+            elif event_id == "gateway.paramProposed":
+                payload = _static_payload(
+                    PARAM_KIND,
+                    chain_id,
+                    instance["vault"],
+                    event["key"],
+                    event["asset"],
+                    event["value"],
+                    event["salt"],
+                )
+            else:
+                if event["round"] not in (1, 2):
+                    raise IndexerError("critical round is not canonical")
+                payload = _static_payload(
+                    CRITICAL_KIND,
+                    chain_id,
+                    instance["vault"],
+                    event["target"],
+                    event["value"],
+                    event["dataHash"],
+                    event["salt"],
+                    event["round"],
+                )
+            self._bind_payload(chain_id, proposal, payload, event_id)
+            return
+
+        if role == "space":
+            proposal = self._proposal(chain_id, instance["arbitration"], event["arbitrationId"])
+            view = self.db.execute(
+                "SELECT release_strategy FROM instance_views WHERE chain_id=? AND receipt=?",
+                (chain_id, instance["receipt"]),
+            ).fetchone()
+            if view is None or view[0] != event["executionStrategy"]:
+                raise IndexerError("site payload does not use the sealed release strategy")
+            self._bind_payload(
+                chain_id, proposal, event["evaluationPayload"], "space.proposalCreated"
+            )
+            return
 
         if role == "evaluator":
             proposal = self._proposal(chain_id, instance["arbitration"], event["proposalId"])
@@ -607,26 +1354,50 @@ class Indexer:
                 if flm["mode"] != "spot":
                     raise IndexerError("FLM is already conditional")
                 self.db.execute(
-                    "UPDATE flm_state SET mode='conditional',active_proposal_id=? "
+                    "UPDATE flm_state SET mode='conditional',active_proposal_id=?,restore_needed=0 "
                     "WHERE chain_id=? AND manager=?",
                     (str(event["proposalId"]), chain_id, emitter),
+                )
+                return
+            if event_id == "flm.restoreDeferred":
+                self.db.execute(
+                    "UPDATE flm_state SET restore_needed=1 WHERE chain_id=? AND manager=?",
+                    (chain_id, emitter),
                 )
                 return
             if event_id == "flm.migratedBackToSpot":
                 if flm["mode"] != "conditional" or flm["active_proposal_id"] != str(event["proposalId"]):
                     raise IndexerError("FLM restore does not match its active proposal")
                 self.db.execute(
-                    "UPDATE flm_state SET mode='spot',active_proposal_id='0' "
+                    "UPDATE flm_state SET mode='spot',active_proposal_id='0',restore_needed=0 "
                     "WHERE chain_id=? AND manager=?",
                     (chain_id, emitter),
                 )
                 return
         raise IndexerError("unhandled schema event %s" % event_id)
 
+    def _bind_payload(
+        self, chain_id: int, proposal: sqlite3.Row, payload: str, source: str
+    ) -> None:
+        existing = proposal["evaluation_payload"]
+        if existing is not None and existing != payload:
+            raise IndexerError("proposal has conflicting committed payload events")
+        self.db.execute(
+            "UPDATE proposals SET evaluation_payload=?,payload_source=? WHERE chain_id=? "
+            "AND arbitration=? AND proposal_id=?",
+            (
+                payload,
+                source,
+                chain_id,
+                proposal["arbitration"],
+                proposal["proposal_id"],
+            ),
+        )
+
     def report(self) -> Dict[str, Any]:
         chain = self._meta("chainId")
         if chain is None:
-            return {"schemaVersion": 1, "chainId": None, "cursor": None, "instances": []}
+            return {"schemaVersion": 2, "chainId": None, "cursor": None, "instances": []}
         chain_id = int(chain)
         instances = []
         for row in self.db.execute(
@@ -663,6 +1434,8 @@ class Indexer:
                             "conditionId": proposal["condition_id"],
                             "payloadKind": proposal["payload_kind"],
                             "payloadCommitment": proposal["payload_commitment"],
+                            "evaluationPayload": proposal["evaluation_payload"],
+                            "payloadSource": proposal["payload_source"],
                         }
                     )
                 queued = sorted(
@@ -673,9 +1446,14 @@ class Indexer:
             else:
                 queue = []
             flm = None
+            hydrated = self.db.execute(
+                "SELECT * FROM instance_views WHERE chain_id=? AND receipt=?",
+                (chain_id, row["receipt"]),
+            ).fetchone()
             if row["manager"] is not None:
                 flm_row = self.db.execute(
-                    "SELECT mode,active_proposal_id FROM flm_state WHERE chain_id=? AND manager=?",
+                    "SELECT mode,active_proposal_id,restore_needed FROM flm_state "
+                    "WHERE chain_id=? AND manager=?",
                     (chain_id, row["manager"]),
                 ).fetchone()
                 flm = {
@@ -684,6 +1462,7 @@ class Indexer:
                     "spotAdapter": row["spot_adapter"],
                     "mode": flm_row["mode"],
                     "activeProposalId": flm_row["active_proposal_id"],
+                    "restoreNeeded": bool(flm_row["restore_needed"]),
                 }
             instances.append(
                 {
@@ -703,11 +1482,32 @@ class Indexer:
                     "queueCapacity": MAX_QUEUE,
                     "proposals": proposals,
                     "flm": flm,
+                    "hydrated": None
+                    if hydrated is None
+                    else {
+                        "blockNumber": hydrated["block_number"],
+                        "blockHash": hydrated["block_hash"],
+                        "registrarCodeHash": hydrated["registrar_code_hash"],
+                        "proposalGateway": hydrated["proposal_gateway"],
+                        "releaseStrategy": hydrated["release_strategy"],
+                        "timeout": hydrated["timeout"],
+                        "baseX": hydrated["base_x"],
+                        "maxQueue": hydrated["max_queue"],
+                        "activeProposalId": hydrated["active_proposal_id"],
+                        "evaluatorMarket": hydrated["evaluator_market"],
+                        "relayProposalId": hydrated["relay_proposal_id"],
+                        "relayProposal": hydrated["relay_proposal"],
+                        "relayExists": bool(hydrated["relay_exists"]),
+                        "relaySettled": bool(hydrated["relay_settled"]),
+                        "syncAction": hydrated["sync_action"],
+                        "resolutionReady": bool(hydrated["resolution_ready"]),
+                        "restoreCallOk": bool(hydrated["restore_call_ok"]),
+                    },
                 }
             )
         cursor_number = self._meta("cursorNumber")
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "chainId": chain_id,
             "cursor": None
             if cursor_number is None
@@ -716,6 +1516,7 @@ class Indexer:
                 "SELECT COUNT(*) FROM logs WHERE chain_id=?", (chain_id,)
             ).fetchone()[0],
             "instances": instances,
+            "attempts": [dict(row) for row in self.db.execute("SELECT * FROM attempts ORDER BY attempt_id")],
         }
 
     def report_bytes(self) -> bytes:
@@ -724,7 +1525,7 @@ class Indexer:
     def evidence(self) -> Dict[str, Any]:
         report = self.report_bytes()
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "kind": "fao.windtunnel.index-report",
             "reportSha256": "0x" + hashlib.sha256(report).hexdigest(),
             "report": json.loads(report),

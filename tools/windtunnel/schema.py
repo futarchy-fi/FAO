@@ -12,7 +12,7 @@ class SchemaError(ValueError):
     pass
 
 
-SCHEMA_PATH = Path(__file__).with_name("event-schema-v1.json")
+SCHEMA_PATH = Path(__file__).with_name("event-schema-v2.json")
 EVENT_SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 EVENTS = {event["topic0"]: event for event in EVENT_SCHEMA["events"]}
 
@@ -92,6 +92,8 @@ def decode_event(log: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     spec = EVENTS.get(topics[0])
     if spec is None:
         raise SchemaError("unknown event topic")
+    if spec.get("decoder") == "spaceProposalCreated":
+        return spec, _decode_space_proposal(log)
     indexed = [item for item in spec["inputs"] if item["indexed"]]
     unindexed = [item for item in spec["inputs"] if not item["indexed"]]
     raw_data = bytes.fromhex(log["data"][2:])
@@ -109,3 +111,42 @@ def decode_event(log: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             data_index += 32
         decoded[item["name"]] = _decode_word(word, item["type"], item["name"])
     return spec, decoded
+
+
+def _dynamic(data: bytes, offset: int, label: str) -> bytes:
+    if offset < 12 * 32 or offset % 32 or offset + 32 > len(data):
+        raise SchemaError("%s offset is invalid" % label)
+    size = int.from_bytes(data[offset : offset + 32], "big")
+    end = offset + 32 + size
+    padded_end = (end + 31) // 32 * 32
+    if padded_end > len(data) or any(data[end:padded_end]):
+        raise SchemaError("%s length or padding is invalid" % label)
+    return data[offset + 32 : end]
+
+
+def _decode_space_proposal(log: Dict[str, Any]) -> Dict[str, Any]:
+    if len(log["topics"]) != 1:
+        raise SchemaError("space ProposalCreated cannot have indexed fields")
+    data = bytes.fromhex(log["data"][2:])
+    if len(data) < 12 * 32 or len(data) % 32:
+        raise SchemaError("space ProposalCreated head is invalid")
+    metadata_offset = int.from_bytes(data[10 * 32 : 11 * 32], "big")
+    payload_offset = int.from_bytes(data[11 * 32 : 12 * 32], "big")
+    if metadata_offset != 12 * 32:
+        raise SchemaError("space ProposalCreated metadata is noncanonical")
+    metadata = _dynamic(data, metadata_offset, "metadata")
+    payload = _dynamic(data, payload_offset, "payload")
+    if payload_offset != metadata_offset + 32 + ((len(metadata) + 31) // 32 * 32):
+        raise SchemaError("space ProposalCreated dynamic values are noncanonical")
+    if payload_offset + 32 + ((len(payload) + 31) // 32 * 32) != len(data):
+        raise SchemaError("space ProposalCreated has trailing data")
+    return {
+        "sxProposalId": int.from_bytes(data[:32], "big"),
+        "author": _decode_word(data[32:64], "address", "author"),
+        "executionStrategy": _decode_word(
+            data[4 * 32 : 5 * 32], "address", "executionStrategy"
+        ),
+        "executionPayloadHash": "0x" + data[8 * 32 : 9 * 32].hex(),
+        "arbitrationId": int.from_bytes(data[8 * 32 : 9 * 32], "big"),
+        "evaluationPayload": "0x" + payload.hex(),
+    }

@@ -6,7 +6,9 @@ one conditional market; scale comes from indexing multiple registrar-created ins
 
 ## Frozen inputs and state
 
-[`event-schema-v1.json`](../tools/windtunnel/event-schema-v1.json) is the v1 log-to-state boundary.
+[`event-schema-v1.json`](../tools/windtunnel/event-schema-v1.json) remains the frozen P0 boundary.
+[`event-schema-v2.json`](../tools/windtunnel/event-schema-v2.json) adds trusted EconGateway and
+Snapshot X Space payload events plus FLM restore deferral.
 It pins event signatures/topics and the minimal registrar, receipt, arbitration, evaluator, and FLM
 records. Raw relevant logs use `(chainId, blockHash, logIndex)` as their SQLite key. Blocks and logs
 are accepted only through the RPC's `finalized` head.
@@ -17,12 +19,22 @@ derived tables from ordered raw logs. Replay output is canonical JSON, so a rest
 has identical bytes. Queue derivation enforces FIFO, a singleton active evaluation, and
 `MAX_QUEUE = 16`.
 
-The stateless keeper consumes that derived state plus current view facts that logs cannot prove:
-timeouts, `baseX`, committed evaluation payloads, resolution readiness, and FLM sync/restore
-readiness. It returns zero or one unsigned action. Its priority preserves the single-market
+At the same finalized block, the indexer hydrates fixed getters on the registrar, receipt,
+arbitration, evaluator, relay, and FLM. Treasury payloads are reconstructed only from a sealed
+gateway event; site payload bytes come only from the sealed Space's `ProposalCreated` event and must
+name the sealed release strategy. `Indexer.next_action(receipt)` is therefore the supported start
+path: callers never supply evaluation bytes.
+
+The stateless keeper consumes that derived and hydrated state. It returns zero or one unsigned
+action. Its priority preserves the single-market
 invariant: create the active market, migrate/restore FLM when ready, resolve, admit the FIFO head,
 finalize timeouts, graduate, then retry idle-liquidity restoration. `StaticCaller` and
 `TransactionSender` are boundaries only; the package stores no key and implements no broadcaster.
+
+Static simulations and externally observed send/receipt outcomes are appended to SQLite evidence.
+A revert is only upgraded to `benign-race` when one identical action landed and the caller confirms
+the postcondition already holds; `InvalidState()` alone is merely a race candidate. Replay never
+deletes these observations.
 
 ## Funding manifest v1
 
@@ -62,10 +74,28 @@ python3 -m tools.windtunnel.cli index \
   --start-block 123456 --registrar 0x...
 python3 -m tools.windtunnel.cli replay --db /tmp/fao-windtunnel.sqlite
 python3 -m tools.windtunnel.cli report --db /tmp/fao-windtunnel.sqlite
+python3 -m tools.windtunnel.cli next --db /tmp/fao-windtunnel.sqlite --receipt 0x...
 python3 -m tools.windtunnel.cli funding --manifest funding.json
 ```
 
-`index`, `replay`, and `report` emit a v1 evidence envelope containing the canonical report and its
-SHA-256 digest. None sends a transaction. The next slice should add view hydration and an external
-signer adapter, then small 10-instance finalized-fork drills. Live sending, RPC fault injection,
-10/100/1000 tiers, and UI stay deferred until that boundary is exercised.
+`index`, `replay`, and `report` emit a v2 evidence envelope containing the canonical report and its
+SHA-256 digest. None sends a transaction. An injected external signer adapter remains a later step.
+
+The explicit post-build Anvil race uses unlocked disposable accounts and stores no key:
+
+```bash
+python3 -m tools.windtunnel.anvil_drill race --output /tmp/windtunnel-race.json
+```
+
+The capped ten-instance command deploys ten current `FutarchyArbitration` instances locally, pins a
+mined block, and performs 20 keeper simulations with zero keeper broadcasts:
+
+```bash
+python3 -m tools.windtunnel.anvil_drill prebroadcast-10 \
+  --output /tmp/windtunnel-prebroadcast-10.json
+```
+
+Its committed fixture says `broadcast: false`; this is deterministic pre-broadcast lifecycle
+evidence, not a live ten-FAO economic deployment. The remaining gap is full registrar/evaluator/FLM
+view hydration against ten deployed economic instances, followed by an injected external signer.
+RPC fault injection, 100/1000 tiers, subsidy automation, and UI remain deferred.

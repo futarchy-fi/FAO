@@ -39,6 +39,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     report.add_argument("--db", type=Path, required=True)
     report.add_argument("--output", type=Path)
 
+    next_ = sub.add_parser("next", help="derive one action from finalized committed state")
+    next_.add_argument("--db", type=Path, required=True)
+    next_.add_argument("--receipt", required=True)
+    next_.add_argument("--output", type=Path)
+
     funding = sub.add_parser("funding", help="validate a funding manifest without using keys")
     funding.add_argument("--manifest", type=Path, required=True)
     funding.add_argument("--output", type=Path)
@@ -54,6 +59,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             windtunnel.sync(JsonRpc(args.rpc_url), args.start_block, args.registrar)
         elif args.command == "replay":
             windtunnel.replay()
+        elif args.command == "next":
+            action = windtunnel.next_action(args.receipt)
+            _emit(None if action is None else action.__dict__, args.output)
+            return 0
         _emit(windtunnel.evidence(), args.output)
     return 0
 
