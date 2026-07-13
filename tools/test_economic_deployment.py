@@ -152,6 +152,22 @@ class EconomicDeploymentTest(unittest.TestCase):
             "arbitrationTimeout": 3600,
             "siteMinActivationBond": 10,
             "treasuryMinActivationBond": 20,
+            "assetPolicies": [
+                {
+                    "asset": economic_deployment.ZERO,
+                    "c1": 1,
+                    "c2": 2,
+                    "tapBudget": 3,
+                    "tapBudgetMax": 4,
+                },
+                {
+                    "asset": self.dependencies["weth"]["target"],
+                    "c1": 5,
+                    "c2": 6,
+                    "tapBudget": 7,
+                    "tapBudgetMax": 8,
+                },
+            ],
             "twapTimeout": 1800,
             "twapWindow": 900,
             "spaceSaltNonce": 7,
@@ -1264,6 +1280,82 @@ class EconomicDeploymentTest(unittest.TestCase):
         )
         with self.assertRaises(economic_deployment.ManifestError):
             economic_deployment._decode_bytes_array_argument(CAST_DEPLOY_FLM_VECTOR, 32, 5)
+
+    def test_core_config_round_trips_nested_asset_policies(self) -> None:
+        encoded = economic_deployment._encode_core_config(self.core_config)
+        self.assertEqual(economic_deployment.DEPLOY_CORE_SELECTOR, "c9b544c1")
+        self.assertEqual(economic_deployment._decode_core_config(encoded), self.core_config)
+        deploy_core = economic_deployment._encode_deploy_core(
+            self.core_config, self.grants, self.core_codes
+        )
+        self.assertEqual(
+            deploy_core[:4],
+            bytes.fromhex("c9b544c1"),
+        )
+        # Golden digest from `cast calldata` with the Solidity deployCore ABI.
+        self.assertEqual(
+            hashlib.sha256(deploy_core).hexdigest(),
+            "8a838654fa54c36287228928cbc552e37b0521f8f51f524ec062eb7e639610dd",
+        )
+        changed = copy.deepcopy(self.core_config)
+        changed["assetPolicies"][0]["tapBudget"] += 1
+        self.assertNotEqual(
+            economic_deployment._encode_core_commitment(self.core_config, self.grants),
+            economic_deployment._encode_core_commitment(changed, self.grants),
+        )
+
+    def test_manifest_validates_asset_policy_limits(self) -> None:
+        economic_deployment.validate_manifest(self.manifest, hash_=self.hash)
+        cases = (
+            (
+                "too-many",
+                [
+                    {
+                        "asset": address(index),
+                        "c1": 1,
+                        "c2": 2,
+                        "tapBudget": 3,
+                        "tapBudgetMax": 4,
+                    }
+                    for index in range(9)
+                ],
+                "exceeds the vault maximum",
+            ),
+            (
+                "duplicate",
+                [copy.deepcopy(self.core_config["assetPolicies"][0])] * 2,
+                "assets must be unique",
+            ),
+            (
+                "c1",
+                [{"asset": address(1), "c1": 3, "c2": 2, "tapBudget": 1, "tapBudgetMax": 2}],
+                "c1 <= c2",
+            ),
+            (
+                "tap",
+                [{"asset": address(1), "c1": 1, "c2": 2, "tapBudget": 3, "tapBudgetMax": 2}],
+                "tapBudget <= tapBudgetMax",
+            ),
+            (
+                "uint128",
+                [
+                    {
+                        "asset": address(1),
+                        "c1": 1 << 128,
+                        "c2": 1 << 128,
+                        "tapBudget": 1,
+                        "tapBudgetMax": 2,
+                    }
+                ],
+                "outside uint128",
+            ),
+        )
+        for name, policies, error in cases:
+            with self.subTest(name=name):
+                broken = copy.deepcopy(self.manifest)
+                broken["coreConfig"]["assetPolicies"] = policies
+                with self.assertRaisesRegex(economic_deployment.ManifestError, error):
+                    economic_deployment.validate_manifest(broken, hash_=self.hash)
 
     def test_outer_receipt_create_supports_operator_nonce_above_127(self) -> None:
         actual = economic_deployment._create_address(

@@ -27,7 +27,7 @@ ZERO = "0x" + "00" * 20
 POOL_INIT_CODE_HASH = (
     "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54"
 )
-DEPLOY_CORE_SELECTOR = "67658a72"
+DEPLOY_CORE_SELECTOR = "c9b544c1"
 DEPLOY_FLM_SELECTOR = "88b5e784"
 FINALIZE_SELECTOR = "4bb278f3"
 STAGE_SIGNATURE = "stage(bytes32,bytes32,bytes)"
@@ -113,6 +113,7 @@ CORE_CONFIG_KEYS = (
     "arbitrationTimeout",
     "siteMinActivationBond",
     "treasuryMinActivationBond",
+    "assetPolicies",
     "twapTimeout",
     "twapWindow",
     "spaceSaltNonce",
@@ -131,6 +132,7 @@ CORE_CONFIG_KEYS = (
     "slope",
     "bootstrapBps",
 )
+ASSET_POLICY_KEYS = ("asset", "c1", "c2", "tapBudget", "tapBudgetMax")
 GRANT_KEYS = ("beneficiary", "start", "duration", "amount")
 FLM_CONFIG_KEYS = ("positionManager",)
 CONTRACT_KEYS = (
@@ -364,8 +366,17 @@ def _dynamic_bytes(value: bytes) -> bytes:
     return _word(len(value)) + value + bytes((-len(value)) % 32)
 
 
+def _encode_asset_policies(policies: list[dict[str, Any]]) -> bytes:
+    encoded = bytearray(_word(len(policies)))
+    for policy in policies:
+        encoded.extend(_address_word(policy["asset"]))
+        for key in ASSET_POLICY_KEYS[1:]:
+            encoded.extend(_word(policy[key]))
+    return bytes(encoded)
+
+
 def _encode_core_config(config: dict[str, Any]) -> bytes:
-    head: list[bytes | str] = []
+    head: list[bytes | str | list[dict[str, Any]]] = []
     for key in CORE_DEPENDENCY_KEYS:
         dependency = config[key]
         head.extend(
@@ -379,10 +390,10 @@ def _encode_core_config(config: dict[str, Any]) -> bytes:
         "arbitrationTimeout",
         "siteMinActivationBond",
         "treasuryMinActivationBond",
-        "twapTimeout",
-        "twapWindow",
-        "spaceSaltNonce",
     ):
+        head.append(_word(config[key]))
+    head.append(config["assetPolicies"])
+    for key in ("twapTimeout", "twapWindow", "spaceSaltNonce"):
         head.append(_word(config[key]))
     head.extend(
         (
@@ -413,6 +424,9 @@ def _encode_core_config(config: dict[str, Any]) -> bytes:
         if isinstance(value, str):
             encoded_head.extend(_word(head_bytes + len(tail)))
             tail.extend(_dynamic_bytes(value.encode("utf-8")))
+        elif isinstance(value, list):
+            encoded_head.extend(_word(head_bytes + len(tail)))
+            tail.extend(_encode_asset_policies(value))
         else:
             encoded_head.extend(value)
     return bytes(encoded_head + tail)
@@ -523,8 +537,36 @@ def _decode_string(value: bytes, head_offset: int, name: str) -> str:
         raise ManifestError(f"{name} is not UTF-8") from exc
 
 
+def _decode_asset_policies(value: bytes, head_offset: int) -> list[dict[str, Any]]:
+    start = _word_uint(value, head_offset, "CoreConfig.assetPolicies offset")
+    if start % 32 or start + 32 > len(value):
+        raise ManifestError("CoreConfig.assetPolicies offset is malformed")
+    count = _word_uint(value, start, "CoreConfig.assetPolicies length")
+    if start + 32 + count * 160 > len(value):
+        raise ManifestError("CoreConfig.assetPolicies is truncated")
+    policies = []
+    for index in range(count):
+        offset = start + 32 + index * 160
+        policies.append(
+            {
+                "asset": _decode_address_word(
+                    value, offset, f"CoreConfig.assetPolicies[{index}].asset"
+                ),
+                "c1": _word_uint(value, offset + 32, f"CoreConfig.assetPolicies[{index}].c1"),
+                "c2": _word_uint(value, offset + 64, f"CoreConfig.assetPolicies[{index}].c2"),
+                "tapBudget": _word_uint(
+                    value, offset + 96, f"CoreConfig.assetPolicies[{index}].tapBudget"
+                ),
+                "tapBudgetMax": _word_uint(
+                    value, offset + 128, f"CoreConfig.assetPolicies[{index}].tapBudgetMax"
+                ),
+            }
+        )
+    return policies
+
+
 def _decode_core_config(value: bytes) -> dict[str, Any]:
-    if len(value) < 39 * 32 or len(value) % 32:
+    if len(value) < 40 * 32 or len(value) % 32:
         raise ManifestError("encoded CoreConfig is malformed")
     config: dict[str, Any] = {}
     word = 0
@@ -541,10 +583,12 @@ def _decode_core_config(value: bytes) -> dict[str, Any]:
         "arbitrationTimeout",
         "siteMinActivationBond",
         "treasuryMinActivationBond",
-        "twapTimeout",
-        "twapWindow",
-        "spaceSaltNonce",
     ):
+        config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    config["assetPolicies"] = _decode_asset_policies(value, word * 32)
+    word += 1
+    for key in ("twapTimeout", "twapWindow", "spaceSaltNonce"):
         config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
         word += 1
     for key in (
@@ -649,6 +693,31 @@ def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any]
     )
     for key in uint256_keys:
         _uint(core[key], 256, f"coreConfig.{key}")
+    policies = _require_list(core["assetPolicies"], "coreConfig.assetPolicies")
+    if len(policies) > 8:
+        raise ManifestError("coreConfig.assetPolicies exceeds the vault maximum")
+    assets = set()
+    for index, raw in enumerate(policies):
+        policy = _require_dict(raw, f"coreConfig.assetPolicies[{index}]")
+        if tuple(policy) != ASSET_POLICY_KEYS:
+            raise ManifestError(
+                f"coreConfig.assetPolicies[{index}] is not in canonical Solidity field order"
+            )
+        asset_name = f"coreConfig.assetPolicies[{index}].asset"
+        asset = _hex(policy["asset"], 20, asset_name)
+        if policy["asset"] != asset:
+            raise ManifestError(f"{asset_name} must be canonical lowercase hex")
+        if asset in assets:
+            raise ManifestError("coreConfig.assetPolicies assets must be unique")
+        assets.add(asset)
+        for key in ASSET_POLICY_KEYS[1:]:
+            _uint(policy[key], 128, f"coreConfig.assetPolicies[{index}].{key}")
+        if policy["c1"] > policy["c2"]:
+            raise ManifestError(f"coreConfig.assetPolicies[{index}] requires c1 <= c2")
+        if policy["tapBudget"] > policy["tapBudgetMax"]:
+            raise ManifestError(
+                f"coreConfig.assetPolicies[{index}] requires tapBudget <= tapBudgetMax"
+            )
     for key in ("twapTimeout", "twapWindow"):
         _uint(core[key], 32, f"coreConfig.{key}")
     for key in ("saleEnd", "bootstrapDeadline"):
