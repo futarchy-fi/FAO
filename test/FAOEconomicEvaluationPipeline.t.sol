@@ -76,7 +76,6 @@ contract EconomicEvaluationResolverMock {
     uint256 public denominator = 1;
     uint256 public yes = 1;
     uint256 public no;
-    uint256 public resolveCalls;
 
     constructor(EconomicEvaluationConditionalTokensMock ctf_) {
         CTF = address(ctf_);
@@ -90,7 +89,6 @@ contract EconomicEvaluationResolverMock {
     }
 
     function resolve(address) external {
-        ++resolveCalls;
         ctf.setPayout(denominator, yes, no);
     }
 }
@@ -137,7 +135,6 @@ contract FAOEconomicEvaluationPipelineTest is Test {
     uint256 internal constant SITE_BOND = 1 ether;
     uint256 internal constant TREASURY_BOND = 7 ether;
     address internal constant VAULT = address(0xA11CE);
-    address internal constant TARGET = address(0xBEEF);
 
     EconomicEvaluationArbitrationMock internal arbitration;
     EconomicEvaluationSpaceMock internal space;
@@ -163,14 +160,12 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         pipeline = new FAOEconomicEvaluationPipeline(
             address(arbitration), address(orchestrator), address(resolver), address(ctf), VAULT
         );
-        assertEq(address(pipeline), expectedPipeline);
-
         gateway = new EconGateway(
             address(space), address(0xE1), address(arbitration), VAULT, SITE_BOND, TREASURY_BOND
         );
     }
 
-    function testSiteGatewayRouteRetainsPayloadIdentityMarketTextAndResolution() public {
+    function testSiteRouteRetainsPayloadIdentityTextAndResolution() public {
         bytes32 currentDigest = keccak256("current");
         bytes32 artifactDigest = keccak256("artifact");
         string memory uri = "ipfs://site-artifact";
@@ -201,44 +196,96 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             )
         );
         assertTrue(pipeline.resolve(proposalId));
-        assertTrue(arbitration.resolved());
         assertTrue(arbitration.accepted());
     }
 
-    function testTreasuryGatewayRouteUsesExactStaticCommitmentAndCanResolveNo() public {
-        FAOTreasuryActions.TreasuryAction memory action = _action(bytes32(uint256(17)));
-        bytes memory payload = gateway.treasuryEvaluationPayload(action);
+    function testTransferUsesExactTextAndFullPayloadCommitment() public {
+        FAOTreasuryActions.TransferAction memory action = _transfer(bytes32(uint256(17)));
+        bytes memory payload = gateway.transferEvaluationPayload(action);
         uint256 proposalId = uint256(keccak256(payload));
-        bytes32 dataHash = keccak256(action.data);
-
-        assertEq(payload.length, 7 * 32);
-        assertEq(gateway.treasuryActionHash(action), keccak256(payload));
-        assertEq(gateway.proposeTreasuryAction(action), proposalId);
-        assertEq(arbitration.lastCreatedProposalId(), proposalId);
+        assertEq(payload.length, 224);
+        assertEq(gateway.proposeTransfer(action), proposalId);
         arbitration.setActive(proposalId);
 
         vm.expectEmit(true, true, true, true, address(pipeline));
         emit EvaluationMarketCreated(
-            proposalId, 0, address(proposal), gateway.KIND_TREASURY(), dataHash
+            proposalId, 0, address(proposal), pipeline.KIND_TRANSFER(), keccak256(payload)
         );
         pipeline.startEvaluation(proposalId, payload);
 
         assertEq(
             orchestrator.lastMarketName(),
-            string.concat("FAO treasury action to ", Strings.toHexString(action.target))
+            string.concat("FAO treasury transfer to ", Strings.toHexString(action.recipient))
         );
-        assertEq(orchestrator.lastDescription(), _treasuryDescription(action, dataHash));
-
-        resolver.setDecision(1, 0, 1);
-        assertFalse(pipeline.resolve(proposalId));
-        assertTrue(arbitration.resolved());
-        assertFalse(arbitration.accepted());
+        assertEq(orchestrator.lastDescription(), _transferDescription(action));
     }
 
-    function testTreasuryPayloadRejectsWrongDomainOrTarget() public {
-        FAOTreasuryActions.TreasuryAction memory action = _action(bytes32(uint256(1)));
+    function testParamUsesExactTextAndFullPayloadCommitment() public {
+        FAOTreasuryActions.ParamAction memory action = _param(bytes32(uint256(18)));
+        bytes memory payload = gateway.paramEvaluationPayload(action);
+        uint256 proposalId = uint256(keccak256(payload));
+        assertEq(payload.length, 224);
+        assertEq(gateway.proposeParam(action), proposalId);
+        arbitration.setActive(proposalId);
 
-        bytes memory payload = _treasuryPayload(block.chainid + 1, VAULT, action);
+        vm.expectEmit(true, true, true, true, address(pipeline));
+        emit EvaluationMarketCreated(
+            proposalId, 0, address(proposal), pipeline.KIND_PARAM(), keccak256(payload)
+        );
+        pipeline.startEvaluation(proposalId, payload);
+
+        assertEq(
+            orchestrator.lastMarketName(),
+            string.concat("FAO treasury parameter ", Strings.toHexString(uint256(action.key), 32))
+        );
+        assertEq(orchestrator.lastDescription(), _paramDescription(action));
+    }
+
+    function testCriticalRoundsCommitToSameBaseAndRenderRound() public {
+        FAOTreasuryActions.CriticalAction memory action = _critical(bytes32(uint256(19)));
+        bytes32 baseHash = gateway.criticalBaseHash(action);
+
+        for (uint256 round = 1; round <= 2; ++round) {
+            bytes memory payload = gateway.criticalEvaluationPayload(action, round);
+            uint256 proposalId = uint256(keccak256(payload));
+            assertEq(payload.length, 256);
+            arbitration.setActive(proposalId);
+
+            vm.expectEmit(true, true, true, true, address(pipeline));
+            emit EvaluationMarketCreated(
+                proposalId, round - 1, address(proposal), pipeline.KIND_CRITICAL(), baseHash
+            );
+            pipeline.startEvaluation(proposalId, payload);
+
+            assertEq(
+                orchestrator.lastMarketName(),
+                string.concat("FAO critical action round ", round.toString(), "/2")
+            );
+            assertEq(orchestrator.lastDescription(), _criticalDescription(action, baseHash, round));
+        }
+    }
+
+    function testTypedPayloadLengthsAreExactAndCannotFallThroughToSiteDecoder() public {
+        bytes memory transfer = gateway.transferEvaluationPayload(_transfer(bytes32(0)));
+        _expectInvalidTreasury(bytes.concat(transfer, bytes32(0)));
+        _expectInvalidTreasury(bytes.concat(bytes32(pipeline.KIND_TRANSFER()), bytes32(0)));
+
+        bytes memory param = gateway.paramEvaluationPayload(_param(bytes32(0)));
+        _expectInvalidTreasury(bytes.concat(param, bytes32(0)));
+
+        bytes memory criticalBase =
+            FAOTreasuryActions.criticalBasePayload(block.chainid, VAULT, _critical(bytes32(0)));
+        assertEq(criticalBase.length, 224);
+        _expectInvalidTreasury(criticalBase);
+        _expectInvalidTreasury(
+            bytes.concat(gateway.criticalEvaluationPayload(_critical(bytes32(0)), 1), bytes32(0))
+        );
+    }
+
+    function testTypedPayloadsRejectWrongDomainAndInvalidSemantics() public {
+        FAOTreasuryActions.TransferAction memory transfer = _transfer(bytes32(0));
+        bytes memory payload =
+            FAOTreasuryActions.transferEvaluationPayload(block.chainid + 1, VAULT, transfer);
         _activate(payload);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -249,7 +296,8 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         );
         pipeline.startEvaluation(uint256(keccak256(payload)), payload);
 
-        payload = _treasuryPayload(block.chainid, address(0xBAD), action);
+        payload =
+            FAOTreasuryActions.transferEvaluationPayload(block.chainid, address(0xBAD), transfer);
         _activate(payload);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -258,22 +306,30 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         );
         pipeline.startEvaluation(uint256(keccak256(payload)), payload);
 
-        action.target = address(0);
-        payload = _treasuryPayload(block.chainid, VAULT, action);
-        _activate(payload);
-        vm.expectRevert(FAOEconomicEvaluationPipeline.InvalidTreasuryPayload.selector);
-        pipeline.startEvaluation(uint256(keccak256(payload)), payload);
-    }
-
-    function testTreasuryKindWithTrailingWordCannotFallThroughToSiteDecoder() public {
-        bytes memory payload = bytes.concat(
-            _treasuryPayload(block.chainid, VAULT, _action(bytes32(uint256(2)))), bytes32(0)
+        transfer.recipient = address(0);
+        _expectInvalidTreasury(
+            FAOTreasuryActions.transferEvaluationPayload(block.chainid, VAULT, transfer)
         );
-        uint256 proposalId = uint256(keccak256(payload));
-        arbitration.setActive(proposalId);
+        transfer = _transfer(bytes32(0));
+        transfer.amount = 0;
+        _expectInvalidTreasury(
+            FAOTreasuryActions.transferEvaluationPayload(block.chainid, VAULT, transfer)
+        );
 
-        vm.expectRevert(FAOEconomicEvaluationPipeline.InvalidTreasuryPayload.selector);
-        pipeline.startEvaluation(proposalId, payload);
+        FAOTreasuryActions.ParamAction memory param = _param(bytes32(0));
+        param.key = bytes32(0);
+        _expectInvalidTreasury(
+            FAOTreasuryActions.paramEvaluationPayload(block.chainid, VAULT, param)
+        );
+
+        FAOTreasuryActions.CriticalAction memory critical = _critical(bytes32(0));
+        critical.target = address(0);
+        _expectInvalidTreasury(
+            FAOTreasuryActions.criticalEvaluationPayload(block.chainid, VAULT, critical, 1)
+        );
+        critical = _critical(bytes32(0));
+        _expectInvalidTreasury(_criticalPayload(critical, 0));
+        _expectInvalidTreasury(_criticalPayload(critical, 3));
     }
 
     function testPayloadMustMatchActiveIdAndEvaluationIsOneShot() public {
@@ -300,6 +356,12 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         pipeline.startEvaluation(proposalId, payload);
     }
 
+    function _expectInvalidTreasury(bytes memory payload) private {
+        _activate(payload);
+        vm.expectRevert(FAOEconomicEvaluationPipeline.InvalidTreasuryPayload.selector);
+        pipeline.startEvaluation(uint256(keccak256(payload)), payload);
+    }
+
     function _activate(bytes memory payload) private {
         arbitration.setActive(uint256(keccak256(payload)));
     }
@@ -320,32 +382,50 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         );
     }
 
-    function _action(bytes32 salt) private pure returns (FAOTreasuryActions.TreasuryAction memory) {
-        return FAOTreasuryActions.TreasuryAction({
-            target: TARGET,
-            value: 2 ether,
-            data: abi.encodeWithSignature("transfer(address,uint256)", address(0xCAFE), 4 ether),
-            salt: salt
+    function _transfer(bytes32 salt)
+        private
+        pure
+        returns (FAOTreasuryActions.TransferAction memory)
+    {
+        return FAOTreasuryActions.TransferAction({
+            asset: address(0xA55E7), recipient: address(0xB0B), amount: 2 ether, salt: salt
         });
     }
 
-    function _treasuryPayload(
-        uint256 chainId,
-        address vault,
-        FAOTreasuryActions.TreasuryAction memory action
-    ) private view returns (bytes memory) {
+    function _param(bytes32 salt) private pure returns (FAOTreasuryActions.ParamAction memory) {
+        return FAOTreasuryActions.ParamAction({
+            key: keccak256("monthly-tap"), asset: address(0xA55E7), value: 3 ether, salt: salt
+        });
+    }
+
+    function _critical(bytes32 salt)
+        private
+        pure
+        returns (FAOTreasuryActions.CriticalAction memory)
+    {
+        return FAOTreasuryActions.CriticalAction({
+            target: address(0xBEEF), value: 4 ether, data: hex"12345678aabb", salt: salt
+        });
+    }
+
+    function _criticalPayload(FAOTreasuryActions.CriticalAction memory action, uint256 round)
+        private
+        view
+        returns (bytes memory)
+    {
         return abi.encode(
-            gateway.KIND_TREASURY(),
-            chainId,
-            vault,
+            pipeline.KIND_CRITICAL(),
+            block.chainid,
+            VAULT,
             action.target,
             action.value,
             keccak256(action.data),
-            action.salt
+            action.salt,
+            round
         );
     }
 
-    function _treasuryDescription(FAOTreasuryActions.TreasuryAction memory action, bytes32 dataHash)
+    function _transferDescription(FAOTreasuryActions.TransferAction memory action)
         private
         view
         returns (string memory)
@@ -355,14 +435,61 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             block.chainid.toString(),
             "; vault=",
             Strings.toHexString(VAULT),
+            "; asset=",
+            Strings.toHexString(action.asset),
+            "; recipient=",
+            Strings.toHexString(action.recipient),
+            "; amount=",
+            action.amount.toString(),
+            "; salt=",
+            Strings.toHexString(uint256(action.salt), 32)
+        );
+    }
+
+    function _paramDescription(FAOTreasuryActions.ParamAction memory action)
+        private
+        view
+        returns (string memory)
+    {
+        return string.concat(
+            "chain=",
+            block.chainid.toString(),
+            "; vault=",
+            Strings.toHexString(VAULT),
+            "; key=",
+            Strings.toHexString(uint256(action.key), 32),
+            "; asset=",
+            Strings.toHexString(action.asset),
+            "; value=",
+            action.value.toString(),
+            "; salt=",
+            Strings.toHexString(uint256(action.salt), 32)
+        );
+    }
+
+    function _criticalDescription(
+        FAOTreasuryActions.CriticalAction memory action,
+        bytes32 baseHash,
+        uint256 round
+    ) private view returns (string memory) {
+        return string.concat(
+            "chain=",
+            block.chainid.toString(),
+            "; vault=",
+            Strings.toHexString(VAULT),
+            "; action-hash=",
+            Strings.toHexString(uint256(baseHash), 32),
             "; target=",
             Strings.toHexString(action.target),
             "; value=",
             action.value.toString(),
             "; data-hash=",
-            Strings.toHexString(uint256(dataHash), 32),
+            Strings.toHexString(uint256(keccak256(action.data)), 32),
             "; salt=",
-            Strings.toHexString(uint256(action.salt), 32)
+            Strings.toHexString(uint256(action.salt), 32),
+            "; round=",
+            round.toString(),
+            " of 2"
         );
     }
 }

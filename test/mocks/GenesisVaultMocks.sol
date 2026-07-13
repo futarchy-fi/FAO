@@ -5,6 +5,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {IGenesisArbitration} from "../../src/GenesisVault.sol";
+
 contract GenesisWethMock is ERC20 {
     constructor() ERC20("Wrapped Ether", "WETH") {}
 
@@ -33,13 +35,54 @@ contract GenesisAssetMock is ERC20 {
     }
 }
 
+contract GenesisFeeAssetMock is GenesisAssetMock {
+    constructor() GenesisAssetMock("FEE") {}
+
+    function _transfer(address sender, address recipient, uint256 amount) internal override {
+        super._transfer(sender, recipient, amount - 1);
+        _burn(sender, 1);
+    }
+}
+
 contract GenesisArbitrationMock {
-    mapping(uint256 proposalId => bool settled) public isSettled;
-    mapping(uint256 proposalId => bool accepted) public isAccepted;
+    mapping(uint256 proposalId => IGenesisArbitration.Proposal proposal) internal proposals;
 
     function setOutcome(uint256 proposalId, bool settled, bool accepted) external {
-        isSettled[proposalId] = settled;
-        isAccepted[proposalId] = accepted;
+        _setOutcome(proposalId, settled, accepted, true);
+    }
+
+    function setOutcome(uint256 proposalId, bool settled, bool accepted, bool evaluated) external {
+        _setOutcome(proposalId, settled, accepted, evaluated);
+    }
+
+    function isSettled(uint256 proposalId) external view returns (bool) {
+        return proposals[proposalId].settled;
+    }
+
+    function isAccepted(uint256 proposalId) external view returns (bool) {
+        IGenesisArbitration.Proposal memory proposal = proposals[proposalId];
+        return proposal.settled && proposal.accepted;
+    }
+
+    function getProposal(uint256 proposalId)
+        external
+        view
+        returns (IGenesisArbitration.Proposal memory)
+    {
+        require(proposals[proposalId].exists);
+        return proposals[proposalId];
+    }
+
+    function _setOutcome(uint256 proposalId, bool settled, bool accepted, bool evaluated) private {
+        IGenesisArbitration.Proposal storage proposal = proposals[proposalId];
+        proposal.state = settled
+            ? IGenesisArbitration.ProposalState.SETTLED
+            : IGenesisArbitration.ProposalState.YES;
+        proposal.lastStateChangeAt = uint64(block.timestamp);
+        proposal.settled = settled;
+        proposal.accepted = accepted;
+        proposal.queuePosition = evaluated ? 1 : 0;
+        proposal.exists = true;
     }
 }
 
@@ -53,6 +96,7 @@ contract GenesisManagerMock is ERC20 {
 
     bool public initializedFromBootstrap;
     bool public revertBootstrap;
+    bool public inConditionalMode;
     uint16 public companyUsageBps = 8000;
     uint16 public collateralUsageBps = 8000;
 
@@ -70,6 +114,10 @@ contract GenesisManagerMock is ERC20 {
         require(companyBps <= 10_000 && collateralBps <= 10_000);
         companyUsageBps = companyBps;
         collateralUsageBps = collateralBps;
+    }
+
+    function setConditionalMode(bool value) external {
+        inConditionalMode = value;
     }
 
     function initializeFromBootstrap(uint256 companyAmount, uint256 collateralAmount)
@@ -125,11 +173,13 @@ contract GenesisTreasuryTargetMock {
     uint256 public calls;
     uint256 public value;
     bytes32 public payload;
+    address public caller;
 
     function perform(bytes32 payload_) external payable returns (uint256) {
         ++calls;
         value += msg.value;
         payload = payload_;
+        caller = msg.sender;
         return calls;
     }
 }

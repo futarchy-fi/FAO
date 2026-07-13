@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tools import economic_deployment
@@ -51,6 +54,9 @@ class FakeClient:
         self.calls: dict[tuple[str, ...], str] = {}
         self.transactions: dict[str, dict] = {}
         self.receipts: dict[str, dict] = {}
+        self.finalized = 100
+        self.finalized_calls = 0
+        self.log_queries: list[tuple[str, int, int]] = []
 
     def chain_id(self) -> int:
         return self.chain
@@ -71,6 +77,36 @@ class FakeClient:
     def receipt(self, tx_hash: str) -> dict:
         return self.receipts[tx_hash]
 
+    def logs(
+        self,
+        emitter: str,
+        topics: list[str | None],
+        from_block: int,
+        to_block: int,
+    ) -> list[dict]:
+        self.log_queries.append((emitter, from_block, to_block))
+        matches = []
+        for receipt in self.receipts.values():
+            for log in receipt.get("logs", []):
+                if (
+                    log["address"] != emitter
+                    or int(log["blockNumber"], 0) < from_block
+                    or int(log["blockNumber"], 0) > to_block
+                ):
+                    continue
+                if all(
+                    expected is None
+                    or index < len(log["topics"])
+                    and log["topics"][index] == expected
+                    for index, expected in enumerate(topics)
+                ):
+                    matches.append(copy.deepcopy(log))
+        return matches
+
+    def finalized_block(self) -> int:
+        self.finalized_calls += 1
+        return self.finalized
+
 
 class EconomicDeploymentTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -82,6 +118,12 @@ class EconomicDeploymentTest(unittest.TestCase):
         self.creation = b"\x60" * int(self.creation_evidence["receipt"]["bytes"])
         self.creation_hash = str(self.creation_evidence["receipt"]["hash"])
         self.hash.overrides[self.creation] = self.creation_hash
+        self.registrar_creation = b"\x61" * int(
+            self.creation_evidence["registrar"]["bytes"]
+        )
+        self.hash.overrides[self.registrar_creation] = str(
+            self.creation_evidence["registrar"]["hash"]
+        )
         self.core_codes = tuple(f"core-{key}".encode() for key in economic_deployment.CORE_BLOBS)
         self.flm_codes = tuple(f"flm-{key}".encode() for key in economic_deployment.FLM_BLOBS)
         for code, key in zip(self.core_codes, economic_deployment.CORE_BLOBS):
@@ -113,6 +155,22 @@ class EconomicDeploymentTest(unittest.TestCase):
             "arbitrationTimeout": 3600,
             "siteMinActivationBond": 10,
             "treasuryMinActivationBond": 20,
+            "assetPolicies": [
+                {
+                    "asset": economic_deployment.ZERO,
+                    "c1": 1,
+                    "c2": 2,
+                    "tapBudget": 3,
+                    "tapBudgetMax": 4,
+                },
+                {
+                    "asset": self.dependencies["weth"]["target"],
+                    "c1": 5,
+                    "c2": 6,
+                    "tapBudget": 7,
+                    "tapBudgetMax": 8,
+                },
+            ],
             "twapTimeout": 1800,
             "twapWindow": 900,
             "spaceSaltNonce": 7,
@@ -149,11 +207,14 @@ class EconomicDeploymentTest(unittest.TestCase):
                 *economic_deployment.FLM_CHILDREN,
             )
         }
+        treasury_executor = economic_deployment._create_address(
+            derived["vault"], 1, self.hash
+        )
         wallets = [
             economic_deployment._create_address(derived["vault"], nonce, self.hash)
-            for nonce in (1, 2)
+            for nonce in (2, 3)
         ]
-        company_token = economic_deployment._create_address(derived["vault"], 3, self.hash)
+        company_token = economic_deployment._create_address(derived["vault"], 4, self.hash)
         spot_pool = economic_deployment._pool_address(
             self.dependencies["uniswapV3Factory"]["target"],
             company_token,
@@ -164,6 +225,7 @@ class EconomicDeploymentTest(unittest.TestCase):
             "space": address(0x201),
             "arbitration": derived["arbitration"],
             "vault": derived["vault"],
+            "treasuryExecutor": treasury_executor,
             "companyToken": company_token,
             "proposalGateway": derived["proposalGateway"],
             "releaseStrategy": derived["releaseStrategy"],
@@ -181,6 +243,10 @@ class EconomicDeploymentTest(unittest.TestCase):
             "manager": derived["manager"],
             "vestingWallets": wallets,
         }
+        self.executor_runtime = economic_deployment._executor_runtime_code(derived["vault"])
+        self.executor_runtime_hash = economic_deployment._digest(
+            self.executor_runtime, self.hash
+        )
         self.manifest = self._manifest()
         self._chain_evidence(live=False)
 
@@ -252,7 +318,8 @@ class EconomicDeploymentTest(unittest.TestCase):
             },
         }
         return {
-            "schemaVersion": 1,
+            "schemaVersion": 3,
+            "creationRoute": "create",
             "status": "sealed",
             "network": "sepolia",
             "chainId": economic_deployment.CHAIN_ID,
@@ -295,6 +362,9 @@ class EconomicDeploymentTest(unittest.TestCase):
             "observationCardinality": economic_deployment.OBSERVATION_CARDINALITY,
             "contracts": self.contracts,
             "codeBlobs": {"core": self.core_hashes, "flm": self.flm_hashes},
+            "runtimeCodeHashes": {
+                "treasuryExecutor": self.executor_runtime_hash,
+            },
             "finalization": None,
         }
 
@@ -316,13 +386,16 @@ class EconomicDeploymentTest(unittest.TestCase):
             "to": target,
             "input": "0x" + input_.hex(),
         }
+        block_hash = "0x" + f"{value['block']:064x}"
         self.client.receipts[tx_hash] = {
             "transactionHash": tx_hash,
             "blockNumber": value["block"],
+            "blockHash": block_hash,
             "from": value["from"],
             "to": target,
             "status": 1,
             "contractAddress": contract,
+            "logs": [],
         }
 
     def _put(self, target: str, signature: str, value: object, *args: str) -> None:
@@ -370,6 +443,7 @@ class EconomicDeploymentTest(unittest.TestCase):
                         self.client.codes[wallet] = b"vesting-runtime"
                 else:
                     self.client.codes[target] = f"runtime-{key}".encode()
+        self.client.codes[self.contracts["treasuryExecutor"]] = self.executor_runtime
         if live:
             self.client.codes[self.contracts["spotPool"]] = b"pool-runtime"
 
@@ -422,7 +496,9 @@ class EconomicDeploymentTest(unittest.TestCase):
             (c["vault"], "ASSEMBLER()(address)", self.receipt),
             (c["vault"], "ARBITRATION()(address)", c["arbitration"]),
             (c["vault"], "BOOTSTRAP_HOOK()(address)", self.receipt),
+            (c["vault"], "TREASURY_EXECUTOR()(address)", c["treasuryExecutor"]),
             (c["vault"], "manager()(address)", c["manager"]),
+            (c["treasuryExecutor"], "VAULT()(address)", c["vault"]),
             (c["proposalGateway"], "space()(address)", c["space"]),
             (c["proposalGateway"], "executionStrategy()(address)", c["releaseStrategy"]),
             (c["proposalGateway"], "arbitration()(address)", c["arbitration"]),
@@ -640,6 +716,165 @@ class EconomicDeploymentTest(unittest.TestCase):
             "receipts": [copy.deepcopy(self.client.receipts[evidence["hash"]])],
         }
 
+    def _event_log(
+        self,
+        name: str,
+        emitter: str,
+        topics: list[str],
+        data: bytes,
+    ) -> dict:
+        evidence = self.manifest["transactions"].get(name, self.manifest.get(name))
+        log = {
+            "address": emitter,
+            "topics": topics,
+            "data": "0x" + data.hex(),
+            "transactionHash": evidence["hash"],
+            "blockNumber": hex(evidence["block"]),
+            "blockHash": self.client.receipts[evidence["hash"]]["blockHash"],
+            "removed": False,
+        }
+        self.client.receipts[evidence["hash"]]["logs"].append(copy.deepcopy(log))
+        return log
+
+    def _registrar_evidence(self) -> tuple[dict, dict, str]:
+        registrar_tx = {
+            "hash": "0x" + "70" * 32,
+            "block": 7,
+            "nonce": 182,
+            "from": self.deployer,
+        }
+        registrar = economic_deployment._create_address(
+            self.deployer, registrar_tx["nonce"], self.hash
+        )
+        commitments = bytes.fromhex(self.core_config_hash[2:] + self.flm_config_hash[2:])
+        salt = bytes.fromhex(economic_deployment._digest(commitments, self.hash)[2:])
+        initcode_hash = bytes.fromhex(
+            economic_deployment._digest(self.creation + commitments, self.hash)[2:]
+        )
+        create2_payload = (
+            b"\xff" + bytes.fromhex(registrar[2:]) + salt + initcode_hash
+        )
+        self.hash.overrides[create2_payload] = "0x" + "00" * 12 + self.receipt[2:]
+        self.assertEqual(
+            economic_deployment._create2_address(
+                registrar,
+                self.core_config_hash,
+                self.flm_config_hash,
+                self.creation,
+                self.hash,
+            ),
+            self.receipt,
+        )
+
+        registrar_code = b"registrar-runtime"
+        registrar_hash = economic_deployment._digest(registrar_code, self.hash)
+        self.client.codes[registrar] = registrar_code
+        registrar_input = self.registrar_creation + bytes.fromhex(self.creation_hash[2:])
+        self.client.transactions[registrar_tx["hash"]] = {
+            "hash": registrar_tx["hash"],
+            "blockNumber": registrar_tx["block"],
+            "nonce": registrar_tx["nonce"],
+            "from": registrar_tx["from"],
+            "to": None,
+            "input": "0x" + registrar_input.hex(),
+        }
+        self.client.receipts[registrar_tx["hash"]] = {
+            "transactionHash": registrar_tx["hash"],
+            "blockNumber": registrar_tx["block"],
+            "blockHash": "0x" + f"{registrar_tx['block']:064x}",
+            "from": registrar_tx["from"],
+            "to": None,
+            "status": 1,
+            "contractAddress": registrar,
+            "logs": [],
+        }
+        self._put(
+            registrar,
+            "RECEIPT_CREATION_CODE_HASH()(bytes32)",
+            self.creation_hash,
+        )
+        stage = self.manifest["transactions"]["receiptCreate"]
+        self.client.transactions[stage["hash"]]["to"] = registrar
+        self.client.transactions[stage["hash"]]["input"] = "0x" + economic_deployment._encode_stage(
+            self.core_config_hash,
+            self.flm_config_hash,
+            self.creation,
+            self.hash,
+        ).hex()
+        self.client.receipts[stage["hash"]]["to"] = registrar
+        self.client.receipts[stage["hash"]]["contractAddress"] = None
+
+        self._event_log(
+            "receiptCreate",
+            registrar,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.GENESIS_STAGED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.receipt).hex(),
+                self.core_config_hash,
+                self.flm_config_hash,
+            ],
+            economic_deployment._address_word(self.deployer),
+        )
+        self._event_log(
+            "deployCore",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.CORE_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["vault"]).hex(),
+                "0x"
+                + economic_deployment._address_word(self.contracts["companyToken"]).hex(),
+                "0x" + economic_deployment._address_word(self.contracts["space"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("arbitration", "evaluator", "spotPool")
+            ),
+        )
+        self._event_log(
+            "deployFlm",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.FLM_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["manager"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("relay", "spotAdapter")
+            ),
+        )
+        expected = copy.deepcopy(self.manifest)
+        expected["creationRoute"] = "registrar"
+        expected["receipt"]["stageNonce"] = expected["receipt"].pop("createNonce")
+        expected["receipt"]["registrar"] = {
+            "target": registrar,
+            "runtimeCodeKeccak256": registrar_hash,
+        }
+        shared = {
+            "schemaVersion": 1,
+            "network": "sepolia",
+            "chainId": economic_deployment.CHAIN_ID,
+            "registrar": {
+                "address": registrar,
+                "source": economic_deployment.REGISTRAR_SOURCE,
+                "contract": economic_deployment.REGISTRAR_CONTRACT,
+                "transaction": registrar_tx,
+                "creationCodeBytes": len(self.registrar_creation),
+                "creationCodeKeccak256": economic_deployment._digest(
+                    self.registrar_creation, self.hash
+                ),
+                "runtimeCodeBytes": len(registrar_code),
+                "runtimeCodeKeccak256": registrar_hash,
+            },
+            "prerequisites": copy.deepcopy(self.manifest["prerequisites"]),
+        }
+        return shared, expected, registrar
+
     def _verify(self) -> None:
         economic_deployment.verify_rpc(
             self.manifest,
@@ -651,6 +886,99 @@ class EconomicDeploymentTest(unittest.TestCase):
 
     def test_sealed_manifest_verifies_staged_deployment(self) -> None:
         self._verify()
+
+    def test_executor_address_immutable_and_runtime_hash_are_all_verified(self) -> None:
+        self.assertNotEqual(
+            self.executor_runtime,
+            economic_deployment._executor_runtime_code(address(0xBAD)),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime_path = root / economic_deployment.economic_code_hashes.EXECUTOR_RUNTIME_PATH
+            manifest_path = root / economic_deployment.economic_code_hashes.MANIFEST_PATH
+            runtime_path.parent.mkdir(parents=True)
+            runtime_bytes = (
+                economic_deployment.ROOT
+                / economic_deployment.economic_code_hashes.EXECUTOR_RUNTIME_PATH
+            ).read_bytes()
+            manifest_bytes = (
+                economic_deployment.ROOT / economic_deployment.economic_code_hashes.MANIFEST_PATH
+            ).read_bytes()
+            runtime_path.write_bytes(runtime_bytes)
+            manifest_path.write_bytes(manifest_bytes)
+
+            with mock.patch.object(economic_deployment, "ROOT", root):
+                self.assertEqual(
+                    economic_deployment._executor_runtime_code(self.contracts["vault"]),
+                    self.executor_runtime,
+                )
+
+                runtime_path.unlink()
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "cannot read.*runtime evidence"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
+
+                runtime_path.write_bytes(runtime_bytes)
+                evidence = json.loads(runtime_bytes)
+                evidence["deployedRuntime"]["template"] = (
+                    "0x00" + evidence["deployedRuntime"]["template"][4:]
+                )
+                runtime_path.write_text(json.dumps(evidence), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "template hash mismatch"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
+
+                evidence = json.loads(runtime_bytes)
+                evidence["deployedRuntime"]["immutableReferences"][0]["length"] = 31
+                runtime_path.write_text(json.dumps(evidence), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "immutable references are malformed"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
+
+        broken = copy.deepcopy(self.manifest)
+        broken["runtimeCodeHashes"]["treasuryExecutor"] = "0x" + "11" * 32
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "executor runtime code hash mismatch"
+        ):
+            economic_deployment.verify_rpc(
+                broken,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+        self.client.codes[self.contracts["treasuryExecutor"]] = b"wrong-runtime"
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "executor runtime code hash mismatch"
+        ):
+            self._verify()
+        self.client.codes[self.contracts["treasuryExecutor"]] = self.executor_runtime
+
+        self._put(
+            self.contracts["vault"],
+            "TREASURY_EXECUTOR()(address)",
+            address(0xBAD),
+        )
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "public wiring mismatch"):
+            self._verify()
+        self._put(
+            self.contracts["vault"],
+            "TREASURY_EXECUTOR()(address)",
+            self.contracts["treasuryExecutor"],
+        )
+
+        self._put(
+            self.contracts["treasuryExecutor"],
+            "VAULT()(address)",
+            address(0xBAD),
+        )
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "public wiring mismatch"):
+            self._verify()
 
     def test_builds_and_verifies_manifest_from_exact_five_transaction_broadcast(self) -> None:
         broadcast = self._broadcast()
@@ -666,6 +994,390 @@ class EconomicDeploymentTest(unittest.TestCase):
             hash_=self.hash,
         )
         self.assertEqual(built, self.manifest)
+
+    def test_reconstructs_registrar_receipt_from_chain_without_broadcast(self) -> None:
+        shared, expected, _ = self._registrar_evidence()
+        built = economic_deployment.manifest_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(built, expected)
+        self.assertEqual(self.client.finalized_calls, 1)
+        self.assertTrue(self.client.log_queries)
+        self.assertTrue(
+            all(
+                start == shared["registrar"]["transaction"]["block"]
+                and end == self.client.finalized
+                for _, start, end in self.client.log_queries
+            )
+        )
+
+    def test_discovers_each_resumable_registrar_stage_without_weakening_manifest(self) -> None:
+        shared, _, _ = self._registrar_evidence()
+        core_hash = self.manifest["transactions"]["deployCore"]["hash"]
+        flm_hash = self.manifest["transactions"]["deployFlm"]["hash"]
+
+        self.client.receipts[core_hash]["logs"] = []
+        self.client.receipts[flm_hash]["logs"] = []
+        stage_only = economic_deployment.discovery_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(stage_only["status"], "stage-only")
+        self.assertEqual(stage_only["schemaVersion"], 2)
+        self.assertEqual(stage_only["nextAction"], "deployCore")
+        self.assertIsNone(stage_only["transactions"]["deployCore"])
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "stage-only state"
+        ):
+            economic_deployment.manifest_from_chain(
+                self.receipt,
+                shared,
+                self.creation,
+                self.registrar_creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+        self._event_log(
+            "deployCore",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.CORE_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["vault"]).hex(),
+                "0x"
+                + economic_deployment._address_word(self.contracts["companyToken"]).hex(),
+                "0x" + economic_deployment._address_word(self.contracts["space"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("arbitration", "evaluator", "spotPool")
+            ),
+        )
+        core_only = economic_deployment.discovery_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(core_only["status"], "core-only")
+        self.assertEqual(core_only["nextAction"], "deployFlm")
+
+        self._event_log(
+            "deployFlm",
+            self.receipt,
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.FLM_SEALED_EVENT, self.hash
+                ),
+                "0x" + economic_deployment._address_word(self.contracts["manager"]).hex(),
+            ],
+            b"".join(
+                economic_deployment._address_word(self.contracts[key])
+                for key in ("relay", "spotAdapter")
+            ),
+        )
+        full = economic_deployment.discovery_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(full["status"], "full")
+        self.assertEqual(full["nextAction"], "finalize")
+
+    def test_discovery_reports_live_after_receipt_verified_finalization(self) -> None:
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 188,
+            "from": self.deployer,
+        }
+        self._chain_evidence(live=True)
+        shared, _, _ = self._registrar_evidence()
+        self._event_log(
+            "finalization",
+            self.contracts["vault"],
+            [economic_deployment._event_topic(economic_deployment.FINALIZED_EVENT, self.hash)],
+            b"".join(economic_deployment._word(value) for value in (1, 2, 3, 4, 5)),
+        )
+        discovered = economic_deployment.discovery_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(discovered["status"], "live")
+        self.assertIsNone(discovered["nextAction"])
+
+    def test_shared_manifest_pins_chain_registrar_and_prerequisite_evidence(self) -> None:
+        shared, _, _ = self._registrar_evidence()
+        cases = (
+            ("chain", lambda value: value.__setitem__("chainId", 1), "Sepolia"),
+            (
+                "registrar",
+                lambda value: value["registrar"].__setitem__("address", address(0xBAD)),
+                "wrong CREATE address",
+            ),
+            (
+                "prerequisite",
+                lambda value: value["prerequisites"]["stackDeployer"].__setitem__(
+                    "creationCodeKeccak256", "0x" + "ff" * 32
+                ),
+                "canonical compiler evidence",
+            ),
+        )
+        for name, mutate, error in cases:
+            with self.subTest(name=name):
+                broken = copy.deepcopy(shared)
+                mutate(broken)
+                with self.assertRaisesRegex(economic_deployment.ManifestError, error):
+                    economic_deployment.discovery_from_chain(
+                        self.receipt,
+                        broken,
+                        self.creation,
+                        self.registrar_creation,
+                        self.prerequisite_creation,
+                        self.client,
+                        hash_=self.hash,
+                    )
+        registrar_hash = shared["registrar"]["transaction"]["hash"]
+        self.client.transactions[registrar_hash]["input"] += "00"
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "CREATE input mismatches compiler evidence"
+        ):
+            economic_deployment.discovery_from_chain(
+                self.receipt,
+                shared,
+                self.creation,
+                self.registrar_creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+    def test_canonical_shared_manifest_does_not_follow_valid_clone_logs(self) -> None:
+        shared, _, registrar = self._registrar_evidence()
+        clone = address(0xBAD)
+        self.client.codes[clone] = self.client.codes[registrar]
+        self._put(clone, "RECEIPT_CREATION_CODE_HASH()(bytes32)", self.creation_hash)
+        stage_hash = self.manifest["transactions"]["receiptCreate"]["hash"]
+        self.client.transactions[stage_hash]["to"] = clone
+        self.client.receipts[stage_hash]["to"] = clone
+        self.client.receipts[stage_hash]["logs"][0]["address"] = clone
+        with self.assertRaisesRegex(economic_deployment.ManifestError, "found 0"):
+            economic_deployment.discovery_from_chain(
+                self.receipt,
+                shared,
+                self.creation,
+                self.registrar_creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+
+    def test_discovery_rejects_unfinalized_or_reorgable_log_provenance(self) -> None:
+        shared, _, _ = self._registrar_evidence()
+        stage_hash = self.manifest["transactions"]["receiptCreate"]["hash"]
+        stage_log = self.client.receipts[stage_hash]["logs"][0]
+        mutations = (
+            ("removed", lambda: stage_log.__setitem__("removed", True)),
+            ("blockNumber", lambda: stage_log.__setitem__("blockNumber", "0x63")),
+            ("blockHash", lambda: stage_log.__setitem__("blockHash", "0x" + "ff" * 32)),
+            (
+                "transactionHash",
+                lambda: stage_log.__setitem__(
+                    "transactionHash", self.manifest["transactions"]["deployCore"]["hash"]
+                ),
+            ),
+        )
+        original = copy.deepcopy(stage_log)
+        for name, mutate in mutations:
+            with self.subTest(name=name):
+                stage_log.clear()
+                stage_log.update(copy.deepcopy(original))
+                mutate()
+                with self.assertRaises(economic_deployment.ManifestError):
+                    economic_deployment.discovery_from_chain(
+                        self.receipt,
+                        shared,
+                        self.creation,
+                        self.registrar_creation,
+                        self.prerequisite_creation,
+                        self.client,
+                        hash_=self.hash,
+                    )
+
+    def test_schema_v3_names_both_creation_routes_and_rejects_legacy_manifests(self) -> None:
+        economic_deployment.validate_manifest(self.manifest, hash_=self.hash)
+        shared, registrar_manifest, _ = self._registrar_evidence()
+        del shared
+        economic_deployment.validate_manifest(registrar_manifest, hash_=self.hash)
+        self.assertIn("createNonce", self.manifest["receipt"])
+        self.assertEqual(self.manifest["creationRoute"], "create")
+        self.assertIn("stageNonce", registrar_manifest["receipt"])
+        self.assertNotIn("createNonce", registrar_manifest["receipt"])
+        broken = copy.deepcopy(registrar_manifest)
+        del broken["creationRoute"]
+        with self.assertRaises(economic_deployment.ManifestError):
+            economic_deployment.validate_manifest(broken, hash_=self.hash)
+        for legacy_version in (1, 2):
+            broken = copy.deepcopy(self.manifest)
+            broken["schemaVersion"] = legacy_version
+            with self.assertRaisesRegex(economic_deployment.ManifestError, "schema version 3"):
+                economic_deployment.validate_manifest(broken, hash_=self.hash)
+
+    def test_discovery_cli_has_a_separate_default_output(self) -> None:
+        result = {"status": "stage-only"}
+        with mock.patch.object(
+            economic_deployment,
+            "verified_creation_evidence",
+            return_value=(self.creation, self.registrar_creation, self.prerequisite_creation),
+        ), mock.patch.object(
+            economic_deployment.site_deployment,
+            "load_json",
+            return_value={},
+        ), mock.patch.object(
+            economic_deployment,
+            "CastClient",
+            return_value=self.client,
+        ), mock.patch.object(
+            economic_deployment,
+            "discovery_from_chain",
+            return_value=result,
+        ), mock.patch.object(
+            economic_deployment.site_deployment,
+            "_write_or_check",
+        ) as write:
+            self.assertEqual(
+                economic_deployment.main(
+                    [
+                        "--discover-chain-receipt",
+                        self.receipt,
+                        "--rpc-url",
+                        "https://rpc.invalid",
+                    ]
+                ),
+                0,
+            )
+        write.assert_called_once_with(
+            economic_deployment.DISCOVERY_MANIFEST, result, False
+        )
+        self.assertNotEqual(
+            economic_deployment.DISCOVERY_MANIFEST,
+            economic_deployment.ECONOMIC_MANIFEST,
+        )
+
+    def test_registrar_manifest_rejects_changed_immutable_code_pin(self) -> None:
+        shared, manifest, registrar = self._registrar_evidence()
+        self._put(
+            registrar,
+            "RECEIPT_CREATION_CODE_HASH()(bytes32)",
+            "0x" + "ff" * 32,
+        )
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError,
+            "does not pin canonical receipt creation code",
+        ):
+            economic_deployment.verify_rpc(
+                manifest,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                shared_deployment=shared,
+                registrar_creation_code=self.registrar_creation,
+                hash_=self.hash,
+            )
+
+    def test_persisted_v2_verification_requires_the_canonical_shared_trust_root(self) -> None:
+        shared, manifest, _ = self._registrar_evidence()
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "requires the canonical shared manifest"
+        ):
+            economic_deployment.verify_rpc(
+                manifest,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                hash_=self.hash,
+            )
+        economic_deployment.verify_rpc(
+            manifest,
+            self.creation,
+            self.prerequisite_creation,
+            self.client,
+            shared_deployment=shared,
+            registrar_creation_code=self.registrar_creation,
+            hash_=self.hash,
+        )
+        broken = copy.deepcopy(manifest)
+        broken["receipt"]["registrar"]["target"] = address(0xBAD)
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "canonical shared manifest"
+        ):
+            economic_deployment.verify_rpc(
+                broken,
+                self.creation,
+                self.prerequisite_creation,
+                self.client,
+                shared_deployment=shared,
+                registrar_creation_code=self.registrar_creation,
+                hash_=self.hash,
+            )
+
+    def test_reconstructs_live_registrar_receipt_from_finalized_event(self) -> None:
+        self.manifest["status"] = "live"
+        self.manifest["finalization"] = {
+            "hash": "0x" + "a4" * 32,
+            "block": 20,
+            "nonce": 188,
+            "from": self.deployer,
+        }
+        self._chain_evidence(live=True)
+        shared, expected, _ = self._registrar_evidence()
+        self._event_log(
+            "finalization",
+            self.contracts["vault"],
+            [
+                economic_deployment._event_topic(
+                    economic_deployment.FINALIZED_EVENT, self.hash
+                )
+            ],
+            b"".join(economic_deployment._word(value) for value in (1, 2, 3, 4, 5)),
+        )
+        built = economic_deployment.manifest_from_chain(
+            self.receipt,
+            shared,
+            self.creation,
+            self.registrar_creation,
+            self.prerequisite_creation,
+            self.client,
+            hash_=self.hash,
+        )
+        self.assertEqual(built, expected)
 
     def test_cast_vector_places_static_flm_tuple_before_bytes_array_offset(self) -> None:
         codes = economic_deployment._decode_bytes_array_argument(
@@ -683,6 +1395,97 @@ class EconomicDeploymentTest(unittest.TestCase):
         )
         with self.assertRaises(economic_deployment.ManifestError):
             economic_deployment._decode_bytes_array_argument(CAST_DEPLOY_FLM_VECTOR, 32, 5)
+
+    def test_core_config_round_trips_nested_asset_policies(self) -> None:
+        encoded = economic_deployment._encode_core_config(self.core_config)
+        self.assertEqual(economic_deployment.DEPLOY_CORE_SELECTOR, "c9b544c1")
+        self.assertEqual(economic_deployment._decode_core_config(encoded), self.core_config)
+        deploy_core = economic_deployment._encode_deploy_core(
+            self.core_config, self.grants, self.core_codes
+        )
+        self.assertEqual(
+            deploy_core[:4],
+            bytes.fromhex("c9b544c1"),
+        )
+        # Golden digest from `cast calldata` with the Solidity deployCore ABI.
+        self.assertEqual(
+            hashlib.sha256(deploy_core).hexdigest(),
+            "8a838654fa54c36287228928cbc552e37b0521f8f51f524ec062eb7e639610dd",
+        )
+        changed = copy.deepcopy(self.core_config)
+        changed["assetPolicies"][0]["tapBudget"] += 1
+        self.assertNotEqual(
+            economic_deployment._encode_core_commitment(self.core_config, self.grants),
+            economic_deployment._encode_core_commitment(changed, self.grants),
+        )
+
+    def test_manifest_validates_asset_policy_limits(self) -> None:
+        economic_deployment.validate_manifest(self.manifest, hash_=self.hash)
+        cases = (
+            (
+                "too-many",
+                [
+                    {
+                        "asset": address(index),
+                        "c1": 1,
+                        "c2": 2,
+                        "tapBudget": 3,
+                        "tapBudgetMax": 4,
+                    }
+                    for index in range(9)
+                ],
+                "exceeds the vault maximum",
+            ),
+            (
+                "duplicate",
+                [copy.deepcopy(self.core_config["assetPolicies"][0])] * 2,
+                "assets must be unique",
+            ),
+            (
+                "c1",
+                [{"asset": address(1), "c1": 3, "c2": 2, "tapBudget": 1, "tapBudgetMax": 2}],
+                "c1 <= c2",
+            ),
+            (
+                "tap",
+                [{"asset": address(1), "c1": 1, "c2": 2, "tapBudget": 3, "tapBudgetMax": 2}],
+                "tapBudget <= tapBudgetMax",
+            ),
+            (
+                "uint128",
+                [
+                    {
+                        "asset": address(1),
+                        "c1": 1 << 128,
+                        "c2": 1 << 128,
+                        "tapBudget": 1,
+                        "tapBudgetMax": 2,
+                    }
+                ],
+                "outside uint128",
+            ),
+        )
+        for name, policies, error in cases:
+            with self.subTest(name=name):
+                broken = copy.deepcopy(self.manifest)
+                broken["coreConfig"]["assetPolicies"] = policies
+                with self.assertRaisesRegex(economic_deployment.ManifestError, error):
+                    economic_deployment.validate_manifest(broken, hash_=self.hash)
+
+    def test_manifest_validates_vesting_grant_limit(self) -> None:
+        at_limit = copy.deepcopy(self.manifest)
+        at_limit["grants"] = [copy.deepcopy(self.grants[0])] * (
+            economic_deployment.MAX_VESTING_GRANTS
+        )
+        _, grants, _ = economic_deployment._validate_config_preimages(at_limit)
+        self.assertEqual(len(grants), economic_deployment.MAX_VESTING_GRANTS)
+
+        over_limit = copy.deepcopy(at_limit)
+        over_limit["grants"].append(copy.deepcopy(self.grants[0]))
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "grants exceeds the vault maximum"
+        ):
+            economic_deployment._validate_config_preimages(over_limit)
 
     def test_outer_receipt_create_supports_operator_nonce_above_127(self) -> None:
         actual = economic_deployment._create_address(
@@ -702,10 +1505,11 @@ class EconomicDeploymentTest(unittest.TestCase):
         ) as clean, mock.patch.object(
             economic_deployment.economic_code_hashes, "generate", return_value=compiled
         ) as generate:
-            receipt, prerequisites = economic_deployment.verified_creation_evidence()
+            receipt, registrar, prerequisites = economic_deployment.verified_creation_evidence()
         clean.assert_called_once_with(economic_deployment.ROOT)
         generate.assert_called_once_with(check=True)
         self.assertEqual(receipt, b"RECEIPT")
+        self.assertEqual(registrar, b"REGISTRAR")
         self.assertEqual(prerequisites["proposalImplementation"], b"PROPOSAL_IMPLEMENTATION")
         self.assertEqual(prerequisites["stackDeployer"], b"STACK_DEPLOYER")
 

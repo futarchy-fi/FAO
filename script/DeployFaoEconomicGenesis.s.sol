@@ -92,10 +92,25 @@ contract DeployFaoEconomicGenesis is Script {
         uint256 twapTimeout = vm.envOr("TWAP_TIMEOUT", uint256(30 minutes));
         uint256 twapWindow = vm.envOr("TWAP_WINDOW", uint256(15 minutes));
         uint256 bootstrapBps = vm.envOr("BOOTSTRAP_BPS", uint256(5000));
+        uint256 wethC1 = vm.envOr("WETH_C1_RAW", uint256(0.01 ether));
+        uint256 wethC2 = vm.envOr("WETH_C2_RAW", uint256(0.1 ether));
+        uint256 wethTapBudget = vm.envOr("WETH_TAP_BUDGET_RAW", uint256(0.01 ether));
+        uint256 wethTapBudgetMax = vm.envOr("WETH_TAP_BUDGET_MAX_RAW", uint256(0.1 ether));
         if (
             twapTimeout > type(uint32).max || twapWindow > type(uint32).max
                 || bootstrapBps > type(uint16).max || saleCap > (type(uint256).max - 1 ether) / 2
+                || wethC1 > type(uint128).max || wethC2 > type(uint128).max
+                || wethTapBudget > type(uint128).max || wethTapBudgetMax > type(uint128).max
         ) revert InvalidConfig();
+        GenesisVault.AssetPolicyConfig[] memory assetPolicies =
+            new GenesisVault.AssetPolicyConfig[](1);
+        assetPolicies[0] = GenesisVault.AssetPolicyConfig({
+            asset: WETH,
+            c1: uint128(wethC1),
+            c2: uint128(wethC2),
+            tapBudget: uint128(wethTapBudget),
+            tapBudgetMax: uint128(wethTapBudgetMax)
+        });
         FaoGenesisDeployment.CoreConfig memory core = FaoGenesisDeployment.CoreConfig({
             proxyFactory: _pinned(SX_PROXY_FACTORY, SX_PROXY_FACTORY_CODEHASH),
             spaceImplementation: _pinned(SX_SPACE_IMPLEMENTATION, SX_SPACE_IMPLEMENTATION_CODEHASH),
@@ -114,6 +129,7 @@ contract DeployFaoEconomicGenesis is Script {
             treasuryMinActivationBond: vm.envOr(
                 "TREASURY_MIN_ACTIVATION_BOND", uint256(0.0001 ether)
             ),
+            assetPolicies: assetPolicies,
             twapTimeout: uint32(twapTimeout),
             twapWindow: uint32(twapWindow),
             spaceSaltNonce: vm.envOr("SPACE_SALT_NONCE", uint256(block.timestamp)),

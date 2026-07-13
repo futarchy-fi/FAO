@@ -26,7 +26,13 @@ import {FAOSiteStackDeployer} from "../src/FAOSiteStackDeployer.sol";
 import {FAOTwapResolver} from "../src/FAOTwapResolver.sol";
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
-import {GenesisVault, IGenesisArbitration, IGenesisBootstrapHook} from "../src/GenesisVault.sol";
+import {
+    GENESIS_MAX_VESTING_GRANTS,
+    GenesisVault,
+    IGenesisArbitration,
+    IGenesisBootstrapHook
+} from "../src/GenesisVault.sol";
+import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {IUniswapV3FactoryLike} from "../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../src/interfaces/IUniswapV3PoolLike.sol";
@@ -187,10 +193,16 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(receipt.votingStrategy(), _createAddress(address(receipt), 4));
         assertEq(receipt.proposalGateway(), _createAddress(address(receipt), 5));
         assertEq(receipt.evaluator(), _createAddress(address(receipt), 6));
-        assertEq(receipt.companyToken(), _createAddress(receipt.vault(), 2));
+        assertEq(receipt.companyToken(), _createAddress(receipt.vault(), 3));
+        GenesisTreasuryExecutor executor =
+            GenesisVault(payable(receipt.vault())).TREASURY_EXECUTOR();
+        assertEq(address(executor), _createAddress(receipt.vault(), 1));
+        assertEq(executor.VAULT(), receipt.vault());
+        GenesisTreasuryExecutor canonical = new GenesisTreasuryExecutor(receipt.vault());
+        assertEq(address(executor).codehash, address(canonical).codehash);
         assertEq(GenesisVault(payable(receipt.vault())).grantCount(), 1);
         (address vestingWallet,,,) = GenesisVault(payable(receipt.vault())).grants(0);
-        assertEq(vestingWallet, _createAddress(receipt.vault(), 1));
+        assertEq(vestingWallet, _createAddress(receipt.vault(), 2));
         assertEq(Space(receipt.space()).owner(), address(0));
         assertEq(FutarchyArbitration(receipt.arbitration()).owner(), address(0));
         assertEq(
@@ -257,10 +269,10 @@ contract FaoGenesisDeploymentTest is Test {
         FaoGenesisDeployment receipt = _newReceipt();
         receipt.deployCore(_coreConfig(), _grants(), _coreCodes());
 
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
-            target: address(0xBEEF), value: 0, data: "", salt: bytes32(uint256(1))
+        FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+            asset: address(weth), recipient: address(0xBEEF), amount: 1, salt: bytes32(uint256(1))
         });
-        uint256 proposalId = EconGateway(receipt.proposalGateway()).proposeTreasuryAction(action);
+        uint256 proposalId = EconGateway(receipt.proposalGateway()).proposeTransfer(action);
         FutarchyArbitration arbitrationLike = FutarchyArbitration(receipt.arbitration());
         weth.mint(address(this), TREASURY_BOND * 2 + GRADUATION_THRESHOLD);
         weth.approve(address(arbitrationLike), type(uint256).max);
@@ -285,6 +297,23 @@ contract FaoGenesisDeploymentTest is Test {
 
         vm.expectRevert();
         receipt.deployCore(config, _grants(), _coreCodes());
+        assertEq(_createAddress(address(receipt), 1).code.length, 0);
+    }
+
+    function test_coreRejectsMoreThanTheVaultGrantLimitBeforeCreate() public {
+        GenesisVault.GrantConfig[] memory grants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
+        for (uint256 i; i < grants.length; ++i) {
+            grants[i] = GenesisVault.GrantConfig({
+                beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
+            });
+        }
+        FaoGenesisDeployment receipt = new FaoGenesisDeployment(
+            keccak256(abi.encode(_coreConfig(), grants)), keccak256(abi.encode(_flmConfig()))
+        );
+
+        vm.expectRevert(FaoGenesisDeployment.InvalidConfig.selector);
+        receipt.deployCore(_coreConfig(), grants, _coreCodes());
         assertEq(_createAddress(address(receipt), 1).code.length, 0);
     }
 
@@ -347,14 +376,16 @@ contract FaoGenesisDeploymentTest is Test {
         assertLt(
             coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), _grants()).length, 49_152
         );
-        GenesisVault.GrantConfig[] memory maxGrants = new GenesisVault.GrantConfig[](32);
+        GenesisVault.GrantConfig[] memory maxGrants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS);
         for (uint256 i; i < maxGrants.length; ++i) {
             maxGrants[i] = GenesisVault.GrantConfig({
                 beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
             });
         }
         assertLt(
-            coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), maxGrants).length, 49_152
+            coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), maxGrants).length,
+            49_152 - 256
         );
     }
 
@@ -404,6 +435,14 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(address(vaultLike.ARBITRATION()), address(arbitrationLike));
         assertEq(address(vaultLike.BOOTSTRAP_HOOK()), address(receipt));
         assertEq(address(vaultLike.manager()), address(0));
+        assertEq(vaultLike.assetPolicyCount(), 1);
+        (uint128 c1, uint128 c2, uint128 tapBudget, uint128 tapBudgetMax, bool exists) =
+            vaultLike.assetPolicies(address(weth));
+        assertEq(c1, 0.1 ether);
+        assertEq(c2, 1 ether);
+        assertEq(tapBudget, 0.2 ether);
+        assertEq(tapBudgetMax, 2 ether);
+        assertTrue(exists);
 
         assertEq(address(gatewayLike.space()), address(spaceLike));
         assertEq(address(gatewayLike.executionStrategy()), address(releaseLike));
@@ -473,6 +512,7 @@ contract FaoGenesisDeploymentTest is Test {
             arbitrationTimeout: 3 days,
             siteMinActivationBond: ACTIVATION_BOND,
             treasuryMinActivationBond: TREASURY_BOND,
+            assetPolicies: _assetPolicies(),
             twapTimeout: 7 days,
             twapWindow: 1 days,
             spaceSaltNonce: 1,
@@ -513,14 +553,29 @@ contract FaoGenesisDeploymentTest is Test {
         });
     }
 
-    function _coreCodes() private pure returns (bytes[] memory codes) {
+    function _assetPolicies()
+        private
+        view
+        returns (GenesisVault.AssetPolicyConfig[] memory policies)
+    {
+        policies = new GenesisVault.AssetPolicyConfig[](1);
+        policies[0] = GenesisVault.AssetPolicyConfig({
+            asset: address(weth),
+            c1: 0.1 ether,
+            c2: 1 ether,
+            tapBudget: 0.2 ether,
+            tapBudgetMax: 2 ether
+        });
+    }
+
+    function _coreCodes() private view returns (bytes[] memory codes) {
         codes = new bytes[](6);
-        codes[0] = type(FutarchyArbitration).creationCode;
-        codes[1] = type(GenesisVault).creationCode;
-        codes[2] = type(SXArbitrationExecutionStrategy).creationCode;
-        codes[3] = type(AlwaysZeroVotingStrategy).creationCode;
-        codes[4] = type(EconGateway).creationCode;
-        codes[5] = type(FAOEconomicEvaluationPipeline).creationCode;
+        codes[0] = vm.readFileBinary("metadata/economic-creation-code/arbitration.bin");
+        codes[1] = vm.readFileBinary("metadata/economic-creation-code/vault.bin");
+        codes[2] = vm.readFileBinary("metadata/economic-creation-code/release_strategy.bin");
+        codes[3] = vm.readFileBinary("metadata/economic-creation-code/zero_voting.bin");
+        codes[4] = vm.readFileBinary("metadata/economic-creation-code/econ_gateway.bin");
+        codes[5] = vm.readFileBinary("metadata/economic-creation-code/econ_evaluator.bin");
     }
 
     function _flmCodes() private view returns (bytes[] memory codes) {
@@ -559,7 +614,8 @@ contract FaoGenesisDeploymentTest is Test {
             tokenMaxSupply: config.tokenMaxSupply,
             initialPrice: config.initialPrice,
             slope: config.slope,
-            bootstrapBps: config.bootstrapBps
+            bootstrapBps: config.bootstrapBps,
+            assetPolicies: config.assetPolicies
         });
     }
 }

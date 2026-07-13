@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -21,16 +22,27 @@ ROOT = Path(__file__).resolve().parents[1]
 CHAIN_ID = flm_deployment.CHAIN_ID
 FEE_TIER = flm_deployment.FEE_TIER
 OBSERVATION_CARDINALITY = flm_deployment.MIN_CARDINALITY_NEXT
+MAX_VESTING_GRANTS = 16
 DEAD = flm_deployment.DEAD
 ZERO = "0x" + "00" * 20
 POOL_INIT_CODE_HASH = (
     "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54"
 )
-DEPLOY_CORE_SELECTOR = "67658a72"
+DEPLOY_CORE_SELECTOR = "c9b544c1"
 DEPLOY_FLM_SELECTOR = "88b5e784"
 FINALIZE_SELECTOR = "4bb278f3"
+STAGE_SIGNATURE = "stage(bytes32,bytes32,bytes)"
+GENESIS_STAGED_EVENT = "GenesisStaged(address,bytes32,bytes32,address)"
+CORE_SEALED_EVENT = "CoreSealed(address,address,address,address,address,address)"
+FLM_SEALED_EVENT = "FlmSealed(address,address,address)"
+FINALIZED_EVENT = "Finalized(uint256,uint256,uint256,uint256,uint256)"
 RECEIPT_SOURCE = "src/FaoGenesisDeployment.sol"
 RECEIPT_CONTRACT = "FaoGenesisDeployment"
+REGISTRAR_SOURCE = "src/FaoGenesisRegistrar.sol"
+REGISTRAR_CONTRACT = "FaoGenesisRegistrar"
+SELF_SERVE_MANIFEST = ROOT / "deployments/sepolia-selfserve.json"
+DISCOVERY_MANIFEST = ROOT / "deployments/sepolia-economic-discovery.json"
+ECONOMIC_MANIFEST = ROOT / "deployments/sepolia-economic-genesis.json"
 SX_PINS = {
     "proxyFactory": (
         "0x4b4f7f64be813ccc66aefc3bfce2baa01188631c",
@@ -102,6 +114,7 @@ CORE_CONFIG_KEYS = (
     "arbitrationTimeout",
     "siteMinActivationBond",
     "treasuryMinActivationBond",
+    "assetPolicies",
     "twapTimeout",
     "twapWindow",
     "spaceSaltNonce",
@@ -120,12 +133,14 @@ CORE_CONFIG_KEYS = (
     "slope",
     "bootstrapBps",
 )
+ASSET_POLICY_KEYS = ("asset", "c1", "c2", "tapBudget", "tapBudgetMax")
 GRANT_KEYS = ("beneficiary", "start", "duration", "amount")
 FLM_CONFIG_KEYS = ("positionManager",)
 CONTRACT_KEYS = (
     "space",
     "arbitration",
     "vault",
+    "treasuryExecutor",
     "companyToken",
     "proposalGateway",
     "releaseStrategy",
@@ -145,6 +160,7 @@ CONTRACT_KEYS = (
 )
 MANIFEST_KEYS = {
     "schemaVersion",
+    "creationRoute",
     "status",
     "network",
     "chainId",
@@ -159,8 +175,11 @@ MANIFEST_KEYS = {
     "observationCardinality",
     "contracts",
     "codeBlobs",
+    "runtimeCodeHashes",
     "finalization",
 }
+RUNTIME_CODE_HASH_KEYS = ("treasuryExecutor",)
+SELF_SERVE_KEYS = {"schemaVersion", "network", "chainId", "registrar", "prerequisites"}
 
 ManifestError = site_deployment.ManifestError
 _address = site_deployment._address
@@ -248,6 +267,7 @@ def _canonical_blob_hashes() -> tuple[
     }
     deployment_evidence = {
         "receipt": all_evidence["RECEIPT"],
+        "registrar": all_evidence["REGISTRAR"],
         "proposalImplementation": all_evidence["PROPOSAL_IMPLEMENTATION"],
         "stackDeployer": all_evidence["STACK_DEPLOYER"],
     }
@@ -295,6 +315,35 @@ def _prerequisite(value: Any, name: str, key: str) -> dict[str, Any]:
     return item
 
 
+def _registrar(value: Any, name: str) -> dict[str, Any]:
+    item = _require_dict(value, name)
+    _expect_keys(
+        item,
+        (
+            "address",
+            "source",
+            "contract",
+            "transaction",
+            "creationCodeBytes",
+            "creationCodeKeccak256",
+            "runtimeCodeBytes",
+            "runtimeCodeKeccak256",
+        ),
+        name,
+    )
+    _canonical_address(item["address"], f"{name}.address")
+    if item["source"] != REGISTRAR_SOURCE or item["contract"] != REGISTRAR_CONTRACT:
+        raise ManifestError(f"{name} has the wrong compiler identity")
+    _transaction(item["transaction"], f"{name}.transaction")
+    if _json_integer(item["creationCodeBytes"], f"{name}.creationCodeBytes") <= 0:
+        raise ManifestError(f"{name} creation code cannot be empty")
+    if _json_integer(item["runtimeCodeBytes"], f"{name}.runtimeCodeBytes") <= 0:
+        raise ManifestError(f"{name} runtime code cannot be empty")
+    _canonical_hash(item["creationCodeKeccak256"], f"{name}.creationCodeKeccak256")
+    _canonical_hash(item["runtimeCodeKeccak256"], f"{name}.runtimeCodeKeccak256")
+    return item
+
+
 def _dependency(value: Any, name: str) -> dict[str, str]:
     dependency = _require_dict(value, name)
     _expect_keys(dependency, ("target", "runtimeCodeKeccak256"), name)
@@ -322,8 +371,17 @@ def _dynamic_bytes(value: bytes) -> bytes:
     return _word(len(value)) + value + bytes((-len(value)) % 32)
 
 
+def _encode_asset_policies(policies: list[dict[str, Any]]) -> bytes:
+    encoded = bytearray(_word(len(policies)))
+    for policy in policies:
+        encoded.extend(_address_word(policy["asset"]))
+        for key in ASSET_POLICY_KEYS[1:]:
+            encoded.extend(_word(policy[key]))
+    return bytes(encoded)
+
+
 def _encode_core_config(config: dict[str, Any]) -> bytes:
-    head: list[bytes | str] = []
+    head: list[bytes | str | list[dict[str, Any]]] = []
     for key in CORE_DEPENDENCY_KEYS:
         dependency = config[key]
         head.extend(
@@ -337,10 +395,10 @@ def _encode_core_config(config: dict[str, Any]) -> bytes:
         "arbitrationTimeout",
         "siteMinActivationBond",
         "treasuryMinActivationBond",
-        "twapTimeout",
-        "twapWindow",
-        "spaceSaltNonce",
     ):
+        head.append(_word(config[key]))
+    head.append(config["assetPolicies"])
+    for key in ("twapTimeout", "twapWindow", "spaceSaltNonce"):
         head.append(_word(config[key]))
     head.extend(
         (
@@ -371,6 +429,9 @@ def _encode_core_config(config: dict[str, Any]) -> bytes:
         if isinstance(value, str):
             encoded_head.extend(_word(head_bytes + len(tail)))
             tail.extend(_dynamic_bytes(value.encode("utf-8")))
+        elif isinstance(value, list):
+            encoded_head.extend(_word(head_bytes + len(tail)))
+            tail.extend(_encode_asset_policies(value))
         else:
             encoded_head.extend(value)
     return bytes(encoded_head + tail)
@@ -438,6 +499,21 @@ def _encode_deploy_flm(config: dict[str, Any], codes: tuple[bytes, ...]) -> byte
     )
 
 
+def _encode_stage(
+    core_config_hash: str,
+    flm_config_hash: str,
+    receipt_creation_code: bytes,
+    hash_: Callable[[bytes], str],
+) -> bytes:
+    selector = bytes.fromhex(_digest(STAGE_SIGNATURE.encode(), hash_)[2:10])
+    return (
+        selector
+        + bytes.fromhex(core_config_hash[2:] + flm_config_hash[2:])
+        + _word(96)
+        + _dynamic_bytes(receipt_creation_code)
+    )
+
+
 def _decode_address_word(value: bytes, offset: int, name: str) -> str:
     if offset < 0 or offset + 32 > len(value) or any(value[offset : offset + 12]):
         raise ManifestError(f"{name} is not an encoded address")
@@ -466,8 +542,36 @@ def _decode_string(value: bytes, head_offset: int, name: str) -> str:
         raise ManifestError(f"{name} is not UTF-8") from exc
 
 
+def _decode_asset_policies(value: bytes, head_offset: int) -> list[dict[str, Any]]:
+    start = _word_uint(value, head_offset, "CoreConfig.assetPolicies offset")
+    if start % 32 or start + 32 > len(value):
+        raise ManifestError("CoreConfig.assetPolicies offset is malformed")
+    count = _word_uint(value, start, "CoreConfig.assetPolicies length")
+    if start + 32 + count * 160 > len(value):
+        raise ManifestError("CoreConfig.assetPolicies is truncated")
+    policies = []
+    for index in range(count):
+        offset = start + 32 + index * 160
+        policies.append(
+            {
+                "asset": _decode_address_word(
+                    value, offset, f"CoreConfig.assetPolicies[{index}].asset"
+                ),
+                "c1": _word_uint(value, offset + 32, f"CoreConfig.assetPolicies[{index}].c1"),
+                "c2": _word_uint(value, offset + 64, f"CoreConfig.assetPolicies[{index}].c2"),
+                "tapBudget": _word_uint(
+                    value, offset + 96, f"CoreConfig.assetPolicies[{index}].tapBudget"
+                ),
+                "tapBudgetMax": _word_uint(
+                    value, offset + 128, f"CoreConfig.assetPolicies[{index}].tapBudgetMax"
+                ),
+            }
+        )
+    return policies
+
+
 def _decode_core_config(value: bytes) -> dict[str, Any]:
-    if len(value) < 39 * 32 or len(value) % 32:
+    if len(value) < 40 * 32 or len(value) % 32:
         raise ManifestError("encoded CoreConfig is malformed")
     config: dict[str, Any] = {}
     word = 0
@@ -484,10 +588,12 @@ def _decode_core_config(value: bytes) -> dict[str, Any]:
         "arbitrationTimeout",
         "siteMinActivationBond",
         "treasuryMinActivationBond",
-        "twapTimeout",
-        "twapWindow",
-        "spaceSaltNonce",
     ):
+        config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    config["assetPolicies"] = _decode_asset_policies(value, word * 32)
+    word += 1
+    for key in ("twapTimeout", "twapWindow", "spaceSaltNonce"):
         config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
         word += 1
     for key in (
@@ -592,6 +698,31 @@ def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any]
     )
     for key in uint256_keys:
         _uint(core[key], 256, f"coreConfig.{key}")
+    policies = _require_list(core["assetPolicies"], "coreConfig.assetPolicies")
+    if len(policies) > 8:
+        raise ManifestError("coreConfig.assetPolicies exceeds the vault maximum")
+    assets = set()
+    for index, raw in enumerate(policies):
+        policy = _require_dict(raw, f"coreConfig.assetPolicies[{index}]")
+        if tuple(policy) != ASSET_POLICY_KEYS:
+            raise ManifestError(
+                f"coreConfig.assetPolicies[{index}] is not in canonical Solidity field order"
+            )
+        asset_name = f"coreConfig.assetPolicies[{index}].asset"
+        asset = _hex(policy["asset"], 20, asset_name)
+        if policy["asset"] != asset:
+            raise ManifestError(f"{asset_name} must be canonical lowercase hex")
+        if asset in assets:
+            raise ManifestError("coreConfig.assetPolicies assets must be unique")
+        assets.add(asset)
+        for key in ASSET_POLICY_KEYS[1:]:
+            _uint(policy[key], 128, f"coreConfig.assetPolicies[{index}].{key}")
+        if policy["c1"] > policy["c2"]:
+            raise ManifestError(f"coreConfig.assetPolicies[{index}] requires c1 <= c2")
+        if policy["tapBudget"] > policy["tapBudgetMax"]:
+            raise ManifestError(
+                f"coreConfig.assetPolicies[{index}] requires tapBudget <= tapBudgetMax"
+            )
     for key in ("twapTimeout", "twapWindow"):
         _uint(core[key], 32, f"coreConfig.{key}")
     for key in ("saleEnd", "bootstrapDeadline"):
@@ -609,7 +740,7 @@ def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any]
             raise ManifestError(f"coreConfig.{key} must be a string")
 
     raw_grants = _require_list(manifest["grants"], "grants")
-    if len(raw_grants) > 32:
+    if len(raw_grants) > MAX_VESTING_GRANTS:
         raise ManifestError("grants exceeds the vault maximum")
     grants = []
     for index, raw in enumerate(raw_grants):
@@ -640,14 +771,18 @@ def validate_manifest(
     raw: Any, *, hash_: Callable[[bytes], str] = flm_code_hashes.keccak256
 ) -> dict[str, Any]:
     manifest = _require_dict(raw, "economic deployment manifest")
+    schema_version = _json_integer(manifest.get("schemaVersion"), "schemaVersion")
     _expect_keys(manifest, MANIFEST_KEYS, "economic deployment manifest")
     if (
-        _json_integer(manifest["schemaVersion"], "schemaVersion") != 1
+        schema_version != 3
         or manifest["network"] != "sepolia"
         or _json_integer(manifest["chainId"], "chainId") != CHAIN_ID
         or manifest["status"] not in {"sealed", "live"}
     ):
-        raise ManifestError("manifest must be sealed/live Sepolia schema version 1")
+        raise ManifestError("manifest must be sealed/live Sepolia schema version 3")
+    if manifest["creationRoute"] not in {"create", "registrar"}:
+        raise ManifestError("schema version 3 requires a create or registrar route")
+    registrar_route = manifest["creationRoute"] == "registrar"
     expected_core, expected_flm, canonical_creations = _canonical_blob_hashes()
 
     transactions = _require_dict(manifest["transactions"], "transactions")
@@ -664,28 +799,29 @@ def validate_manifest(
         raise ManifestError("staged transaction blocks are out of order")
 
     receipt = _require_dict(manifest["receipt"], "receipt")
-    _expect_keys(
-        receipt,
-        (
-            "address",
-            "source",
-            "contract",
-            "createNonce",
-            "creationCodeBytes",
-            "creationCodeKeccak256",
-            "coreConfigHash",
-            "flmConfigHash",
-        ),
-        "receipt",
-    )
+    receipt_keys = {
+        "address",
+        "source",
+        "contract",
+        "stageNonce" if registrar_route else "createNonce",
+        "creationCodeBytes",
+        "creationCodeKeccak256",
+        "coreConfigHash",
+        "flmConfigHash",
+    }
+    if registrar_route:
+        receipt_keys.add("registrar")
+    if set(receipt) != receipt_keys:
+        raise ManifestError("receipt has invalid keys")
     receipt_address = _canonical_address(receipt["address"], "receipt.address")
     if receipt["source"] != RECEIPT_SOURCE or receipt["contract"] != RECEIPT_CONTRACT:
         raise ManifestError("receipt has the wrong compiler identity")
-    create_nonce = _json_integer(receipt["createNonce"], "receipt.createNonce")
+    nonce_key = "stageNonce" if registrar_route else "createNonce"
+    create_nonce = _json_integer(receipt[nonce_key], f"receipt.{nonce_key}")
     if create_nonce < 0 or create_nonce >= 1 << 64:
-        raise ManifestError("receipt.createNonce is outside the Ethereum account nonce range")
+        raise ManifestError(f"receipt.{nonce_key} is outside the Ethereum account nonce range")
     if create_nonce != ordered_transactions[0]["nonce"]:
-        raise ManifestError("receipt CREATE nonce is inconsistent")
+        raise ManifestError("receipt creation transaction nonce is inconsistent")
     if _json_integer(receipt["creationCodeBytes"], "receipt.creationCodeBytes") <= 0:
         raise ManifestError("receipt creation code cannot be empty")
     for key in ("creationCodeKeccak256", "coreConfigHash", "flmConfigHash"):
@@ -697,6 +833,11 @@ def validate_manifest(
         or receipt["creationCodeKeccak256"] != canonical_creations["receipt"]["hash"]
     ):
         raise ManifestError("receipt creation code does not match canonical compiler evidence")
+    registrar = None
+    if registrar_route:
+        registrar = _dependency(receipt["registrar"], "receipt.registrar")
+        if registrar["target"] == receipt_address:
+            raise ManifestError("receipt registrar cannot be the receipt")
 
     core_config, grants, flm_config = _validate_config_preimages(manifest)
     dependencies = _dependencies(manifest)
@@ -779,6 +920,8 @@ def validate_manifest(
         for index, value in enumerate(wallets)
     )
     addresses.append(receipt_address)
+    if registrar is not None:
+        addresses.append(registrar["target"])
     if len(set(addresses)) != len(addresses):
         raise ManifestError("receipt and deployed contract addresses must be unique")
 
@@ -794,6 +937,14 @@ def validate_manifest(
         for key in keys:
             if _canonical_hash(section[key], f"codeBlobs.{section_name}.{key}") != expected[key]:
                 raise ManifestError(f"codeBlobs.{section_name}.{key} is not canonical")
+
+    runtime_hashes = _require_dict(manifest["runtimeCodeHashes"], "runtimeCodeHashes")
+    if tuple(runtime_hashes) != RUNTIME_CODE_HASH_KEYS:
+        raise ManifestError("runtimeCodeHashes is not in canonical order")
+    _canonical_hash(
+        runtime_hashes["treasuryExecutor"],
+        "runtimeCodeHashes.treasuryExecutor",
+    )
 
     finalization = manifest["finalization"]
     if manifest["status"] == "sealed":
@@ -820,6 +971,112 @@ def _create_address(sender: str, nonce: int, hash_: Callable[[bytes], str]) -> s
         encoded_nonce = bytes([0x80 + len(encoded_nonce)]) + encoded_nonce
     payload = b"\x94" + bytes.fromhex(_address(sender, "CREATE sender")[2:]) + encoded_nonce
     digest = _digest(bytes([0xC0 + len(payload)]) + payload, hash_)
+    return "0x" + digest[-40:]
+
+
+def _executor_runtime_code(vault: str) -> bytes:
+    try:
+        evidence = json.loads(
+            (ROOT / economic_code_hashes.EXECUTOR_RUNTIME_PATH).read_text(encoding="utf-8")
+        )
+        core = json.loads((ROOT / economic_code_hashes.MANIFEST_PATH).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ManifestError("cannot read treasury executor runtime evidence") from exc
+    if not isinstance(evidence, dict):
+        raise ManifestError("treasury executor runtime evidence is malformed")
+    _expect_keys(
+        evidence,
+        ("schemaVersion", "source", "contract", "compiler", "deployedRuntime"),
+        "treasury executor runtime evidence",
+    )
+    if (
+        evidence["schemaVersion"] != 1
+        or evidence["source"] != economic_code_hashes.EXECUTOR_RUNTIME_TARGET.source
+        or evidence["contract"] != economic_code_hashes.EXECUTOR_RUNTIME_TARGET.contract
+    ):
+        raise ManifestError("treasury executor runtime compiler identity is invalid")
+    compiler = _require_dict(evidence["compiler"], "treasury executor runtime compiler")
+    _expect_keys(
+        compiler,
+        ("solcVersion", "solcSettingsKeccak256"),
+        "treasury executor runtime compiler",
+    )
+    core_compiler = core.get("compiler") if isinstance(core, dict) else None
+    if compiler != core_compiler:
+        raise ManifestError("treasury executor runtime compiler provenance is invalid")
+    if not isinstance(compiler["solcVersion"], str) or not compiler["solcVersion"]:
+        raise ManifestError("treasury executor runtime compiler provenance is invalid")
+    _canonical_hash(
+        compiler["solcSettingsKeccak256"],
+        "treasury executor runtime compiler settings",
+    )
+
+    runtime = _require_dict(evidence["deployedRuntime"], "treasury executor deployed runtime")
+    _expect_keys(
+        runtime,
+        ("template", "bytes", "keccak256", "immutableReferences"),
+        "treasury executor deployed runtime",
+    )
+    template = runtime["template"]
+    if not isinstance(template, str) or not template.startswith("0x"):
+        raise ManifestError("treasury executor runtime template is malformed")
+    try:
+        code = bytearray.fromhex(template[2:])
+    except ValueError as exc:
+        raise ManifestError("treasury executor runtime template is malformed") from exc
+    if template != "0x" + code.hex() or not code:
+        raise ManifestError("treasury executor runtime template is malformed")
+    if _json_integer(runtime["bytes"], "treasury executor runtime bytes") != len(code):
+        raise ManifestError("treasury executor runtime byte length mismatch")
+    expected_hash = _canonical_hash(runtime["keccak256"], "treasury executor runtime hash")
+    if _digest(bytes(code), flm_code_hashes.keccak256) != expected_hash:
+        raise ManifestError("treasury executor runtime template hash mismatch")
+
+    references = _require_list(
+        runtime["immutableReferences"], "treasury executor immutable references"
+    )
+    immutable = _address_word(_address(vault, "treasury executor vault"))
+    if not references:
+        raise ManifestError("treasury executor runtime has no immutable VAULT references")
+    previous_end = 0
+    for index, raw_reference in enumerate(references):
+        reference = _require_dict(
+            raw_reference, f"treasury executor immutable reference {index}"
+        )
+        _expect_keys(
+            reference,
+            ("start", "length"),
+            f"treasury executor immutable reference {index}",
+        )
+        start = _json_integer(reference["start"], "treasury executor immutable start")
+        length = _json_integer(reference["length"], "treasury executor immutable length")
+        if (
+            length != 32
+            or start < 0
+            or start < previous_end
+            or start + length > len(code)
+            or any(code[start : start + length])
+        ):
+            raise ManifestError("treasury executor immutable references are malformed")
+        code[start : start + length] = immutable
+        previous_end = start + length
+    return bytes(code)
+
+
+def _create2_address(
+    deployer: str,
+    core_config_hash: str,
+    flm_config_hash: str,
+    receipt_creation_code: bytes,
+    hash_: Callable[[bytes], str],
+) -> str:
+    commitments = bytes.fromhex(core_config_hash[2:] + flm_config_hash[2:])
+    salt = bytes.fromhex(_digest(commitments, hash_)[2:])
+    initcode_hash = bytes.fromhex(_digest(receipt_creation_code + commitments, hash_)[2:])
+    digest = _digest(
+        b"\xff" + bytes.fromhex(deployer[2:]) + salt + initcode_hash,
+        hash_,
+    )
     return "0x" + digest[-40:]
 
 
@@ -878,6 +1135,32 @@ class CastClient(flm_deployment.CastClient):
     def call(self, address: str, signature: str, *args: str) -> str:
         return self._run("call", address, signature, *args)
 
+    def logs(
+        self,
+        address: str,
+        topics: list[str | None],
+        from_block: int,
+        to_block: int,
+    ) -> list[dict[str, Any]]:
+        filter_ = {
+            "address": address,
+            "fromBlock": hex(from_block),
+            "toBlock": hex(to_block),
+            "topics": topics,
+        }
+        return _require_list(
+            self._rpc("eth_getLogs", json.dumps(filter_, separators=(",", ":"))),
+            "RPC logs",
+        )
+
+    def finalized_block(self) -> int:
+        block = _require_dict(
+            self._rpc("eth_getBlockByNumber", "finalized", "false"),
+            "RPC finalized block",
+        )
+        _canonical_hash(block.get("hash"), "RPC finalized block hash")
+        return _quantity(block.get("number"), "RPC finalized block number")
+
 
 def _call(client: Any, address: str, signature: str, *args: str) -> str:
     return client.call(address, signature, *args)
@@ -908,6 +1191,179 @@ def _call_bool(client: Any, address: str, signature: str, *args: str) -> bool:
     if raw not in {"true", "false"}:
         raise ManifestError(f"{address}.{signature} returned a non-bool")
     return raw == "true"
+
+
+def _event_topic(signature: str, hash_: Callable[[bytes], str]) -> str:
+    return _digest(signature.encode(), hash_)
+
+
+def _topic_address(value: Any, name: str) -> str:
+    topic = _hex(value, 32, name)
+    if topic[2:26] != "0" * 24:
+        raise ManifestError(f"{name} is not an indexed address")
+    return "0x" + topic[-40:]
+
+
+def _data_addresses(value: Any, count: int, name: str) -> tuple[str, ...]:
+    data = _variable_bytes(value, name)
+    if len(data) != count * 32:
+        raise ManifestError(f"{name} must contain {count} encoded addresses")
+    return tuple(_decode_address_word(data, index * 32, f"{name}[{index}]") for index in range(count))
+
+
+def _transaction_from_hash(
+    client: Any,
+    tx_hash: str,
+    target: str,
+    name: str,
+) -> tuple[dict[str, Any], bytes, dict[str, Any]]:
+    tx_hash = _canonical_hash(tx_hash, f"{name} hash")
+    tx = _require_dict(client.transaction(tx_hash), f"live {name} transaction")
+    receipt = _require_dict(client.receipt(tx_hash), f"live {name} receipt")
+    block = _quantity(receipt.get("blockNumber"), f"live {name} receipt block")
+    sender = _address(tx.get("from"), f"live {name} sender")
+    nonce = _quantity(tx.get("nonce"), f"live {name} nonce")
+    if (
+        _hex(tx.get("hash"), 32, f"live {name} transaction hash") != tx_hash
+        or _hex(receipt.get("transactionHash"), 32, f"live {name} receipt hash") != tx_hash
+        or _quantity(tx.get("blockNumber"), f"live {name} transaction block") != block
+        or _address(receipt.get("from"), f"live {name} receipt sender") != sender
+        or flm_deployment._live_target(tx.get("to"), f"live {name} target") != target
+        or flm_deployment._live_target(receipt.get("to"), f"live {name} receipt target")
+        != target
+        or flm_deployment._live_target(
+            receipt.get("contractAddress"), f"live {name} contractAddress"
+        )
+        is not None
+        or _quantity(receipt.get("status"), f"live {name} status") != 1
+    ):
+        raise ManifestError(f"live {name} transaction evidence is inconsistent")
+    evidence = {"hash": tx_hash, "block": block, "nonce": nonce, "from": sender}
+    return evidence, _variable_bytes(tx.get("input"), f"live {name} input"), receipt
+
+
+def _single_log(
+    client: Any,
+    emitter: str,
+    signature: str,
+    from_block: int,
+    to_block: int,
+    hash_: Callable[[bytes], str],
+    *indexed_topics: str | None,
+) -> dict[str, Any]:
+    logs = client.logs(
+        emitter,
+        [_event_topic(signature, hash_), *indexed_topics],
+        from_block,
+        to_block,
+    )
+    if len(logs) != 1:
+        raise ManifestError(f"expected one {signature} event, found {len(logs)}")
+    log = _require_dict(logs[0], signature)
+    if _address(log.get("address"), f"{signature}.emitter") != emitter:
+        raise ManifestError(f"{signature} has the wrong emitter")
+    return log
+
+
+def _optional_log(
+    client: Any,
+    emitter: str,
+    signature: str,
+    from_block: int,
+    to_block: int,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any] | None:
+    logs = client.logs(
+        emitter,
+        [_event_topic(signature, hash_)],
+        from_block,
+        to_block,
+    )
+    if len(logs) > 1:
+        raise ManifestError(f"expected at most one {signature} event, found {len(logs)}")
+    if not logs:
+        return None
+    log = _require_dict(logs[0], signature)
+    topics = _require_list(log.get("topics"), f"{signature}.topics")
+    if (
+        not topics
+        or _hex(topics[0], 32, f"{signature}.topic0") != _event_topic(signature, hash_)
+        or _address(log.get("address"), f"{signature}.emitter") != emitter
+    ):
+        raise ManifestError(f"{signature} has the wrong emitter")
+    return log
+
+
+def _log_hash(log: dict[str, Any], name: str) -> str:
+    return _hex(log.get("transactionHash"), 32, f"{name}.transactionHash")
+
+
+def _validate_log_location(
+    log: dict[str, Any],
+    receipt: dict[str, Any],
+    from_block: int,
+    to_block: int,
+    name: str,
+) -> None:
+    block = _quantity(log.get("blockNumber"), f"{name}.blockNumber")
+    receipt_block = _quantity(receipt.get("blockNumber"), f"{name} receipt blockNumber")
+    if (
+        log.get("removed") is not False
+        or block < from_block
+        or block > to_block
+        or block != receipt_block
+        or _canonical_hash(log.get("blockHash"), f"{name}.blockHash")
+        != _canonical_hash(receipt.get("blockHash"), f"{name} receipt blockHash")
+        or _log_hash(log, name)
+        != _canonical_hash(receipt.get("transactionHash"), f"{name} receipt transactionHash")
+    ):
+        raise ManifestError(f"{name} log provenance does not match its receipt")
+
+
+def _validate_stage_log(
+    log: dict[str, Any],
+    registrar: str,
+    receipt: str,
+    core_config_hash: str,
+    flm_config_hash: str,
+    stager: str,
+    hash_: Callable[[bytes], str],
+) -> None:
+    topics = _require_list(log.get("topics"), "GenesisStaged.topics")
+    if (
+        len(topics) != 4
+        or _hex(topics[0], 32, "GenesisStaged.topic0")
+        != _event_topic(GENESIS_STAGED_EVENT, hash_)
+        or _topic_address(topics[1], "GenesisStaged.receipt") != receipt
+        or _hex(topics[2], 32, "GenesisStaged.coreConfigHash") != core_config_hash
+        or _hex(topics[3], 32, "GenesisStaged.flmConfigHash") != flm_config_hash
+        or _data_addresses(log.get("data"), 1, "GenesisStaged.data") != (stager,)
+        or _address(log.get("address"), "GenesisStaged.emitter") != registrar
+    ):
+        raise ManifestError("GenesisStaged event does not match the receipt provenance")
+
+
+def _validate_seal_log(
+    log: dict[str, Any],
+    signature: str,
+    receipt: str,
+    indexed: tuple[str, ...],
+    data: tuple[str, ...],
+    hash_: Callable[[bytes], str],
+) -> None:
+    topics = _require_list(log.get("topics"), f"{signature}.topics")
+    if (
+        len(topics) != len(indexed) + 1
+        or _hex(topics[0], 32, f"{signature}.topic0") != _event_topic(signature, hash_)
+        or tuple(
+            _topic_address(value, f"{signature}.indexed[{index}]")
+            for index, value in enumerate(topics[1:])
+        )
+        != indexed
+        or _data_addresses(log.get("data"), len(data), f"{signature}.data") != data
+        or _address(log.get("address"), f"{signature}.emitter") != receipt
+    ):
+        raise ManifestError(f"{signature} event does not match deployed receipt wiring")
 
 
 def _live_transaction(
@@ -1063,6 +1519,24 @@ def _broadcast_records(broadcast: Any, client: Any) -> list[dict[str, Any]]:
     return records
 
 
+def _deployed_contracts(
+    receipt: str,
+    grant_count: int,
+    client: Any,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    contracts: dict[str, Any] = {}
+    for key in CONTRACT_KEYS[:-1]:
+        target = contracts["vault"] if key == "treasuryExecutor" else receipt
+        signature = "TREASURY_EXECUTOR" if key == "treasuryExecutor" else key
+        contracts[key] = _call_address(client, target, f"{signature}()(address)")
+    contracts["vestingWallets"] = [
+        _create_address(contracts["vault"], index, hash_)
+        for index in range(2, grant_count + 2)
+    ]
+    return contracts
+
+
 def manifest_from_broadcast(
     broadcast: Any,
     receipt_creation_code: bytes,
@@ -1118,21 +1592,16 @@ def manifest_from_broadcast(
 
     core_config, grants, core_codes = _decode_deploy_core(deploy_core["input"])
     flm_config, flm_codes = _decode_deploy_flm(deploy_flm["input"])
-    getter_keys = CONTRACT_KEYS[:-1]
-    contracts = {
-        key: _call_address(client, receipt_address, f"{key}()(address)") for key in getter_keys
-    }
-    contracts["vestingWallets"] = [
-        _create_address(contracts["vault"], index, hash_)
-        for index in range(1, len(grants) + 1)
-    ]
+    contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
+    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
 
     core_hashes = {
         key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)
     }
     flm_hashes = {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)}
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 3,
+        "creationRoute": "create",
         "status": "sealed",
         "network": "sepolia",
         "chainId": CHAIN_ID,
@@ -1160,6 +1629,7 @@ def manifest_from_broadcast(
         "observationCardinality": OBSERVATION_CARDINALITY,
         "contracts": contracts,
         "codeBlobs": {"core": core_hashes, "flm": flm_hashes},
+        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
         "finalization": None,
     }
     verify_rpc(
@@ -1167,6 +1637,468 @@ def manifest_from_broadcast(
         receipt_creation_code,
         prerequisite_creation_codes,
         client,
+        hash_=hash_,
+    )
+    return manifest
+
+
+def _shared_deployment(
+    raw: Any,
+    receipt_creation_code: bytes,
+    registrar_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    shared = _require_dict(raw, "self-serve deployment manifest")
+    _expect_keys(shared, SELF_SERVE_KEYS, "self-serve deployment manifest")
+    if (
+        _json_integer(shared["schemaVersion"], "self-serve schemaVersion") != 1
+        or shared["network"] != "sepolia"
+        or _json_integer(shared["chainId"], "self-serve chainId") != CHAIN_ID
+    ):
+        raise ManifestError("self-serve deployment must be Sepolia schema version 1")
+
+    _, _, canonical_creations = _canonical_blob_hashes()
+    registrar = _registrar(shared["registrar"], "self-serve registrar")
+    if (
+        registrar["creationCodeBytes"] != canonical_creations["registrar"]["bytes"]
+        or registrar["creationCodeKeccak256"] != canonical_creations["registrar"]["hash"]
+        or len(registrar_creation_code) != registrar["creationCodeBytes"]
+        or _digest(registrar_creation_code, hash_) != registrar["creationCodeKeccak256"]
+    ):
+        raise ManifestError("self-serve registrar does not match canonical compiler evidence")
+    registrar_tx = registrar["transaction"]
+    if registrar["address"] != _create_address(
+        registrar_tx["from"], registrar_tx["nonce"], hash_
+    ):
+        raise ManifestError("self-serve registrar has the wrong CREATE address")
+    registrar_input = _live_transaction(
+        client,
+        registrar_tx,
+        None,
+        "self-serve registrar",
+        registrar["address"],
+    )
+    if registrar_input != registrar_creation_code + bytes.fromhex(
+        _digest(receipt_creation_code, hash_)[2:]
+    ):
+        raise ManifestError("self-serve registrar CREATE input mismatches compiler evidence")
+    registrar_runtime = client.code(registrar["address"])
+    if (
+        len(registrar_runtime) != registrar["runtimeCodeBytes"]
+        or _digest(registrar_runtime, hash_) != registrar["runtimeCodeKeccak256"]
+    ):
+        raise ManifestError("self-serve registrar runtime evidence mismatch")
+    if (
+        _call_hash(client, registrar["address"], "RECEIPT_CREATION_CODE_HASH()(bytes32)")
+        != _digest(receipt_creation_code, hash_)
+    ):
+        raise ManifestError("self-serve registrar does not pin canonical receipt creation code")
+
+    prerequisites = _require_dict(shared["prerequisites"], "self-serve prerequisites")
+    if tuple(prerequisites) != tuple(PREREQUISITES):
+        raise ManifestError("self-serve deployment manifest has incomplete prerequisites")
+    transaction_hashes = {registrar_tx["hash"]}
+    addresses = {registrar["address"]}
+    for key in PREREQUISITES:
+        item = _prerequisite(prerequisites[key], f"self-serve prerequisites.{key}", key)
+        canonical = canonical_creations[key]
+        if (
+            item["creationCodeBytes"] != canonical["bytes"]
+            or item["creationCodeKeccak256"] != canonical["hash"]
+        ):
+            raise ManifestError(
+                f"self-serve prerequisites.{key} does not match canonical compiler evidence"
+            )
+        transaction_hashes.add(item["transaction"]["hash"])
+        addresses.add(item["address"])
+    if len(transaction_hashes) != len(PREREQUISITES) + 1 or len(addresses) != len(PREREQUISITES) + 1:
+        raise ManifestError("self-serve deployment records must be unique")
+    _verify_prerequisites(
+        {"prerequisites": prerequisites},
+        client,
+        prerequisite_creation_codes,
+        hash_,
+    )
+    return shared
+
+
+def _chain_discovery(
+    receipt_address: str,
+    shared_deployment: Any,
+    receipt_creation_code: bytes,
+    registrar_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    if client.chain_id() != CHAIN_ID:
+        raise ManifestError(f"RPC chain must be Sepolia ({CHAIN_ID})")
+    receipt_address = _canonical_address(receipt_address, "from-chain receipt")
+    if _digest(receipt_creation_code, hash_) != _canonical_blob_hashes()[2]["receipt"]["hash"]:
+        raise ManifestError("local receipt creation code is not canonical compiler evidence")
+    shared = _shared_deployment(
+        shared_deployment,
+        receipt_creation_code,
+        registrar_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_,
+    )
+    registrar = shared["registrar"]
+    from_block = registrar["transaction"]["block"]
+    to_block = client.finalized_block()
+    if to_block < from_block:
+        raise ManifestError("canonical registrar deployment is not finalized")
+
+    receipt_topic = "0x" + _address_word(receipt_address).hex()
+    stage_log = _single_log(
+        client,
+        registrar["address"],
+        GENESIS_STAGED_EVENT,
+        from_block,
+        to_block,
+        hash_,
+        receipt_topic,
+    )
+    stage_topics = _require_list(stage_log.get("topics"), "GenesisStaged.topics")
+    if len(stage_topics) != 4:
+        raise ManifestError("GenesisStaged must have four topics")
+    core_config_hash = _hex(stage_topics[2], 32, "GenesisStaged.coreConfigHash")
+    flm_config_hash = _hex(stage_topics[3], 32, "GenesisStaged.flmConfigHash")
+    stage_evidence, stage_input, stage_receipt = _transaction_from_hash(
+        client,
+        _log_hash(stage_log, "GenesisStaged"),
+        registrar["address"],
+        "receiptCreate",
+    )
+    receipt_stage_log = _receipt_event(
+        stage_receipt,
+        registrar["address"],
+        GENESIS_STAGED_EVENT,
+        hash_,
+    )
+    for candidate, name in (
+        (stage_log, "GenesisStaged"),
+        (receipt_stage_log, "GenesisStaged receipt"),
+    ):
+        _validate_stage_log(
+            candidate,
+            registrar["address"],
+            receipt_address,
+            core_config_hash,
+            flm_config_hash,
+            stage_evidence["from"],
+            hash_,
+        )
+        _validate_log_location(candidate, stage_receipt, from_block, to_block, name)
+    if stage_input != _encode_stage(
+        core_config_hash,
+        flm_config_hash,
+        receipt_creation_code,
+        hash_,
+    ):
+        raise ManifestError("GenesisStaged transaction calldata is not canonical")
+    if receipt_address != _create2_address(
+        registrar["address"],
+        core_config_hash,
+        flm_config_hash,
+        receipt_creation_code,
+        hash_,
+    ):
+        raise ManifestError("from-chain receipt is not the canonical registrar CREATE2 prediction")
+    if not client.code(receipt_address):
+        raise ManifestError("from-chain receipt has no deployed code")
+    if any(item["transaction"]["block"] > stage_evidence["block"] for item in shared["prerequisites"].values()):
+        raise ManifestError("canonical prerequisites postdate the staged receipt")
+
+    expected_core, expected_flm, _ = _canonical_blob_hashes()
+    core_log = _optional_log(
+        client, receipt_address, CORE_SEALED_EVENT, from_block, to_block, hash_
+    )
+    flm_log = _optional_log(
+        client, receipt_address, FLM_SEALED_EVENT, from_block, to_block, hash_
+    )
+    if flm_log is not None and core_log is None:
+        raise ManifestError("FlmSealed exists without CoreSealed")
+
+    core = None
+    if core_log is not None:
+        evidence, input_, receipt = _transaction_from_hash(
+            client, _log_hash(core_log, "CoreSealed"), receipt_address, "deployCore"
+        )
+        receipt_log = _receipt_event(receipt, receipt_address, CORE_SEALED_EVENT, hash_)
+        _validate_log_location(core_log, receipt, from_block, to_block, "CoreSealed")
+        _validate_log_location(receipt_log, receipt, from_block, to_block, "CoreSealed receipt")
+        config, grants, codes = _decode_deploy_core(input_)
+        if _digest(_encode_core_commitment(config, grants), hash_) != core_config_hash:
+            raise ManifestError("deployCore calldata does not match the staged commitment")
+        if any(_digest(code, hash_) != expected_core[key] for key, code in zip(CORE_BLOBS, codes)):
+            raise ManifestError("deployCore calldata contains noncanonical code")
+        core = {
+            "log": core_log,
+            "receiptLog": receipt_log,
+            "evidence": evidence,
+            "receipt": receipt,
+            "config": config,
+            "grants": grants,
+            "codes": codes,
+        }
+
+    flm = None
+    if flm_log is not None:
+        evidence, input_, receipt = _transaction_from_hash(
+            client, _log_hash(flm_log, "FlmSealed"), receipt_address, "deployFlm"
+        )
+        receipt_log = _receipt_event(receipt, receipt_address, FLM_SEALED_EVENT, hash_)
+        _validate_log_location(flm_log, receipt, from_block, to_block, "FlmSealed")
+        _validate_log_location(receipt_log, receipt, from_block, to_block, "FlmSealed receipt")
+        config, codes = _decode_deploy_flm(input_)
+        if _digest(_encode_flm_config(config), hash_) != flm_config_hash:
+            raise ManifestError("deployFlm calldata does not match the staged commitment")
+        if any(_digest(code, hash_) != expected_flm[key] for key, code in zip(FLM_BLOBS, codes)):
+            raise ManifestError("deployFlm calldata contains noncanonical code")
+        flm = {
+            "log": flm_log,
+            "receiptLog": receipt_log,
+            "evidence": evidence,
+            "receipt": receipt,
+            "config": config,
+            "codes": codes,
+        }
+
+    vault = _create_address(receipt_address, 2, hash_)
+    finalization_log = _optional_log(
+        client, vault, FINALIZED_EVENT, from_block, to_block, hash_
+    )
+    finalization = None
+    if finalization_log is not None:
+        if flm is None:
+            raise ManifestError("GenesisVault Finalized exists before full sealing")
+        topics = _require_list(finalization_log.get("topics"), "GenesisVault Finalized topics")
+        if (
+            len(topics) != 1
+            or _hex(topics[0], 32, "GenesisVault Finalized topic")
+            != _event_topic(FINALIZED_EVENT, hash_)
+            or len(_variable_bytes(finalization_log.get("data"), "GenesisVault Finalized data"))
+            != 160
+        ):
+            raise ManifestError("GenesisVault Finalized event is malformed")
+        evidence, input_, receipt = _transaction_from_hash(
+            client,
+            _log_hash(finalization_log, "GenesisVault Finalized"),
+            vault,
+            "finalization",
+        )
+        receipt_log = _receipt_event(receipt, vault, FINALIZED_EVENT, hash_)
+        _validate_log_location(
+            finalization_log, receipt, from_block, to_block, "GenesisVault Finalized"
+        )
+        _validate_log_location(
+            receipt_log, receipt, from_block, to_block, "GenesisVault Finalized receipt"
+        )
+        if input_.hex() != FINALIZE_SELECTOR or len(
+            _variable_bytes(receipt_log.get("data"), "Finalized receipt data")
+        ) != 160:
+            raise ManifestError("GenesisVault Finalized transaction is not canonical")
+        finalization = {"evidence": evidence, "receipt": receipt, "log": finalization_log}
+
+    evidence = [stage_evidence]
+    evidence.extend(item["evidence"] for item in (core, flm, finalization) if item is not None)
+    if [item["block"] for item in evidence] != sorted(item["block"] for item in evidence):
+        raise ManifestError("registrar lifecycle transaction blocks are out of order")
+    status = (
+        "live"
+        if finalization is not None
+        else "full"
+        if flm is not None
+        else "core-only"
+        if core is not None
+        else "stage-only"
+    )
+    return {
+        "shared": shared,
+        "registrar": registrar,
+        "fromBlock": from_block,
+        "toBlock": to_block,
+        "status": status,
+        "receipt": receipt_address,
+        "coreConfigHash": core_config_hash,
+        "flmConfigHash": flm_config_hash,
+        "stage": {"evidence": stage_evidence, "receipt": stage_receipt, "log": stage_log},
+        "core": core,
+        "flm": flm,
+        "finalization": finalization,
+    }
+
+
+def discovery_from_chain(
+    receipt_address: str,
+    shared_deployment: Any,
+    receipt_creation_code: bytes,
+    registrar_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    *,
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> dict[str, Any]:
+    discovered = _chain_discovery(
+        receipt_address,
+        shared_deployment,
+        receipt_creation_code,
+        registrar_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_,
+    )
+    status = discovered["status"]
+    return {
+        "schemaVersion": 2,
+        "network": "sepolia",
+        "chainId": CHAIN_ID,
+        "creationRoute": "registrar",
+        "status": status,
+        "nextAction": {
+            "stage-only": "deployCore",
+            "core-only": "deployFlm",
+            "full": "finalize",
+            "live": None,
+        }[status],
+        "confirmedBlock": discovered["toBlock"],
+        "registrar": {
+            "target": discovered["registrar"]["address"],
+            "runtimeCodeKeccak256": discovered["registrar"]["runtimeCodeKeccak256"],
+        },
+        "receipt": {
+            "address": discovered["receipt"],
+            "stageNonce": discovered["stage"]["evidence"]["nonce"],
+            "coreConfigHash": discovered["coreConfigHash"],
+            "flmConfigHash": discovered["flmConfigHash"],
+        },
+        "transactions": {
+            "stage": discovered["stage"]["evidence"],
+            "deployCore": None if discovered["core"] is None else discovered["core"]["evidence"],
+            "deployFlm": None if discovered["flm"] is None else discovered["flm"]["evidence"],
+            "finalization": None
+            if discovered["finalization"] is None
+            else discovered["finalization"]["evidence"],
+        },
+    }
+
+
+def manifest_from_chain(
+    receipt_address: str,
+    shared_deployment: Any,
+    receipt_creation_code: bytes,
+    registrar_creation_code: bytes,
+    prerequisite_creation_codes: dict[str, bytes],
+    client: Any,
+    *,
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> dict[str, Any]:
+    discovered = _chain_discovery(
+        receipt_address,
+        shared_deployment,
+        receipt_creation_code,
+        registrar_creation_code,
+        prerequisite_creation_codes,
+        client,
+        hash_,
+    )
+    if discovered["status"] in {"stage-only", "core-only"}:
+        raise ManifestError(
+            f"cannot build a full deployment manifest from {discovered['status']} state"
+        )
+    core = discovered["core"]
+    flm = discovered["flm"]
+    core_config, grants, core_codes = core["config"], core["grants"], core["codes"]
+    flm_config, flm_codes = flm["config"], flm["codes"]
+    receipt_address = discovered["receipt"]
+    contracts = _deployed_contracts(receipt_address, len(grants), client, hash_)
+    executor_runtime_hash = _digest(client.code(contracts["treasuryExecutor"]), hash_)
+    _validate_seal_log(
+        core["log"],
+        CORE_SEALED_EVENT,
+        receipt_address,
+        (contracts["vault"], contracts["companyToken"], contracts["space"]),
+        (contracts["arbitration"], contracts["evaluator"], contracts["spotPool"]),
+        hash_,
+    )
+    _validate_seal_log(
+        core["receiptLog"],
+        CORE_SEALED_EVENT,
+        receipt_address,
+        (contracts["vault"], contracts["companyToken"], contracts["space"]),
+        (contracts["arbitration"], contracts["evaluator"], contracts["spotPool"]),
+        hash_,
+    )
+    _validate_seal_log(
+        flm["log"],
+        FLM_SEALED_EVENT,
+        receipt_address,
+        (contracts["manager"],),
+        (contracts["relay"], contracts["spotAdapter"]),
+        hash_,
+    )
+    _validate_seal_log(
+        flm["receiptLog"],
+        FLM_SEALED_EVENT,
+        receipt_address,
+        (contracts["manager"],),
+        (contracts["relay"], contracts["spotAdapter"]),
+        hash_,
+    )
+    registrar = discovered["registrar"]
+    manifest = {
+        "schemaVersion": 3,
+        "creationRoute": "registrar",
+        "status": "live" if discovered["status"] == "live" else "sealed",
+        "network": "sepolia",
+        "chainId": CHAIN_ID,
+        "transactions": {
+            "receiptCreate": discovered["stage"]["evidence"],
+            "deployCore": core["evidence"],
+            "deployFlm": flm["evidence"],
+        },
+        "receipt": {
+            "address": receipt_address,
+            "source": RECEIPT_SOURCE,
+            "contract": RECEIPT_CONTRACT,
+            "stageNonce": discovered["stage"]["evidence"]["nonce"],
+            "creationCodeBytes": len(receipt_creation_code),
+            "creationCodeKeccak256": _digest(receipt_creation_code, hash_),
+            "coreConfigHash": discovered["coreConfigHash"],
+            "flmConfigHash": discovered["flmConfigHash"],
+            "registrar": {
+                "target": registrar["address"],
+                "runtimeCodeKeccak256": registrar["runtimeCodeKeccak256"],
+            },
+        },
+        "prerequisites": discovered["shared"]["prerequisites"],
+        "coreConfig": core_config,
+        "grants": grants,
+        "flmConfig": flm_config,
+        "feeTier": FEE_TIER,
+        "poolInitCodeHash": POOL_INIT_CODE_HASH,
+        "observationCardinality": OBSERVATION_CARDINALITY,
+        "contracts": contracts,
+        "codeBlobs": {
+            "core": {key: _digest(code, hash_) for key, code in zip(CORE_BLOBS, core_codes)},
+            "flm": {key: _digest(code, hash_) for key, code in zip(FLM_BLOBS, flm_codes)},
+        },
+        "runtimeCodeHashes": {"treasuryExecutor": executor_runtime_hash},
+        "finalization": None
+        if discovered["finalization"] is None
+        else discovered["finalization"]["evidence"],
+    }
+    verify_rpc(
+        manifest,
+        receipt_creation_code,
+        prerequisite_creation_codes,
+        client,
+        shared_deployment=discovered["shared"],
+        registrar_creation_code=registrar_creation_code,
         hash_=hash_,
     )
     return manifest
@@ -1235,6 +2167,8 @@ def promote_live(
     prerequisite_creation_codes: dict[str, bytes],
     client: Any,
     *,
+    shared_deployment: Any = None,
+    registrar_creation_code: bytes | None = None,
     hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
 ) -> dict[str, Any]:
     manifest = validate_manifest(raw, hash_=hash_)
@@ -1255,6 +2189,8 @@ def promote_live(
         receipt_creation_code,
         prerequisite_creation_codes,
         client,
+        shared_deployment=shared_deployment,
+        registrar_creation_code=registrar_creation_code,
         hash_=hash_,
     )
     return live
@@ -1296,6 +2232,26 @@ def _verify_prerequisites(
             raise ManifestError(f"prerequisites.{key} runtime evidence mismatch")
 
 
+def _receipt_event(
+    receipt: dict[str, Any],
+    emitter: str,
+    signature: str,
+    hash_: Callable[[bytes], str],
+) -> dict[str, Any]:
+    topic = _event_topic(signature, hash_)
+    matches = []
+    for raw in _require_list(receipt.get("logs", []), f"{signature} receipt logs"):
+        log = _require_dict(raw, f"{signature} receipt log")
+        topics = _require_list(log.get("topics"), f"{signature} receipt log topics")
+        if topics and str(topics[0]).lower() == topic:
+            matches.append(log)
+    if len(matches) != 1:
+        raise ManifestError(f"expected one {signature} in its transaction receipt")
+    if _address(matches[0].get("address"), f"{signature}.emitter") != emitter:
+        raise ManifestError(f"{signature} has the wrong emitter")
+    return matches[0]
+
+
 def _verify_transactions(
     manifest: dict[str, Any], client: Any, receipt_creation_code: bytes, hash_: Callable[[bytes], str]
 ) -> None:
@@ -1303,20 +2259,6 @@ def _verify_transactions(
     receipt = manifest["receipt"]
     receipt_address = receipt["address"]
 
-    create_input = _live_transaction(
-        client,
-        transactions["receiptCreate"],
-        None,
-        "receiptCreate",
-        receipt_address,
-    )
-    live_receipt = client.receipt(transactions["receiptCreate"]["hash"])
-    if _address(live_receipt.get("contractAddress"), "receipt contract") != receipt_address:
-        raise ManifestError("receipt CREATE address does not match the manifest")
-    if receipt_address != _create_address(
-        transactions["receiptCreate"]["from"], receipt["createNonce"], hash_
-    ):
-        raise ManifestError("receipt address is not the declared deployer CREATE nonce")
     if (
         len(receipt_creation_code) != receipt["creationCodeBytes"]
         or _digest(receipt_creation_code, hash_) != receipt["creationCodeKeccak256"]
@@ -1325,8 +2267,65 @@ def _verify_transactions(
     expected_create = receipt_creation_code + bytes.fromhex(
         receipt["coreConfigHash"][2:] + receipt["flmConfigHash"][2:]
     )
-    if create_input != expected_create:
-        raise ManifestError("receipt CREATE input does not bind the declared config commitments")
+    if "registrar" in receipt:
+        registrar = receipt["registrar"]
+        create_input = _live_transaction(
+            client,
+            transactions["receiptCreate"],
+            registrar["target"],
+            "receiptCreate",
+        )
+        live_receipt = _require_dict(
+            client.receipt(transactions["receiptCreate"]["hash"]),
+            "live receiptCreate receipt",
+        )
+        stage_log = _receipt_event(
+            live_receipt,
+            registrar["target"],
+            GENESIS_STAGED_EVENT,
+            hash_,
+        )
+        _validate_stage_log(
+            stage_log,
+            registrar["target"],
+            receipt_address,
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            transactions["receiptCreate"]["from"],
+            hash_,
+        )
+        if create_input != _encode_stage(
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            receipt_creation_code,
+            hash_,
+        ):
+            raise ManifestError("registrar stage calldata does not match compiler evidence")
+        if receipt_address != _create2_address(
+            registrar["target"],
+            receipt["coreConfigHash"],
+            receipt["flmConfigHash"],
+            receipt_creation_code,
+            hash_,
+        ):
+            raise ManifestError("receipt address is not the registrar CREATE2 prediction")
+    else:
+        create_input = _live_transaction(
+            client,
+            transactions["receiptCreate"],
+            None,
+            "receiptCreate",
+            receipt_address,
+        )
+        live_receipt = client.receipt(transactions["receiptCreate"]["hash"])
+        if _address(live_receipt.get("contractAddress"), "receipt contract") != receipt_address:
+            raise ManifestError("receipt CREATE address does not match the manifest")
+        if receipt_address != _create_address(
+            transactions["receiptCreate"]["from"], receipt["createNonce"], hash_
+        ):
+            raise ManifestError("receipt address is not the declared deployer CREATE nonce")
+        if create_input != expected_create:
+            raise ManifestError("receipt CREATE input does not bind the declared config commitments")
 
     core_input = _live_transaction(client, transactions["deployCore"], receipt_address, "deployCore")
     flm_input = _live_transaction(client, transactions["deployFlm"], receipt_address, "deployFlm")
@@ -1364,11 +2363,13 @@ def _verify_addresses(manifest: dict[str, Any], client: Any, hash_: Callable[[by
         if contracts[name] != _create_address(receipt, nonce, hash_):
             raise ManifestError(f"contracts.{name} is not receipt CREATE nonce {nonce}")
     vault = contracts["vault"]
-    for index, wallet in enumerate(contracts["vestingWallets"], start=1):
+    if contracts["treasuryExecutor"] != _create_address(vault, 1, hash_):
+        raise ManifestError("treasury executor is not vault CREATE nonce 1")
+    for index, wallet in enumerate(contracts["vestingWallets"], start=2):
         if wallet != _create_address(vault, index, hash_):
             raise ManifestError(f"vesting wallet is not vault CREATE nonce {index}")
     if contracts["companyToken"] != _create_address(
-        vault, len(contracts["vestingWallets"]) + 1, hash_
+        vault, len(contracts["vestingWallets"]) + 2, hash_
     ):
         raise ManifestError("company token is not the vault CREATE after grant wallets")
 
@@ -1405,6 +2406,16 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
 
     if not client.code(receipt):
         raise ManifestError("receipt has no deployed code")
+    if "registrar" in manifest["receipt"]:
+        registrar = manifest["receipt"]["registrar"]
+        code = client.code(registrar["target"])
+        if not code or _digest(code, hash_) != registrar["runtimeCodeKeccak256"]:
+            raise ManifestError("receipt registrar runtime evidence mismatch")
+        if (
+            _call_hash(client, registrar["target"], "RECEIPT_CREATION_CODE_HASH()(bytes32)")
+            != manifest["receipt"]["creationCodeKeccak256"]
+        ):
+            raise ManifestError("receipt registrar does not pin canonical creation code")
     for key, dependency in dependencies.items():
         code = client.code(dependency["target"])
         if not code or _digest(code, hash_) != dependency["runtimeCodeKeccak256"]:
@@ -1415,6 +2426,14 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
     for index, wallet in enumerate(c["vestingWallets"]):
         if not client.code(wallet):
             raise ManifestError(f"vesting wallet {index} has no deployed code")
+    executor_code = client.code(c["treasuryExecutor"])
+    executor_hash = _digest(executor_code, hash_)
+    expected_executor_hash = _digest(_executor_runtime_code(c["vault"]), hash_)
+    if (
+        executor_hash != expected_executor_hash
+        or executor_hash != manifest["runtimeCodeHashes"]["treasuryExecutor"]
+    ):
+        raise ManifestError("treasury executor runtime code hash mismatch")
 
     if not _call_bool(client, receipt, "coreSealed()(bool)") or not _call_bool(
         client, receipt, "flmSealed()(bool)"
@@ -1470,7 +2489,9 @@ def _verify_code_and_wiring(manifest: dict[str, Any], client: Any, hash_: Callab
         (c["vault"], "ASSEMBLER()(address)", receipt),
         (c["vault"], "ARBITRATION()(address)", c["arbitration"]),
         (c["vault"], "BOOTSTRAP_HOOK()(address)", receipt),
+        (c["vault"], "TREASURY_EXECUTOR()(address)", c["treasuryExecutor"]),
         (c["vault"], "manager()(address)", c["manager"]),
+        (c["treasuryExecutor"], "VAULT()(address)", c["vault"]),
         (c["proposalGateway"], "space()(address)", c["space"]),
         (c["proposalGateway"], "executionStrategy()(address)", c["releaseStrategy"]),
         (c["proposalGateway"], "arbitration()(address)", c["arbitration"]),
@@ -1637,11 +2658,37 @@ def verify_rpc(
     prerequisite_creation_codes: dict[str, bytes],
     client: Any,
     *,
+    shared_deployment: Any = None,
+    registrar_creation_code: bytes | None = None,
     hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
 ) -> None:
     manifest = validate_manifest(raw, hash_=hash_)
     if client.chain_id() != CHAIN_ID:
         raise ManifestError(f"RPC chain must be Sepolia ({CHAIN_ID})")
+    if manifest["creationRoute"] == "registrar":
+        if shared_deployment is None or registrar_creation_code is None:
+            raise ManifestError(
+                "registrar verification requires the canonical shared manifest"
+            )
+        shared = _shared_deployment(
+            shared_deployment,
+            receipt_creation_code,
+            registrar_creation_code,
+            prerequisite_creation_codes,
+            client,
+            hash_,
+        )
+        expected_registrar = {
+            "target": shared["registrar"]["address"],
+            "runtimeCodeKeccak256": shared["registrar"]["runtimeCodeKeccak256"],
+        }
+        if (
+            manifest["receipt"]["registrar"] != expected_registrar
+            or manifest["prerequisites"] != shared["prerequisites"]
+        ):
+            raise ManifestError(
+                "registrar deployment does not match the canonical shared manifest"
+            )
     _verify_prerequisites(manifest, client, prerequisite_creation_codes, hash_)
     _verify_transactions(manifest, client, receipt_creation_code, hash_)
     _verify_addresses(manifest, client, hash_)
@@ -1649,14 +2696,14 @@ def verify_rpc(
     _verify_finalization(manifest, client)
 
 
-def verified_creation_evidence() -> tuple[bytes, dict[str, bytes]]:
+def verified_creation_evidence() -> tuple[bytes, bytes, dict[str, bytes]]:
     flm_deployment._require_clean_tracked_root(ROOT)
     try:
         compiled = economic_code_hashes.generate(check=True)
     except economic_code_hashes.GenerationError as exc:
         raise ManifestError(f"cannot reproduce economic compiler evidence: {exc}") from exc
     by_key = {item.target.constant: item.code for item in compiled}
-    return by_key["RECEIPT"], {
+    return by_key["RECEIPT"], by_key["REGISTRAR"], {
         "proposalImplementation": by_key["PROPOSAL_IMPLEMENTATION"],
         "stackDeployer": by_key["STACK_DEPLOYER"],
     }
@@ -1667,23 +2714,43 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
     source.add_argument("--from-broadcast", type=Path)
+    source.add_argument("--from-chain-receipt")
+    source.add_argument("--discover-chain-receipt")
     parser.add_argument("--rpc-url")
     parser.add_argument("--operation-broadcast", type=Path)
-    parser.add_argument("--out", type=Path, default=ROOT / "deployments/sepolia-economic-genesis.json")
+    parser.add_argument("--out", type=Path)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--schema-only", action="store_true")
     args = parser.parse_args(argv)
+    output = args.out or (DISCOVERY_MANIFEST if args.discover_chain_receipt else ECONOMIC_MANIFEST)
+    if args.from_chain_receipt or args.discover_chain_receipt:
+        if args.schema_only or args.operation_broadcast or not args.rpc_url:
+            raise ManifestError(
+                "chain receipt reconstruction requires --rpc-url and cannot be schema-only"
+            )
+        receipt_creation, registrar_creation, prerequisite_creation = verified_creation_evidence()
+        build = discovery_from_chain if args.discover_chain_receipt else manifest_from_chain
+        result = build(
+            args.discover_chain_receipt or args.from_chain_receipt,
+            site_deployment.load_json(SELF_SERVE_MANIFEST),
+            receipt_creation,
+            registrar_creation,
+            prerequisite_creation,
+            CastClient(args.rpc_url),
+        )
+        site_deployment._write_or_check(output, result, args.check)
+        return 0
     if args.from_broadcast:
         if args.schema_only or args.operation_broadcast or not args.rpc_url:
             raise ManifestError("--from-broadcast requires --rpc-url and cannot be schema-only")
-        receipt_creation, prerequisite_creation = verified_creation_evidence()
+        receipt_creation, _, prerequisite_creation = verified_creation_evidence()
         manifest = manifest_from_broadcast(
             site_deployment.load_json(args.from_broadcast),
             receipt_creation,
             prerequisite_creation,
             CastClient(args.rpc_url),
         )
-        site_deployment._write_or_check(args.out, manifest, args.check)
+        site_deployment._write_or_check(output, manifest, args.check)
         return 0
 
     manifest = site_deployment.load_json(args.manifest)
@@ -1691,7 +2758,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.operation_broadcast:
         if args.schema_only or not args.rpc_url:
             raise ManifestError("--operation-broadcast requires --rpc-url and cannot be schema-only")
-        receipt_creation, prerequisite_creation = verified_creation_evidence()
+        receipt_creation, registrar_creation, prerequisite_creation = verified_creation_evidence()
         client = CastClient(args.rpc_url)
         finalization_hash = finalization_hash_from_broadcast(
             site_deployment.load_json(args.operation_broadcast),
@@ -1704,19 +2771,31 @@ def main(argv: list[str] | None = None) -> int:
             receipt_creation,
             prerequisite_creation,
             client,
+            shared_deployment=site_deployment.load_json(SELF_SERVE_MANIFEST)
+            if manifest["creationRoute"] == "registrar"
+            else None,
+            registrar_creation_code=registrar_creation
+            if manifest["creationRoute"] == "registrar"
+            else None,
         )
-        site_deployment._write_or_check(args.out, live, args.check)
+        site_deployment._write_or_check(output, live, args.check)
         return 0
     if args.schema_only:
         return 0
     if not args.rpc_url:
         raise ManifestError("--rpc-url is required unless --schema-only is used")
-    receipt_creation, prerequisite_creation = verified_creation_evidence()
+    receipt_creation, registrar_creation, prerequisite_creation = verified_creation_evidence()
     verify_rpc(
         manifest,
         receipt_creation,
         prerequisite_creation,
         CastClient(args.rpc_url),
+        shared_deployment=site_deployment.load_json(SELF_SERVE_MANIFEST)
+        if manifest["creationRoute"] == "registrar"
+        else None,
+        registrar_creation_code=registrar_creation
+        if manifest["creationRoute"] == "registrar"
+        else None,
     )
     return 0
 

@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VestingWallet} from "@openzeppelin/contracts/finance/VestingWallet.sol";
 
 import {
+    GENESIS_MAX_VESTING_GRANTS,
     GenesisVault,
     IGenesisArbitration,
     IGenesisBootstrapHook,
@@ -12,10 +13,12 @@ import {
 } from "../src/GenesisVault.sol";
 import {FaoToken} from "../src/FaoToken.sol";
 import {FAOTreasuryActions} from "../src/FAOTreasuryActions.sol";
+import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {
     GenesisArbitrationMock,
     GenesisAssetMock,
     GenesisBootstrapHookMock,
+    GenesisFeeAssetMock,
     GenesisManagerMock,
     GenesisNativeForwarder,
     GenesisTreasuryTargetMock,
@@ -97,6 +100,39 @@ contract GenesisVaultTest is Test {
         new GenesisVault(config, grants);
     }
 
+    function testRejectsMoreThanTheVestingGrantLimit() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(_config(hook), grants);
+    }
+
+    function testRejectsDuplicateAssetPoliciesAndAcceptsEightUniquePolicies() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.Config memory config = _config(hook);
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+
+        config.assetPolicies[1] = config.assetPolicies[0];
+        vm.expectRevert(GenesisVault.InvalidAssetPolicy.selector);
+        new GenesisVault(config, grants);
+
+        config.assetPolicies = new GenesisVault.AssetPolicyConfig[](8);
+        for (uint256 i; i < config.assetPolicies.length; ++i) {
+            GenesisAssetMock asset = new GenesisAssetMock("POLICY");
+            config.assetPolicies[i] = GenesisVault.AssetPolicyConfig({
+                asset: address(asset), c1: 1, c2: 2, tapBudget: 3, tapBudgetMax: 4
+            });
+        }
+        GenesisVault vault = new GenesisVault(config, grants);
+        assertEq(vault.assetPolicyCount(), 8);
+
+        config.assetPolicies = new GenesisVault.AssetPolicyConfig[](9);
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
     function testRevertingBootstrapStaysSealingThenDeadlineEnablesRefunds() public {
         GenesisVault vault = _deployVault();
         _buy(vault, BUYER, 400 ether);
@@ -152,7 +188,10 @@ contract GenesisVaultTest is Test {
         assertTrue(token.mintingFinished());
         assertEq(token.balanceOf(address(vault)), vault.totalUnclaimedSold());
         assertEq(token.balanceOf(wallet), GRANT_AMOUNT);
-        assertGt(manager.balanceOf(address(vault)), 0);
+        assertEq(manager.balanceOf(address(vault)), 0);
+        assertGt(manager.balanceOf(address(vault.TREASURY_EXECUTOR())), 0);
+        assertEq(weth.balanceOf(address(vault)), 0);
+        assertGt(weth.balanceOf(address(vault.TREASURY_EXECUTOR())), 0);
         assertGt(token.balanceOf(address(manager)), 0);
         assertEq(vault.effectiveSupply(), token.totalSupply() - grantAmount);
 
@@ -177,16 +216,17 @@ contract GenesisVaultTest is Test {
         FaoToken token = vault.COMPANY_TOKEN();
         vault.claim(BUYER);
         GenesisAssetMock extra = new GenesisAssetMock("EXTRA");
-        extra.mint(address(vault), 900 ether);
-        vm.deal(address(vault), 3 ether);
+        address treasury = address(vault.TREASURY_EXECUTOR());
+        extra.mint(treasury, 900 ether);
+        vm.deal(treasury, 3 ether);
 
         uint256 supply = vault.effectiveSupply();
         assertEq(supply, token.totalSupply() - GRANT_AMOUNT);
         uint256 amount = 100 ether;
-        uint256 expectedWeth = weth.balanceOf(address(vault)) * amount / supply;
-        uint256 expectedShares = manager.balanceOf(address(vault)) * amount / supply;
-        uint256 expectedExtra = extra.balanceOf(address(vault)) * amount / supply;
-        uint256 expectedNative = address(vault).balance * amount / supply;
+        uint256 expectedWeth = weth.balanceOf(treasury) * amount / supply;
+        uint256 expectedShares = manager.balanceOf(treasury) * amount / supply;
+        uint256 expectedExtra = extra.balanceOf(treasury) * amount / supply;
+        uint256 expectedNative = treasury.balance * amount / supply;
         address[] memory extras = new address[](2);
         extras[0] = address(0);
         extras[1] = address(extra);
@@ -236,9 +276,10 @@ contract GenesisVaultTest is Test {
         vault.claim(BUYER);
         address payable sink = payable(address(0xD00D));
         GenesisNativeForwarder forwarder = new GenesisNativeForwarder(sink);
-        vm.deal(address(vault), 2 ether);
+        address treasury = address(vault.TREASURY_EXECUTOR());
+        vm.deal(treasury, 2 ether);
         uint256 amount = 100 ether;
-        uint256 expected = address(vault).balance * amount / vault.effectiveSupply();
+        uint256 expected = treasury.balance * amount / vault.effectiveSupply();
         address[] memory extras = new address[](1);
         extras[0] = address(0);
 
@@ -247,6 +288,43 @@ contract GenesisVaultTest is Test {
         vault.ragequit(amount, payable(address(forwarder)), extras);
         assertEq(sink.balance - before, expected);
         assertEq(address(forwarder).balance, 0);
+    }
+
+    function testRagequitRejectsInexactExtraTokenAtomically() public {
+        (GenesisVault vault,) = _makeLive();
+        FaoToken token = vault.COMPANY_TOKEN();
+        vault.claim(BUYER);
+        GenesisFeeAssetMock feeAsset = new GenesisFeeAssetMock();
+        address treasury = address(vault.TREASURY_EXECUTOR());
+        feeAsset.mint(treasury, 100 ether);
+        address[] memory extras = new address[](1);
+        extras[0] = address(feeAsset);
+
+        vm.prank(BUYER);
+        vm.expectRevert(GenesisVault.InvalidAssetTransfer.selector);
+        vault.ragequit(100 ether, payable(RECIPIENT), extras);
+
+        assertEq(token.balanceOf(BUYER), 400 ether);
+        assertEq(feeAsset.balanceOf(treasury), 100 ether);
+        assertEq(feeAsset.balanceOf(RECIPIENT), 0);
+    }
+
+    function testPermissionlessSweepMovesOnlyMisdirectedTreasuryAssets() public {
+        (GenesisVault vault,) = _makeLive();
+        GenesisAssetMock extra = new GenesisAssetMock("STRAY");
+        address treasury = address(vault.TREASURY_EXECUTOR());
+        extra.mint(address(vault), 3 ether);
+        vm.deal(address(vault), 2 ether);
+
+        assertEq(vault.sweepToExecutor(address(extra)), 3 ether);
+        assertEq(vault.sweepToExecutor(address(0)), 2 ether);
+        assertEq(extra.balanceOf(treasury), 3 ether);
+        assertEq(treasury.balance, 2 ether);
+
+        address companyToken = address(vault.COMPANY_TOKEN());
+        vm.expectRevert(GenesisVault.InvalidExtraAsset.selector);
+        vault.sweepToExecutor(companyToken);
+        assertEq(vault.COMPANY_TOKEN().balanceOf(address(vault)), vault.totalUnclaimedSold());
     }
 
     function testClaimReserveGuardDetectsUndercollateralization() public {
@@ -258,70 +336,283 @@ contract GenesisVaultTest is Test {
         vault.effectiveSupply();
     }
 
-    function testTreasuryAcceptedActionQueuesWaitsExecutesAndCannotReplay() public {
+    function testTimeoutTransfersArePerAssetTapBoundedAndResetAfterWindow() public {
+        (GenesisVault vault,) = _makeLive();
+        weth.mint(address(vault.TREASURY_EXECUTOR()), 1 ether);
+        uint256 before = weth.balanceOf(RECIPIENT);
+
+        for (uint256 i; i < 2; ++i) {
+            FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+                asset: address(weth), recipient: RECIPIENT, amount: 0.1 ether, salt: bytes32(i + 1)
+            });
+            bytes32 actionHash = vault.transferActionHash(action);
+            arbitration.setOutcome(uint256(actionHash), true, true, false);
+            vault.queueTreasuryTransfer(action);
+            vm.warp(block.timestamp + vault.TREASURY_GRACE());
+            vault.executeTreasuryTransfer(action);
+        }
+        assertEq(weth.balanceOf(RECIPIENT) - before, 0.2 ether);
+        (, uint192 spent) = vault.tapStates(address(weth));
+        assertEq(spent, 0.2 ether);
+
+        FAOTreasuryActions.TransferAction memory over = FAOTreasuryActions.TransferAction({
+            asset: address(weth), recipient: RECIPIENT, amount: 1, salt: bytes32(uint256(3))
+        });
+        arbitration.setOutcome(uint256(vault.transferActionHash(over)), true, true, false);
+        vault.queueTreasuryTransfer(over);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GenesisVault.TapBudgetExceeded.selector, address(weth), uint256(1), uint256(0)
+            )
+        );
+        vault.executeTreasuryTransfer(over);
+
+        vm.warp(block.timestamp + vault.TAP_WINDOW());
+        FAOTreasuryActions.TransferAction memory reset = FAOTreasuryActions.TransferAction({
+            asset: address(weth), recipient: RECIPIENT, amount: 0.1 ether, salt: bytes32(uint256(4))
+        });
+        arbitration.setOutcome(uint256(vault.transferActionHash(reset)), true, true, false);
+        vault.queueTreasuryTransfer(reset);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryTransfer(reset);
+        (, spent) = vault.tapStates(address(weth));
+        assertEq(spent, 0.1 ether);
+    }
+
+    function testMediumTransferRequiresEvaluationAndBypassesTap() public {
+        (GenesisVault vault,) = _makeLive();
+        weth.mint(address(vault.TREASURY_EXECUTOR()), 1 ether);
+        FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+            asset: address(weth), recipient: RECIPIENT, amount: 0.5 ether, salt: bytes32("medium")
+        });
+        uint256 proposalId = uint256(vault.transferActionHash(action));
+        arbitration.setOutcome(proposalId, true, true, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(GenesisVault.EvaluatedAcceptanceRequired.selector, proposalId)
+        );
+        vault.queueTreasuryTransfer(action);
+
+        arbitration.setOutcome(proposalId, true, true, true);
+        vault.queueTreasuryTransfer(action);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryTransfer(action);
+        assertEq(weth.balanceOf(RECIPIENT), 0.5 ether);
+        (, uint192 spent) = vault.tapStates(address(weth));
+        assertEq(spent, 0);
+    }
+
+    function testTreasuryAcceptanceWindowIsAnchoredToSettlement() public {
+        (GenesisVault vault,) = _makeLive();
+        weth.mint(address(vault.TREASURY_EXECUTOR()), 1 ether);
+
+        FAOTreasuryActions.TransferAction memory stale = FAOTreasuryActions.TransferAction({
+            asset: address(weth),
+            recipient: RECIPIENT,
+            amount: 0.1 ether,
+            salt: bytes32("stale-timeout")
+        });
+        arbitration.setOutcome(uint256(vault.transferActionHash(stale)), true, true, false);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE() + vault.TREASURY_EXPIRY() + 1);
+        vm.expectRevert(GenesisVault.ActionExpired.selector);
+        vault.queueTreasuryTransfer(stale);
+
+        FAOTreasuryActions.TransferAction memory fresh = FAOTreasuryActions.TransferAction({
+            asset: address(weth),
+            recipient: RECIPIENT,
+            amount: 0.5 ether,
+            salt: bytes32("fresh-evaluated")
+        });
+        arbitration.setOutcome(uint256(vault.transferActionHash(fresh)), true, true, true);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE() + 1);
+        vault.queueTreasuryTransfer(fresh);
+        vault.executeTreasuryTransfer(fresh);
+        assertEq(weth.balanceOf(RECIPIENT), 0.5 ether);
+
+        FAOTreasuryActions.ParamAction memory staleParam = FAOTreasuryActions.ParamAction({
+            key: vault.KEY_TAP_BUDGET(),
+            asset: address(weth),
+            value: 0.3 ether,
+            salt: bytes32("stale-param")
+        });
+        arbitration.setOutcome(uint256(vault.paramActionHash(staleParam)), true, true, true);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE() + vault.TREASURY_EXPIRY() + 1);
+        vm.expectRevert(GenesisVault.ActionExpired.selector);
+        vault.queueTreasuryParam(staleParam);
+    }
+
+    function testEvaluatedParamMayChangeTapOnlyWithinGenesisMaximum() public {
+        (GenesisVault vault,) = _makeLive();
+        FAOTreasuryActions.ParamAction memory action = FAOTreasuryActions.ParamAction({
+            key: vault.KEY_TAP_BUDGET(),
+            asset: address(weth),
+            value: 0.4 ether,
+            salt: bytes32("tap")
+        });
+        uint256 proposalId = uint256(vault.paramActionHash(action));
+        arbitration.setOutcome(proposalId, true, true, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(GenesisVault.EvaluatedAcceptanceRequired.selector, proposalId)
+        );
+        vault.queueTreasuryParam(action);
+
+        arbitration.setOutcome(proposalId, true, true, true);
+        vault.queueTreasuryParam(action);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryParam(action);
+        (,, uint128 tapBudget,,) = vault.assetPolicies(address(weth));
+        assertEq(tapBudget, 0.4 ether);
+
+        action.value = 3 ether;
+        arbitration.setOutcome(uint256(vault.paramActionHash(action)), true, true, true);
+        vm.expectRevert(GenesisVault.InvalidAssetPolicy.selector);
+        vault.queueTreasuryParam(action);
+    }
+
+    function testCriticalActionNeedsTwoEvaluationsCoolingAndExitWindow() public {
         (GenesisVault vault,) = _makeLive();
         GenesisTreasuryTargetMock target = new GenesisTreasuryTargetMock();
-        vm.deal(address(vault), 2 ether);
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
+        vm.deal(address(vault.TREASURY_EXECUTOR()), 1 ether);
+        FAOTreasuryActions.CriticalAction memory action = FAOTreasuryActions.CriticalAction({
             target: address(target),
-            value: 1 ether,
-            data: abi.encodeCall(target.perform, (bytes32("wild-dream"))),
-            salt: bytes32(uint256(7))
+            value: 0.25 ether,
+            data: abi.encodeCall(target.perform, (bytes32("two-decisions"))),
+            salt: bytes32("critical")
         });
-        bytes32 actionHash = vault.treasuryActionHash(action);
+        uint256 roundOne = vault.criticalActionProposalId(action, 1);
+        arbitration.setOutcome(roundOne, true, true, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(GenesisVault.EvaluatedAcceptanceRequired.selector, roundOne)
+        );
+        vault.stageCriticalAction(action);
 
-        vm.expectRevert(GenesisVault.ArbitrationNotAccepted.selector);
-        vault.queueTreasuryAction(action);
-        arbitration.setOutcome(uint256(actionHash), true, true);
-        vault.queueTreasuryAction(action);
+        arbitration.setOutcome(roundOne, true, true, true);
+        bytes32 baseHash = vault.stageCriticalAction(action);
+        uint256 roundTwo = vault.criticalActionProposalId(action, 2);
+        arbitration.setOutcome(roundTwo, true, true, true);
+        vm.warp(block.timestamp + vault.CRITICAL_INTERVAL() - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GenesisVault.CriticalRoundTwoTooEarly.selector, block.timestamp + 1
+            )
+        );
+        vault.queueCriticalAction(action);
+        vm.warp(block.timestamp + 1);
+        vault.queueCriticalAction(action);
 
         vm.expectRevert(GenesisVault.ActionInGracePeriod.selector);
-        vault.executeTreasuryAction(action);
-        vm.warp(block.timestamp + vault.TREASURY_GRACE());
-        bytes memory result = vault.executeTreasuryAction(action);
+        vault.executeCriticalAction(action);
+        vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+        bytes memory result = vault.executeCriticalAction(action);
         assertEq(abi.decode(result, (uint256)), 1);
-        assertEq(target.calls(), 1);
-        assertEq(target.value(), 1 ether);
-        assertEq(target.payload(), bytes32("wild-dream"));
-
-        vm.expectRevert(GenesisVault.ActionAlreadyQueued.selector);
-        vault.executeTreasuryAction(action);
+        assertEq(target.payload(), bytes32("two-decisions"));
+        assertEq(target.value(), 0.25 ether);
+        assertEq(target.caller(), address(vault.TREASURY_EXECUTOR()));
+        (,, bool executed,) = vault.queuedActions(baseHash);
+        assertTrue(executed);
     }
 
-    function testTreasuryActionExpires() public {
+    function testCriticalMutationCannotReuseStagingAndRagequitStaysLive() public {
         (GenesisVault vault,) = _makeLive();
+        vault.claim(BUYER);
         GenesisTreasuryTargetMock target = new GenesisTreasuryTargetMock();
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
+        FAOTreasuryActions.CriticalAction memory action = FAOTreasuryActions.CriticalAction({
             target: address(target),
             value: 0,
-            data: abi.encodeCall(target.perform, (bytes32("expired"))),
-            salt: bytes32(uint256(8))
+            data: abi.encodeCall(target.perform, (bytes32("original"))),
+            salt: bytes32("critical")
         });
-        bytes32 actionHash = vault.treasuryActionHash(action);
-        arbitration.setOutcome(uint256(actionHash), true, true);
-        vault.queueTreasuryAction(action);
-        vm.warp(block.timestamp + vault.TREASURY_GRACE() + vault.TREASURY_EXPIRY() + 1);
-        vault.expireTreasuryAction(action);
-        vm.expectRevert(GenesisVault.ActionExpired.selector);
-        vault.executeTreasuryAction(action);
+        arbitration.setOutcome(vault.criticalActionProposalId(action, 1), true, true, true);
+        vault.stageCriticalAction(action);
+
+        FAOTreasuryActions.CriticalAction memory changed = action;
+        changed.data = abi.encodeCall(target.perform, (bytes32("changed")));
+        arbitration.setOutcome(vault.criticalActionProposalId(changed, 2), true, true, true);
+        vm.warp(block.timestamp + vault.CRITICAL_INTERVAL());
+        bytes32 changedBaseHash = vault.criticalActionBaseHash(changed);
+        vm.expectRevert(
+            abi.encodeWithSelector(GenesisVault.CriticalNotStaged.selector, changedBaseHash)
+        );
+        vault.queueCriticalAction(changed);
+
+        address[] memory extras = new address[](0);
+        vm.prank(BUYER);
+        vault.ragequit(1 ether, payable(RECIPIENT), extras);
+        assertEq(vault.COMPANY_TOKEN().balanceOf(BUYER), 399 ether);
     }
 
-    function testAcceptedTreasuryActionMayTargetCompanyToken() public {
+    function testCriticalCallsCannotUseSaleAllowanceOrHolderBurnAuthority() public {
         (GenesisVault vault,) = _makeLive();
         FaoToken token = vault.COMPANY_TOKEN();
         vault.claim(BUYER);
-        FAOTreasuryActions.TreasuryAction memory action = FAOTreasuryActions.TreasuryAction({
+
+        uint256 buyerWeth = weth.balanceOf(BUYER);
+        uint256 saleAllowance = weth.allowance(BUYER, address(vault));
+        FAOTreasuryActions.CriticalAction memory collect = FAOTreasuryActions.CriticalAction({
+            target: address(weth),
+            value: 0,
+            data: abi.encodeCall(weth.transferFrom, (BUYER, RECIPIENT, 1 ether)),
+            salt: bytes32("sale-authority")
+        });
+        _acceptCritical(vault, collect);
+        vm.expectRevert();
+        vault.executeCriticalAction(collect);
+        assertEq(weth.balanceOf(BUYER), buyerWeth);
+        assertEq(weth.allowance(BUYER, address(vault)), saleAllowance);
+
+        FAOTreasuryActions.CriticalAction memory burn = FAOTreasuryActions.CriticalAction({
             target: address(token),
             value: 0,
             data: abi.encodeCall(token.burnFromVault, (BUYER, 1 ether)),
-            salt: bytes32(uint256(9))
+            salt: bytes32("holder-burn")
         });
-        bytes32 actionHash = vault.treasuryActionHash(action);
-        arbitration.setOutcome(uint256(actionHash), true, true);
-        vault.queueTreasuryAction(action);
-        vm.warp(block.timestamp + vault.TREASURY_GRACE());
-        vault.executeTreasuryAction(action);
-        assertEq(token.balanceOf(BUYER), 399 ether);
+        _acceptCritical(vault, burn);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GenesisTreasuryExecutor.CallFailed.selector,
+                abi.encodeWithSelector(FaoToken.OnlyVault.selector)
+            )
+        );
+        vault.executeCriticalAction(burn);
+        assertEq(token.balanceOf(BUYER), 400 ether);
+
+        vm.expectRevert(GenesisVault.UnauthorizedTokenBurn.selector);
+        vault.consumeTokenBurnAuthorization(BUYER, 1 ether);
+    }
+
+    function testCriticalExecutorMayChangeOnlyDeclaredVaultParameters() public {
+        (GenesisVault vault,) = _makeLive();
+        FAOTreasuryActions.CriticalAction memory action = FAOTreasuryActions.CriticalAction({
+            target: address(vault),
+            value: 0,
+            data: abi.encodeCall(
+                vault.setAssetPolicy,
+                (
+                    address(weth),
+                    uint128(0.2 ether),
+                    uint128(1 ether),
+                    uint128(0.3 ether),
+                    uint128(2 ether)
+                )
+            ),
+            salt: bytes32("vault-parameter")
+        });
+        _acceptCritical(vault, action);
+        vault.executeCriticalAction(action);
+        (uint128 c1,, uint128 tapBudget,,) = vault.assetPolicies(address(weth));
+        assertEq(c1, 0.2 ether);
+        assertEq(tapBudget, 0.3 ether);
+    }
+
+    function _acceptCritical(GenesisVault vault, FAOTreasuryActions.CriticalAction memory action)
+        internal
+    {
+        arbitration.setOutcome(vault.criticalActionProposalId(action, 1), true, true, true);
+        vault.stageCriticalAction(action);
+        vm.warp(block.timestamp + vault.CRITICAL_INTERVAL());
+        arbitration.setOutcome(vault.criticalActionProposalId(action, 2), true, true, true);
+        vault.queueCriticalAction(action);
+        vm.warp(block.timestamp + vault.CRITICAL_GRACE());
     }
 
     function _deployVault() internal returns (GenesisVault vault) {
@@ -348,6 +639,21 @@ contract GenesisVaultTest is Test {
         view
         returns (GenesisVault.Config memory config)
     {
+        GenesisVault.AssetPolicyConfig[] memory policies = new GenesisVault.AssetPolicyConfig[](2);
+        policies[0] = GenesisVault.AssetPolicyConfig({
+            asset: address(weth),
+            c1: 0.1 ether,
+            c2: 1 ether,
+            tapBudget: 0.2 ether,
+            tapBudgetMax: 2 ether
+        });
+        policies[1] = GenesisVault.AssetPolicyConfig({
+            asset: address(0),
+            c1: 0.1 ether,
+            c2: 1 ether,
+            tapBudget: 0.2 ether,
+            tapBudgetMax: 2 ether
+        });
         config = GenesisVault.Config({
             tokenName: "Futarchy Autonomous Organization",
             tokenSymbol: "FAO",
@@ -362,7 +668,8 @@ contract GenesisVaultTest is Test {
             tokenMaxSupply: 5000 ether,
             initialPrice: INITIAL_PRICE,
             slope: SLOPE,
-            bootstrapBps: BOOTSTRAP_BPS
+            bootstrapBps: BOOTSTRAP_BPS,
+            assetPolicies: policies
         });
     }
 

@@ -14,8 +14,8 @@
     "VAULT": {
       "source": "src/GenesisVault.sol",
       "contract": "GenesisVault",
-      "baseCreationCodeBytes": 25604,
-      "baseCreationCodeKeccak256": "0xc9ca8b11dd66ea48cdd586f7b865585cb9696c2ef4c07ea12b5f8c211a11e87d"
+      "baseCreationCodeBytes": 45872,
+      "baseCreationCodeKeccak256": "0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f"
     },
     "RELEASE_STRATEGY": {
       "source": "src/SXArbitrationExecutionStrategy.sol",
@@ -32,20 +32,26 @@
     "ECON_GATEWAY": {
       "source": "src/EconGateway.sol",
       "contract": "EconGateway",
-      "baseCreationCodeBytes": 3028,
-      "baseCreationCodeKeccak256": "0x2b267e83b551ac5a158b8bad1bb3bade5ad5d61dd3cc5719156e4489adcbeaf8"
+      "baseCreationCodeBytes": 5564,
+      "baseCreationCodeKeccak256": "0xa15bd8851d728593851fc6fd2a3bb8c1a430484ca6a2b3667dda848b528e8f22"
     },
     "ECON_EVALUATOR": {
       "source": "src/FAOEconomicEvaluationPipeline.sol",
       "contract": "FAOEconomicEvaluationPipeline",
-      "baseCreationCodeBytes": 5706,
-      "baseCreationCodeKeccak256": "0x01376a87b521baf67a9c9cdef18c7720790e8d0bc0d1b4028658d6ebe301d7d9"
+      "baseCreationCodeBytes": 7968,
+      "baseCreationCodeKeccak256": "0x434e6a8a8e7441c08008f063f77521d6f22ac311c3c70b34eedfdce59e852955"
     },
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 23511,
-      "baseCreationCodeKeccak256": "0xaab72fae2db40b8c97dd99861ef1c927bf9374c7ab9e78b999e3a6521b04ae9a"
+      "baseCreationCodeBytes": 24539,
+      "baseCreationCodeKeccak256": "0xc7e7db5f71088324ddab12d5267bef8cfd9cd70bbcfbf53e35ca80bddea60ab3"
+    },
+    "REGISTRAR": {
+      "source": "src/FaoGenesisRegistrar.sol",
+      "contract": "FaoGenesisRegistrar",
+      "baseCreationCodeBytes": 1327,
+      "baseCreationCodeKeccak256": "0xdbd8cabd9812bc3c1a75ff99153fdae361a4e2fdbbcb651cb3433b55b9c37c7f"
     },
     "PROPOSAL_IMPLEMENTATION": {
       "source": "src/FAOFutarchyProposal.sol",

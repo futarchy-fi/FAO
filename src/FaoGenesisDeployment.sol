@@ -20,6 +20,7 @@ import {FAOSiteStackDeployer} from "./FAOSiteStackDeployer.sol";
 import {FAOTwapResolver} from "./FAOTwapResolver.sol";
 import {FutarchyArbitration} from "./FutarchyArbitration.sol";
 import {
+    GENESIS_MAX_VESTING_GRANTS,
     GenesisVault,
     IGenesisArbitration,
     IGenesisBootstrapHook,
@@ -65,6 +66,7 @@ contract FaoGenesisDeployment {
         uint256 arbitrationTimeout;
         uint256 siteMinActivationBond;
         uint256 treasuryMinActivationBond;
+        GenesisVault.AssetPolicyConfig[] assetPolicies;
         uint32 twapTimeout;
         uint32 twapWindow;
         uint256 spaceSaltNonce;
@@ -90,7 +92,6 @@ contract FaoGenesisDeployment {
 
     uint256 private constant CORE_CODE_BLOB_COUNT = 6;
     uint256 private constant FLM_CODE_BLOB_COUNT = 5;
-    uint256 private constant MAX_VESTING_GRANTS = 32;
     uint24 public constant FEE_TIER = 500;
     int24 public constant TICK_LOWER = -887_270;
     int24 public constant TICK_UPPER = 887_270;
@@ -101,15 +102,15 @@ contract FaoGenesisDeployment {
     bytes32 public constant ARBITRATION_CODE_HASH =
         0xa013f13694e439351383e11933ba6fd9f7471c7f6e71b61bd916e4c5a3e6eb6e;
     bytes32 public constant VAULT_CODE_HASH =
-        0xc9ca8b11dd66ea48cdd586f7b865585cb9696c2ef4c07ea12b5f8c211a11e87d;
+        0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f;
     bytes32 public constant RELEASE_STRATEGY_CODE_HASH =
         0x522d5fde9e454fb06cb61d574a409589d73833694d16401293ac1dc9d10c347b;
     bytes32 public constant ZERO_VOTING_CODE_HASH =
         0x9cbf5af087c9e5c9ec9d2e02c921612e05dd73ef6c3b38021e8b04c7e47d3d5e;
     bytes32 public constant ECON_GATEWAY_CODE_HASH =
-        0x2b267e83b551ac5a158b8bad1bb3bade5ad5d61dd3cc5719156e4489adcbeaf8;
+        0xa15bd8851d728593851fc6fd2a3bb8c1a430484ca6a2b3667dda848b528e8f22;
     bytes32 public constant ECON_EVALUATOR_CODE_HASH =
-        0x01376a87b521baf67a9c9cdef18c7720790e8d0bc0d1b4028658d6ebe301d7d9;
+        0x434e6a8a8e7441c08008f063f77521d6f22ac311c3c70b34eedfdce59e852955;
     uint160 private constant MIN_SQRT_RATIO = 4_295_128_739;
     uint160 private constant MAX_SQRT_RATIO =
         1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;
@@ -207,7 +208,7 @@ contract FaoGenesisDeployment {
         _validateCoreBaseCodes(baseCodes);
 
         address predictedVault = _createAddress(address(this), 2);
-        address predictedToken = _createAddress(predictedVault, grants.length + 1);
+        address predictedToken = _createAddress(predictedVault, grants.length + 2);
         address predictedPool =
             _poolAddress(config.uniswapV3Factory.target, predictedToken, config.weth.target);
         _sqrtPriceX96For(predictedToken, config.weth.target, config.initialPrice);
@@ -251,7 +252,8 @@ contract FaoGenesisDeployment {
             tokenMaxSupply: config.tokenMaxSupply,
             initialPrice: config.initialPrice,
             slope: config.slope,
-            bootstrapBps: config.bootstrapBps
+            bootstrapBps: config.bootstrapBps,
+            assetPolicies: config.assetPolicies
         });
         GenesisVault vault_ = GenesisVault(
             payable(_deploy(abi.encodePacked(baseCodes[1], abi.encode(vaultConfig, grants)), 1, 2))
@@ -575,7 +577,7 @@ contract FaoGenesisDeployment {
         _requireDependency(config.wrapped1155Factory);
         _requireDependency(config.uniswapV3Factory);
         if (
-            grantCount > MAX_VESTING_GRANTS || config.graduationThreshold == 0
+            grantCount > GENESIS_MAX_VESTING_GRANTS || config.graduationThreshold == 0
                 || config.arbitrationTimeout == 0 || config.siteMinActivationBond == 0
                 || config.treasuryMinActivationBond == 0 || config.twapWindow == 0
                 || config.twapWindow > config.twapTimeout

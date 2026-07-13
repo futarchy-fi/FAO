@@ -9,6 +9,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {FaoToken} from "./FaoToken.sol";
 import {FAOTreasuryActions} from "./FAOTreasuryActions.sol";
+import {GenesisTreasuryExecutor} from "./GenesisTreasuryExecutor.sol";
+
+uint256 constant GENESIS_MAX_VESTING_GRANTS = 16;
 
 interface IGenesisFlm is IERC20 {
     function BOOTSTRAP_RECIPIENT() external view returns (address);
@@ -23,8 +26,33 @@ interface IGenesisFlm is IERC20 {
 }
 
 interface IGenesisArbitration {
-    function isSettled(uint256 proposalId) external view returns (bool);
-    function isAccepted(uint256 proposalId) external view returns (bool);
+    enum ProposalState {
+        INACTIVE,
+        YES,
+        NO,
+        QUEUED,
+        EVALUATING,
+        SETTLED
+    }
+
+    struct Bond {
+        address bidder;
+        uint256 amount;
+    }
+
+    struct Proposal {
+        uint256 minActivationBond;
+        Bond yesBond;
+        Bond noBond;
+        ProposalState state;
+        uint64 lastStateChangeAt;
+        bool settled;
+        bool accepted;
+        uint32 queuePosition;
+        bool exists;
+    }
+
+    function getProposal(uint256 proposalId) external view returns (Proposal memory);
 }
 
 interface IGenesisBootstrapHook {
@@ -37,9 +65,15 @@ contract GenesisVault is ReentrancyGuard {
 
     uint256 public constant WAD = 1e18;
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant MAX_VESTING_GRANTS = 32;
+    uint256 public constant MAX_VESTING_GRANTS = GENESIS_MAX_VESTING_GRANTS;
+    uint256 public constant MAX_ASSET_POLICIES = 8;
     uint256 public constant TREASURY_GRACE = 24 hours;
     uint256 public constant TREASURY_EXPIRY = 7 days;
+    uint256 public constant TAP_WINDOW = 30 days;
+    uint256 public constant CRITICAL_INTERVAL = 30 days;
+    uint256 public constant STAGING_EXPIRY = 90 days;
+    uint256 public constant CRITICAL_GRACE = 7 days;
+    bytes32 public constant KEY_TAP_BUDGET = keccak256("FAO_ECON_TAP_BUDGET_V1");
     address public constant DEAD = address(0xdead);
 
     enum Phase {
@@ -64,6 +98,7 @@ contract GenesisVault is ReentrancyGuard {
         uint256 initialPrice;
         uint256 slope;
         uint16 bootstrapBps;
+        AssetPolicyConfig[] assetPolicies;
     }
 
     struct GrantConfig {
@@ -85,6 +120,32 @@ contract GenesisVault is ReentrancyGuard {
         uint64 expiresAt;
         bool executed;
         bool expired;
+    }
+
+    struct AssetPolicyConfig {
+        address asset;
+        uint128 c1;
+        uint128 c2;
+        uint128 tapBudget;
+        uint128 tapBudgetMax;
+    }
+
+    struct AssetPolicy {
+        uint128 c1;
+        uint128 c2;
+        uint128 tapBudget;
+        uint128 tapBudgetMax;
+        bool exists;
+    }
+
+    struct TapState {
+        uint64 windowStart;
+        uint192 spent;
+    }
+
+    struct CriticalStaging {
+        uint64 stagedAt;
+        bool queued;
     }
 
     error InvalidConfig();
@@ -109,12 +170,25 @@ contract GenesisVault is ReentrancyGuard {
     error InvalidExtraAsset();
     error ExtrasNotStrictlySorted();
     error InvalidTreasuryAction();
+    error InvalidAssetPolicy();
+    error TooManyAssetPolicies();
+    error AssetNotConfigured(address asset);
+    error TransferAboveCap(address asset, uint256 amount, uint256 cap);
+    error TapBudgetExceeded(address asset, uint256 requested, uint256 available);
+    error EvaluatedAcceptanceRequired(uint256 proposalId);
+    error UnsupportedTreasuryParam(bytes32 key);
+    error OnlySelf();
+    error CriticalAlreadyStaged(bytes32 baseHash);
+    error CriticalNotStaged(bytes32 baseHash);
+    error CriticalRoundTwoTooEarly(uint256 opensAt);
+    error CriticalStagingExpired(uint256 closesAt);
+    error CriticalAlreadyQueued(bytes32 baseHash);
     error ArbitrationNotAccepted();
     error ActionAlreadyQueued();
     error ActionNotQueued();
     error ActionInGracePeriod();
     error ActionExpired();
-    error TreasuryCallFailed(bytes reason);
+    error UnauthorizedTokenBurn();
 
     event Purchased(address indexed buyer, uint256 tokenAmount, uint256 cost);
     event Sealed(uint256 sold, uint256 raised);
@@ -132,12 +206,50 @@ contract GenesisVault is ReentrancyGuard {
     event Ragequit(
         address indexed account, address indexed recipient, uint256 amount, uint256 supply
     );
-    event TreasuryActionQueued(bytes32 indexed actionHash, uint256 executeAfter, uint256 expiresAt);
-    event TreasuryActionExecuted(bytes32 indexed actionHash, address indexed target, uint256 value);
     event TreasuryActionExpired(bytes32 indexed actionHash);
+    event AssetPolicySet(
+        address indexed asset, uint128 c1, uint128 c2, uint128 tapBudget, uint128 tapBudgetMax
+    );
+    event TapSpent(
+        address indexed asset, uint256 amount, uint256 spent, uint256 budget, uint256 windowStart
+    );
+    event TreasuryTransferQueued(
+        bytes32 indexed actionHash,
+        uint256 indexed proposalId,
+        uint256 executeAfter,
+        uint256 expiresAt
+    );
+    event TreasuryTransferExecuted(
+        bytes32 indexed actionHash, address indexed asset, address indexed recipient, uint256 amount
+    );
+    event TreasuryParamQueued(
+        bytes32 indexed actionHash,
+        uint256 indexed proposalId,
+        uint256 executeAfter,
+        uint256 expiresAt
+    );
+    event TreasuryParamExecuted(
+        bytes32 indexed actionHash, bytes32 indexed key, address indexed asset, uint256 value
+    );
+    event CriticalActionStaged(
+        bytes32 indexed baseHash,
+        uint256 indexed roundOneProposalId,
+        uint256 stagedAt,
+        uint256 roundTwoOpensAt,
+        uint256 stagingExpiresAt
+    );
+    event CriticalActionQueued(
+        bytes32 indexed baseHash,
+        uint256 indexed roundTwoProposalId,
+        uint256 executeAfter,
+        uint256 expiresAt
+    );
+    event CriticalActionExecuted(bytes32 indexed baseHash, address indexed target, uint256 value);
+    event Buyback(address indexed caller, uint256 wethSpent, uint256 companyBurned);
 
     IERC20 public immutable WETH;
     FaoToken public immutable COMPANY_TOKEN;
+    GenesisTreasuryExecutor public immutable TREASURY_EXECUTOR;
     address public immutable ASSEMBLER;
     IGenesisArbitration public immutable ARBITRATION;
     IGenesisBootstrapHook public immutable BOOTSTRAP_HOOK;
@@ -154,11 +266,17 @@ contract GenesisVault is ReentrancyGuard {
     uint256 public totalSold;
     uint256 public totalRaised;
     uint256 public totalUnclaimedSold;
+    uint256 public assetPolicyCount;
 
     mapping(address account => uint256 amount) public purchased;
     mapping(address account => uint256 amount) public contribution;
     Grant[] public grants;
     mapping(bytes32 actionHash => QueuedAction action) public queuedActions;
+    mapping(address asset => AssetPolicy policy) public assetPolicies;
+    mapping(address asset => TapState state) public tapStates;
+    mapping(bytes32 baseHash => CriticalStaging staging) public criticalStagings;
+    address private authorizedBurnAccount;
+    uint256 private authorizedBurnAmount;
 
     constructor(Config memory config, GrantConfig[] memory grantConfigs) {
         if (
@@ -170,11 +288,13 @@ contract GenesisVault is ReentrancyGuard {
                 || config.bootstrapDeadline <= config.saleEnd || config.saleCap == 0
                 || config.minimumRaise == 0 || config.tokenMaxSupply == 0
                 || config.initialPrice == 0 || grantConfigs.length > MAX_VESTING_GRANTS
-                || config.bootstrapBps == 0 || config.bootstrapBps > BPS_DENOMINATOR
+                || config.assetPolicies.length > MAX_ASSET_POLICIES || config.bootstrapBps == 0
+                || config.bootstrapBps > BPS_DENOMINATOR
                 || Math.mulDiv(config.minimumRaise, config.bootstrapBps, BPS_DENOMINATOR) == 0
         ) revert InvalidConfig();
 
         WETH = config.weth;
+        TREASURY_EXECUTOR = new GenesisTreasuryExecutor(address(this));
         ASSEMBLER = config.assembler;
         ARBITRATION = config.arbitration;
         BOOTSTRAP_HOOK = config.bootstrapHook;
@@ -185,6 +305,14 @@ contract GenesisVault is ReentrancyGuard {
         INITIAL_PRICE = config.initialPrice;
         SLOPE = config.slope;
         BOOTSTRAP_BPS = config.bootstrapBps;
+
+        for (uint256 i; i < config.assetPolicies.length; ++i) {
+            AssetPolicyConfig memory policy = config.assetPolicies[i];
+            if (assetPolicies[policy.asset].exists) revert InvalidAssetPolicy();
+            _setAssetPolicy(
+                policy.asset, policy.c1, policy.c2, policy.tapBudget, policy.tapBudgetMax
+            );
+        }
 
         // Evaluating the endpoint here rejects arithmetic domains that cannot be priced safely.
         if (config.minimumRaise > reserveAt(config.saleCap)) revert InvalidConfig();
@@ -319,12 +447,17 @@ contract GenesisVault is ReentrancyGuard {
         uint256 vaultTokens = COMPANY_TOKEN.balanceOf(address(this));
         if (vaultTokens < totalUnclaimedSold) revert ClaimReserveUndercollateralized();
         uint256 unusedSeed = vaultTokens - totalUnclaimedSold;
-        if (unusedSeed != 0) COMPANY_TOKEN.burnFromVault(address(this), unusedSeed);
+        if (unusedSeed != 0) _burnCompanyToken(address(this), unusedSeed);
         if (
             COMPANY_TOKEN.balanceOf(address(this)) != totalUnclaimedSold
                 || COMPANY_TOKEN.allowance(address(this), address(manager_)) != 0
                 || WETH.allowance(address(this), address(manager_)) != 0
         ) revert InvalidManager();
+
+        _pushExact(WETH, address(TREASURY_EXECUTOR), WETH.balanceOf(address(this)));
+        _pushExact(
+            IERC20(address(manager_)), address(TREASURY_EXECUTOR), manager_.balanceOf(address(this))
+        );
 
         COMPANY_TOKEN.finishMinting();
         phase = Phase.LIVE;
@@ -370,6 +503,10 @@ contract GenesisVault is ReentrancyGuard {
         if (vaultBalance < totalUnclaimedSold) revert ClaimReserveUndercollateralized();
         supply = COMPANY_TOKEN.totalSupply() - vaultBalance + totalUnclaimedSold;
 
+        uint256 executorBalance = COMPANY_TOKEN.balanceOf(address(TREASURY_EXECUTOR));
+        if (executorBalance > supply) revert InvalidEffectiveSupply();
+        supply -= executorBalance;
+
         uint256 unvested;
         for (uint256 i; i < grants.length; ++i) {
             Grant memory grant = grants[i];
@@ -392,8 +529,9 @@ contract GenesisVault is ReentrancyGuard {
         uint256 supply = effectiveSupply();
         if (supply == 0 || amount > supply) revert InvalidEffectiveSupply();
 
-        uint256 wethBalance = WETH.balanceOf(address(this));
-        uint256 managerBalance = manager.balanceOf(address(this));
+        address treasury = address(TREASURY_EXECUTOR);
+        uint256 wethBalance = WETH.balanceOf(treasury);
+        uint256 managerBalance = manager.balanceOf(treasury);
         uint256[] memory extraBalances = new uint256[](sortedExtras.length);
         for (uint256 i; i < sortedExtras.length; ++i) {
             address asset = sortedExtras[i];
@@ -404,21 +542,16 @@ contract GenesisVault is ReentrancyGuard {
                 asset == address(COMPANY_TOKEN) || asset == address(WETH)
                     || asset == address(manager)
             ) revert InvalidExtraAsset();
-            extraBalances[i] = asset == address(0)
-                ? address(this).balance
-                : IERC20(asset).balanceOf(address(this));
+            extraBalances[i] =
+                asset == address(0) ? treasury.balance : IERC20(asset).balanceOf(treasury);
         }
 
-        COMPANY_TOKEN.burnFromVault(msg.sender, amount);
-        _pushProRata(WETH, recipient, wethBalance, amount, supply);
-        _pushProRata(IERC20(address(manager)), recipient, managerBalance, amount, supply);
+        _burnCompanyToken(msg.sender, amount);
+        _releaseProRata(address(WETH), recipient, wethBalance, amount, supply);
+        _releaseProRata(address(manager), recipient, managerBalance, amount, supply);
         for (uint256 i; i < sortedExtras.length; ++i) {
             uint256 payout = Math.mulDiv(extraBalances[i], amount, supply);
-            if (sortedExtras[i] == address(0)) {
-                _pushNativeExact(recipient, payout);
-            } else {
-                _pushExact(IERC20(sortedExtras[i]), recipient, payout);
-            }
+            _releaseExact(sortedExtras[i], recipient, payout);
         }
         if (COMPANY_TOKEN.balanceOf(address(this)) < totalUnclaimedSold) {
             revert ClaimReserveUndercollateralized();
@@ -426,82 +559,361 @@ contract GenesisVault is ReentrancyGuard {
         emit Ragequit(msg.sender, recipient, amount, supply);
     }
 
-    function treasuryActionHash(FAOTreasuryActions.TreasuryAction calldata action)
+    /// @dev One-shot callback consumed by the immutable token during an active vault burn.
+    function consumeTokenBurnAuthorization(address account, uint256 amount) external {
+        if (
+            msg.sender != address(COMPANY_TOKEN) || account != authorizedBurnAccount
+                || amount != authorizedBurnAmount || amount == 0
+        ) revert UnauthorizedTokenBurn();
+        delete authorizedBurnAccount;
+        delete authorizedBurnAmount;
+    }
+
+    /// @notice Permissionlessly moves a misdirected LIVE treasury deposit into canonical custody.
+    function sweepToExecutor(address asset) external nonReentrant returns (uint256 amount) {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        if (asset == address(COMPANY_TOKEN)) revert InvalidExtraAsset();
+        if (asset == address(0)) {
+            amount = address(this).balance;
+            _pushNativeExact(payable(address(TREASURY_EXECUTOR)), amount);
+        } else {
+            amount = IERC20(asset).balanceOf(address(this));
+            _pushExact(IERC20(asset), address(TREASURY_EXECUTOR), amount);
+        }
+    }
+
+    /// @notice Permissionlessly buys undervalued FAO under the executor's fixed policy and burns
+    /// it.
+    function buyback() external nonReentrant returns (uint256 wethSpent, uint256 companyBurned) {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        address treasury = address(TREASURY_EXECUTOR);
+        uint256 companyBefore = COMPANY_TOKEN.balanceOf(treasury);
+        uint256 wethBefore = WETH.balanceOf(treasury);
+        uint256 supplyBefore = COMPANY_TOKEN.totalSupply();
+        (wethSpent, companyBurned) = TREASURY_EXECUTOR.buyback();
+        if (
+            companyBurned == 0 || COMPANY_TOKEN.balanceOf(treasury) - companyBefore != companyBurned
+                || wethBefore - WETH.balanceOf(treasury) != wethSpent
+        ) revert InvalidAssetTransfer();
+        _burnCompanyToken(treasury, companyBurned);
+        if (
+            COMPANY_TOKEN.balanceOf(treasury) != companyBefore
+                || supplyBefore - COMPANY_TOKEN.totalSupply() != companyBurned
+        ) revert InvalidAssetTransfer();
+        emit Buyback(msg.sender, wethSpent, companyBurned);
+    }
+
+    function transferActionHash(FAOTreasuryActions.TransferAction calldata action)
         public
         view
         returns (bytes32)
     {
-        return FAOTreasuryActions.hash(block.chainid, address(this), action);
+        return FAOTreasuryActions.transferHash(block.chainid, address(this), action);
     }
 
-    /// @notice Queues the exact action already settled and accepted by futarchy arbitration.
-    function queueTreasuryAction(FAOTreasuryActions.TreasuryAction calldata action)
+    function paramActionHash(FAOTreasuryActions.ParamAction calldata action)
+        public
+        view
+        returns (bytes32)
+    {
+        return FAOTreasuryActions.paramHash(block.chainid, address(this), action);
+    }
+
+    function criticalActionBaseHash(FAOTreasuryActions.CriticalAction calldata action)
+        public
+        view
+        returns (bytes32)
+    {
+        return FAOTreasuryActions.criticalBaseHash(block.chainid, address(this), action);
+    }
+
+    function criticalActionProposalId(
+        FAOTreasuryActions.CriticalAction calldata action,
+        uint256 round
+    ) public view returns (uint256) {
+        return uint256(FAOTreasuryActions.criticalHash(block.chainid, address(this), action, round));
+    }
+
+    function criticalRoundTwoWindow(bytes32 baseHash)
+        external
+        view
+        returns (uint256 opensAt, uint256 closesAt, bool queued)
+    {
+        CriticalStaging memory staging = criticalStagings[baseHash];
+        if (staging.stagedAt == 0) return (0, 0, false);
+        return (
+            uint256(staging.stagedAt) + CRITICAL_INTERVAL,
+            uint256(staging.stagedAt) + STAGING_EXPIRY,
+            staging.queued
+        );
+    }
+
+    function queueTreasuryTransfer(FAOTreasuryActions.TransferAction calldata action)
         external
         nonReentrant
         returns (bytes32 actionHash)
     {
         if (phase != Phase.LIVE) revert InvalidPhase();
-        _validateTreasuryTarget(action.target);
-        actionHash = treasuryActionHash(action);
-        QueuedAction storage queued = queuedActions[actionHash];
-        if (queued.executeAfter != 0 || queued.executed || queued.expired) {
-            revert ActionAlreadyQueued();
-        }
-        uint256 proposalId = uint256(actionHash);
-        if (!ARBITRATION.isSettled(proposalId) || !ARBITRATION.isAccepted(proposalId)) {
-            revert ArbitrationNotAccepted();
-        }
-
-        uint256 executeAfter = block.timestamp + TREASURY_GRACE;
-        uint256 expiresAt = executeAfter + TREASURY_EXPIRY;
-        if (expiresAt > type(uint64).max) revert InvalidTreasuryAction();
-        queued.executeAfter = uint64(executeAfter);
-        queued.expiresAt = uint64(expiresAt);
-        emit TreasuryActionQueued(actionHash, executeAfter, expiresAt);
+        actionHash = transferActionHash(action);
+        (bool evaluated, uint256 settledAt) = _acceptedRoute(uint256(actionHash));
+        _validateTransfer(action, evaluated);
+        (uint256 executeAfter, uint256 expiresAt) =
+            _queueSettledAction(actionHash, settledAt, TREASURY_GRACE, TREASURY_EXPIRY);
+        emit TreasuryTransferQueued(actionHash, uint256(actionHash), executeAfter, expiresAt);
     }
 
-    function executeTreasuryAction(FAOTreasuryActions.TreasuryAction calldata action)
+    function executeTreasuryTransfer(FAOTreasuryActions.TransferAction calldata action)
+        external
+        nonReentrant
+    {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        bytes32 actionHash = transferActionHash(action);
+        (bool evaluated,) = _acceptedRoute(uint256(actionHash));
+        _validateTransfer(action, evaluated);
+        QueuedAction storage queued = _readyAction(actionHash);
+        queued.executed = true;
+        if (!evaluated) _spendTap(action.asset, action.amount);
+        _releaseExact(action.asset, payable(action.recipient), action.amount);
+        emit TreasuryTransferExecuted(actionHash, action.asset, action.recipient, action.amount);
+    }
+
+    function queueTreasuryParam(FAOTreasuryActions.ParamAction calldata action)
+        external
+        nonReentrant
+        returns (bytes32 actionHash)
+    {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        actionHash = paramActionHash(action);
+        (bool evaluated, uint256 settledAt) = _acceptedRoute(uint256(actionHash));
+        if (!evaluated) {
+            revert EvaluatedAcceptanceRequired(uint256(actionHash));
+        }
+        _validateParam(action);
+        (uint256 executeAfter, uint256 expiresAt) =
+            _queueSettledAction(actionHash, settledAt, TREASURY_GRACE, TREASURY_EXPIRY);
+        emit TreasuryParamQueued(actionHash, uint256(actionHash), executeAfter, expiresAt);
+    }
+
+    function executeTreasuryParam(FAOTreasuryActions.ParamAction calldata action)
+        external
+        nonReentrant
+    {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        bytes32 actionHash = paramActionHash(action);
+        (bool evaluated,) = _acceptedRoute(uint256(actionHash));
+        if (!evaluated) {
+            revert EvaluatedAcceptanceRequired(uint256(actionHash));
+        }
+        _validateParam(action);
+        QueuedAction storage queued = _readyAction(actionHash);
+        queued.executed = true;
+        AssetPolicy storage policy = assetPolicies[action.asset];
+        policy.tapBudget = uint128(action.value);
+        emit AssetPolicySet(
+            action.asset, policy.c1, policy.c2, policy.tapBudget, policy.tapBudgetMax
+        );
+        emit TreasuryParamExecuted(actionHash, action.key, action.asset, action.value);
+    }
+
+    function stageCriticalAction(FAOTreasuryActions.CriticalAction calldata action)
+        external
+        nonReentrant
+        returns (bytes32 baseHash)
+    {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        _validateTreasuryTarget(action.target);
+        baseHash = criticalActionBaseHash(action);
+        CriticalStaging storage staging = criticalStagings[baseHash];
+        if (staging.stagedAt != 0) revert CriticalAlreadyStaged(baseHash);
+        uint256 roundOneProposalId = criticalActionProposalId(action, 1);
+        (bool roundOneEvaluated,) = _acceptedRoute(roundOneProposalId);
+        if (!roundOneEvaluated) {
+            revert EvaluatedAcceptanceRequired(roundOneProposalId);
+        }
+        if (block.timestamp > type(uint64).max) revert InvalidTreasuryAction();
+        staging.stagedAt = uint64(block.timestamp);
+        emit CriticalActionStaged(
+            baseHash,
+            roundOneProposalId,
+            block.timestamp,
+            block.timestamp + CRITICAL_INTERVAL,
+            block.timestamp + STAGING_EXPIRY
+        );
+    }
+
+    function queueCriticalAction(FAOTreasuryActions.CriticalAction calldata action)
+        external
+        nonReentrant
+        returns (bytes32 baseHash)
+    {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        _validateTreasuryTarget(action.target);
+        baseHash = criticalActionBaseHash(action);
+        CriticalStaging storage staging = criticalStagings[baseHash];
+        if (staging.stagedAt == 0) revert CriticalNotStaged(baseHash);
+        if (staging.queued) revert CriticalAlreadyQueued(baseHash);
+        uint256 opensAt = uint256(staging.stagedAt) + CRITICAL_INTERVAL;
+        uint256 closesAt = uint256(staging.stagedAt) + STAGING_EXPIRY;
+        if (block.timestamp < opensAt) revert CriticalRoundTwoTooEarly(opensAt);
+        if (block.timestamp > closesAt) revert CriticalStagingExpired(closesAt);
+        uint256 roundTwoProposalId = criticalActionProposalId(action, 2);
+        (bool roundTwoEvaluated,) = _acceptedRoute(roundTwoProposalId);
+        if (!roundTwoEvaluated) {
+            revert EvaluatedAcceptanceRequired(roundTwoProposalId);
+        }
+        staging.queued = true;
+        (uint256 executeAfter, uint256 expiresAt) =
+            _queueAction(baseHash, CRITICAL_GRACE, TREASURY_EXPIRY);
+        emit CriticalActionQueued(baseHash, roundTwoProposalId, executeAfter, expiresAt);
+    }
+
+    function executeCriticalAction(FAOTreasuryActions.CriticalAction calldata action)
         external
         nonReentrant
         returns (bytes memory result)
     {
         if (phase != Phase.LIVE) revert InvalidPhase();
         _validateTreasuryTarget(action.target);
-        bytes32 actionHash = treasuryActionHash(action);
-        QueuedAction storage queued = queuedActions[actionHash];
-        if (queued.executeAfter == 0) revert ActionNotQueued();
-        if (queued.executed) revert ActionAlreadyQueued();
-        if (queued.expired) revert ActionExpired();
-        if (block.timestamp < queued.executeAfter) revert ActionInGracePeriod();
-        if (block.timestamp > queued.expiresAt) revert ActionExpired();
-
+        bytes32 baseHash = criticalActionBaseHash(action);
+        if (!criticalStagings[baseHash].queued) revert CriticalNotStaged(baseHash);
+        QueuedAction storage queued = _readyAction(baseHash);
         queued.executed = true;
-        (bool ok, bytes memory returndata) = action.target.call{value: action.value}(action.data);
-        if (!ok) revert TreasuryCallFailed(returndata);
-        if (COMPANY_TOKEN.balanceOf(address(this)) < totalUnclaimedSold) {
-            revert ClaimReserveUndercollateralized();
-        }
-        if (COMPANY_TOKEN.allowance(address(this), address(manager)) != 0) {
-            revert InvalidTreasuryAction();
-        }
-        emit TreasuryActionExecuted(actionHash, action.target, action.value);
+        bytes memory returndata =
+            TREASURY_EXECUTOR.execute(action.target, action.value, action.data);
+        emit CriticalActionExecuted(baseHash, action.target, action.value);
         return returndata;
     }
 
-    /// @notice Irreversibly closes an accepted action whose execution window elapsed.
-    function expireTreasuryAction(FAOTreasuryActions.TreasuryAction calldata action)
-        external
-        nonReentrant
-        returns (bytes32 actionHash)
-    {
+    function expireQueuedAction(bytes32 actionHash) external nonReentrant {
         if (phase != Phase.LIVE) revert InvalidPhase();
-        actionHash = treasuryActionHash(action);
         QueuedAction storage queued = queuedActions[actionHash];
         if (queued.executeAfter == 0) revert ActionNotQueued();
         if (queued.executed || queued.expired) revert ActionAlreadyQueued();
         if (block.timestamp <= queued.expiresAt) revert TooEarly();
         queued.expired = true;
         emit TreasuryActionExpired(actionHash);
+    }
+
+    function setAssetPolicy(
+        address asset,
+        uint128 c1,
+        uint128 c2,
+        uint128 tapBudget,
+        uint128 tapBudgetMax
+    ) external {
+        if (msg.sender != address(TREASURY_EXECUTOR)) revert OnlySelf();
+        _setAssetPolicy(asset, c1, c2, tapBudget, tapBudgetMax);
+    }
+
+    function _acceptedRoute(uint256 proposalId)
+        private
+        view
+        returns (bool evaluated, uint256 settledAt)
+    {
+        IGenesisArbitration.Proposal memory proposal = ARBITRATION.getProposal(proposalId);
+        if (!proposal.settled || !proposal.accepted) revert ArbitrationNotAccepted();
+        return (proposal.queuePosition != 0, proposal.lastStateChangeAt);
+    }
+
+    function _validateTransfer(FAOTreasuryActions.TransferAction calldata action, bool evaluated)
+        private
+        view
+    {
+        if (action.recipient == address(0) || action.amount == 0) {
+            revert InvalidTreasuryAction();
+        }
+        AssetPolicy memory policy = assetPolicies[action.asset];
+        if (!policy.exists) revert AssetNotConfigured(action.asset);
+        if (action.amount > policy.c2) {
+            revert TransferAboveCap(action.asset, action.amount, policy.c2);
+        }
+        if (action.amount > policy.c1 && !evaluated) {
+            revert EvaluatedAcceptanceRequired(uint256(transferActionHash(action)));
+        }
+    }
+
+    function _validateParam(FAOTreasuryActions.ParamAction calldata action) private view {
+        if (action.key != KEY_TAP_BUDGET) revert UnsupportedTreasuryParam(action.key);
+        AssetPolicy memory policy = assetPolicies[action.asset];
+        if (!policy.exists) revert AssetNotConfigured(action.asset);
+        if (action.value > policy.tapBudgetMax) revert InvalidAssetPolicy();
+    }
+
+    function _queueAction(bytes32 actionHash, uint256 grace, uint256 expiry)
+        private
+        returns (uint256 executeAfter, uint256 expiresAt)
+    {
+        QueuedAction storage queued = queuedActions[actionHash];
+        if (queued.executeAfter != 0 || queued.executed || queued.expired) {
+            revert ActionAlreadyQueued();
+        }
+        executeAfter = block.timestamp + grace;
+        expiresAt = executeAfter + expiry;
+        if (expiresAt > type(uint64).max) revert InvalidTreasuryAction();
+        queued.executeAfter = uint64(executeAfter);
+        queued.expiresAt = uint64(expiresAt);
+    }
+
+    function _queueSettledAction(
+        bytes32 actionHash,
+        uint256 settledAt,
+        uint256 grace,
+        uint256 expiry
+    ) private returns (uint256 executeAfter, uint256 expiresAt) {
+        executeAfter = settledAt + grace;
+        expiresAt = executeAfter + expiry;
+        if (block.timestamp > expiresAt) revert ActionExpired();
+        QueuedAction storage queued = queuedActions[actionHash];
+        if (queued.executeAfter != 0 || queued.executed || queued.expired) {
+            revert ActionAlreadyQueued();
+        }
+        if (expiresAt > type(uint64).max) revert InvalidTreasuryAction();
+        queued.executeAfter = uint64(executeAfter);
+        queued.expiresAt = uint64(expiresAt);
+    }
+
+    function _readyAction(bytes32 actionHash) private view returns (QueuedAction storage queued) {
+        queued = queuedActions[actionHash];
+        if (queued.executeAfter == 0) revert ActionNotQueued();
+        if (queued.executed) revert ActionAlreadyQueued();
+        if (queued.expired) revert ActionExpired();
+        if (block.timestamp < queued.executeAfter) revert ActionInGracePeriod();
+        if (block.timestamp > queued.expiresAt) revert ActionExpired();
+    }
+
+    function _spendTap(address asset, uint256 amount) private {
+        AssetPolicy memory policy = assetPolicies[asset];
+        TapState storage tap = tapStates[asset];
+        if (tap.windowStart == 0 || block.timestamp >= uint256(tap.windowStart) + TAP_WINDOW) {
+            if (block.timestamp > type(uint64).max) revert InvalidTreasuryAction();
+            tap.windowStart = uint64(block.timestamp);
+            tap.spent = 0;
+        }
+        uint256 available = policy.tapBudget > tap.spent ? policy.tapBudget - tap.spent : 0;
+        if (amount > available) revert TapBudgetExceeded(asset, amount, available);
+        tap.spent += uint192(amount);
+        emit TapSpent(asset, amount, tap.spent, policy.tapBudget, tap.windowStart);
+    }
+
+    function _setAssetPolicy(
+        address asset,
+        uint128 c1,
+        uint128 c2,
+        uint128 tapBudget,
+        uint128 tapBudgetMax
+    ) private {
+        if ((asset != address(0) && asset.code.length == 0) || c1 > c2 || tapBudget > tapBudgetMax) revert InvalidAssetPolicy();
+        AssetPolicy storage policy = assetPolicies[asset];
+        if (!policy.exists) {
+            if (assetPolicyCount >= MAX_ASSET_POLICIES) revert TooManyAssetPolicies();
+            policy.exists = true;
+            assetPolicyCount += 1;
+        }
+        policy.c1 = c1;
+        policy.c2 = c2;
+        policy.tapBudget = tapBudget;
+        policy.tapBudgetMax = tapBudgetMax;
+        emit AssetPolicySet(asset, c1, c2, tapBudget, tapBudgetMax);
     }
 
     function _validateManager(IGenesisFlm manager_) private view {
@@ -545,14 +957,42 @@ contract GenesisVault is ReentrancyGuard {
         ) revert InvalidAssetTransfer();
     }
 
-    function _pushProRata(
-        IERC20 asset,
-        address recipient,
+    function _releaseProRata(
+        address asset,
+        address payable recipient,
         uint256 balance,
         uint256 amount,
         uint256 supply
     ) private {
-        _pushExact(asset, recipient, Math.mulDiv(balance, amount, supply));
+        _releaseExact(asset, recipient, Math.mulDiv(balance, amount, supply));
+    }
+
+    function _burnCompanyToken(address account, uint256 amount) private {
+        if (authorizedBurnAmount != 0) revert UnauthorizedTokenBurn();
+        authorizedBurnAccount = account;
+        authorizedBurnAmount = amount;
+        COMPANY_TOKEN.burnFromVault(account, amount);
+        if (authorizedBurnAmount != 0) revert UnauthorizedTokenBurn();
+    }
+
+    function _releaseExact(address asset, address payable recipient, uint256 amount) private {
+        if (amount == 0) return;
+        address treasury = address(TREASURY_EXECUTOR);
+        if (asset == address(0)) {
+            uint256 beforeBalance = treasury.balance;
+            TREASURY_EXECUTOR.transferAsset(asset, recipient, amount);
+            if (beforeBalance - treasury.balance != amount) revert InvalidAssetTransfer();
+            return;
+        }
+
+        IERC20 token = IERC20(asset);
+        uint256 treasuryBefore = token.balanceOf(treasury);
+        uint256 recipientBefore = token.balanceOf(recipient);
+        TREASURY_EXECUTOR.transferAsset(asset, recipient, amount);
+        if (
+            treasuryBefore - token.balanceOf(treasury) != amount
+                || token.balanceOf(recipient) - recipientBefore != amount
+        ) revert InvalidAssetTransfer();
     }
 
     function _pushNativeExact(address payable recipient, uint256 amount) private {
