@@ -975,44 +975,90 @@ def _create_address(sender: str, nonce: int, hash_: Callable[[bytes], str]) -> s
 
 def _executor_runtime_code(vault: str) -> bytes:
     try:
-        deployed_candidates = []
-        for path in sorted((ROOT / economic_code_hashes.BUILD_INFO_PATH).glob("*.json")):
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            contract = raw["output"]["contracts"].get("src/GenesisTreasuryExecutor.sol", {}).get(
-                "GenesisTreasuryExecutor"
-            )
-            if contract is not None:
-                deployed_candidates.append(contract["evm"]["deployedBytecode"])
-        if deployed_candidates:
-            deployed = deployed_candidates[0]
-            if any(item != deployed for item in deployed_candidates[1:]):
-                raise ManifestError("ambiguous treasury executor runtime compiler evidence")
-        else:
-            artifact = ROOT / "out/GenesisTreasuryExecutor.sol/GenesisTreasuryExecutor.json"
-            raw = json.loads(artifact.read_text(encoding="utf-8"))
-            deployed = raw["deployedBytecode"]
-        code = bytearray.fromhex(deployed["object"].removeprefix("0x"))
-        references = [
-            reference
-            for source_references in deployed["immutableReferences"].values()
-            for reference in source_references
-        ]
-    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise ManifestError("cannot read treasury executor runtime compiler evidence") from exc
+        evidence = json.loads(
+            (ROOT / economic_code_hashes.EXECUTOR_RUNTIME_PATH).read_text(encoding="utf-8")
+        )
+        core = json.loads((ROOT / economic_code_hashes.MANIFEST_PATH).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ManifestError("cannot read treasury executor runtime evidence") from exc
+    if not isinstance(evidence, dict):
+        raise ManifestError("treasury executor runtime evidence is malformed")
+    _expect_keys(
+        evidence,
+        ("schemaVersion", "source", "contract", "compiler", "deployedRuntime"),
+        "treasury executor runtime evidence",
+    )
+    if (
+        evidence["schemaVersion"] != 1
+        or evidence["source"] != economic_code_hashes.EXECUTOR_RUNTIME_TARGET.source
+        or evidence["contract"] != economic_code_hashes.EXECUTOR_RUNTIME_TARGET.contract
+    ):
+        raise ManifestError("treasury executor runtime compiler identity is invalid")
+    compiler = _require_dict(evidence["compiler"], "treasury executor runtime compiler")
+    _expect_keys(
+        compiler,
+        ("solcVersion", "solcSettingsKeccak256"),
+        "treasury executor runtime compiler",
+    )
+    core_compiler = core.get("compiler") if isinstance(core, dict) else None
+    if compiler != core_compiler:
+        raise ManifestError("treasury executor runtime compiler provenance is invalid")
+    if not isinstance(compiler["solcVersion"], str) or not compiler["solcVersion"]:
+        raise ManifestError("treasury executor runtime compiler provenance is invalid")
+    _canonical_hash(
+        compiler["solcSettingsKeccak256"],
+        "treasury executor runtime compiler settings",
+    )
+
+    runtime = _require_dict(evidence["deployedRuntime"], "treasury executor deployed runtime")
+    _expect_keys(
+        runtime,
+        ("template", "bytes", "keccak256", "immutableReferences"),
+        "treasury executor deployed runtime",
+    )
+    template = runtime["template"]
+    if not isinstance(template, str) or not template.startswith("0x"):
+        raise ManifestError("treasury executor runtime template is malformed")
+    try:
+        code = bytearray.fromhex(template[2:])
+    except ValueError as exc:
+        raise ManifestError("treasury executor runtime template is malformed") from exc
+    if template != "0x" + code.hex() or not code:
+        raise ManifestError("treasury executor runtime template is malformed")
+    if _json_integer(runtime["bytes"], "treasury executor runtime bytes") != len(code):
+        raise ManifestError("treasury executor runtime byte length mismatch")
+    expected_hash = _canonical_hash(runtime["keccak256"], "treasury executor runtime hash")
+    if _digest(bytes(code), flm_code_hashes.keccak256) != expected_hash:
+        raise ManifestError("treasury executor runtime template hash mismatch")
+
+    references = _require_list(
+        runtime["immutableReferences"], "treasury executor immutable references"
+    )
     immutable = _address_word(_address(vault, "treasury executor vault"))
     if not references:
         raise ManifestError("treasury executor runtime has no immutable VAULT references")
-    for reference in references:
-        start, length = reference.get("start"), reference.get("length")
+    previous_end = 0
+    for index, raw_reference in enumerate(references):
+        reference = _require_dict(
+            raw_reference, f"treasury executor immutable reference {index}"
+        )
+        _expect_keys(
+            reference,
+            ("start", "length"),
+            f"treasury executor immutable reference {index}",
+        )
+        start = _json_integer(reference["start"], "treasury executor immutable start")
+        length = _json_integer(reference["length"], "treasury executor immutable length")
         if (
-            not isinstance(start, int)
-            or length != 32
+            length != 32
             or start < 0
+            or start < previous_end
             or start + length > len(code)
             or any(code[start : start + length])
         ):
             raise ManifestError("treasury executor immutable references are malformed")
         code[start : start + length] = immutable
+        previous_end = start + length
     return bytes(code)
 
 

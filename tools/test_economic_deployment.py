@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tools import economic_deployment
@@ -889,6 +892,52 @@ class EconomicDeploymentTest(unittest.TestCase):
             self.executor_runtime,
             economic_deployment._executor_runtime_code(address(0xBAD)),
         )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime_path = root / economic_deployment.economic_code_hashes.EXECUTOR_RUNTIME_PATH
+            manifest_path = root / economic_deployment.economic_code_hashes.MANIFEST_PATH
+            runtime_path.parent.mkdir(parents=True)
+            runtime_bytes = (
+                economic_deployment.ROOT
+                / economic_deployment.economic_code_hashes.EXECUTOR_RUNTIME_PATH
+            ).read_bytes()
+            manifest_bytes = (
+                economic_deployment.ROOT / economic_deployment.economic_code_hashes.MANIFEST_PATH
+            ).read_bytes()
+            runtime_path.write_bytes(runtime_bytes)
+            manifest_path.write_bytes(manifest_bytes)
+
+            with mock.patch.object(economic_deployment, "ROOT", root):
+                self.assertEqual(
+                    economic_deployment._executor_runtime_code(self.contracts["vault"]),
+                    self.executor_runtime,
+                )
+
+                runtime_path.unlink()
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "cannot read.*runtime evidence"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
+
+                runtime_path.write_bytes(runtime_bytes)
+                evidence = json.loads(runtime_bytes)
+                evidence["deployedRuntime"]["template"] = (
+                    "0x00" + evidence["deployedRuntime"]["template"][4:]
+                )
+                runtime_path.write_text(json.dumps(evidence), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "template hash mismatch"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
+
+                evidence = json.loads(runtime_bytes)
+                evidence["deployedRuntime"]["immutableReferences"][0]["length"] = 31
+                runtime_path.write_text(json.dumps(evidence), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    economic_deployment.ManifestError, "immutable references are malformed"
+                ):
+                    economic_deployment._executor_runtime_code(self.contracts["vault"])
 
         broken = copy.deepcopy(self.manifest)
         broken["runtimeCodeHashes"]["treasuryExecutor"] = "0x" + "11" * 32

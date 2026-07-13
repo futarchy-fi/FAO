@@ -73,8 +73,8 @@ class EconomicCodeHashesTest(unittest.TestCase):
         self.assertIn(str(economic_code_hashes.BUILD_ROOT / "out"), command)
         self.assertIn(str(economic_code_hashes.BUILD_INFO_PATH), command)
         self.assertEqual(
-            command[-len(economic_code_hashes.TARGETS) :],
-            [target.source for target in economic_code_hashes.TARGETS],
+            command[-len(economic_code_hashes.COMPILER_TARGETS) :],
+            [target.source for target in economic_code_hashes.COMPILER_TARGETS],
         )
 
     def test_build_info_requires_exact_unlinked_unambiguous_output(self) -> None:
@@ -151,6 +151,28 @@ class EconomicCodeHashesTest(unittest.TestCase):
                 economic_code_hashes.deployment_blob(target),
                 economic_code_hashes.BLOB_DIR / f"{target.constant.lower()}.bin",
             )
+
+        executor = economic_code_hashes.CompiledTarget(
+            economic_code_hashes.EXECUTOR_RUNTIME_TARGET,
+            b"creation",
+            "0.8.20",
+            settings,
+        )
+        runtime = b"\x60" + bytes(32) + b"\x00"
+        evidence = json.loads(
+            economic_code_hashes._executor_runtime_output(
+                executor, runtime, ((1, 32),), fake_keccak
+            )
+        )
+        self.assertEqual(evidence["deployedRuntime"]["template"], "0x" + runtime.hex())
+        self.assertEqual(
+            evidence["deployedRuntime"]["immutableReferences"],
+            [{"start": 1, "length": 32}],
+        )
+        self.assertEqual(
+            evidence["compiler"]["solcSettingsKeccak256"],
+            fake_keccak(economic_code_hashes.flm_code_hashes._canonical(settings)),
+        )
 
     def test_browser_bundle_is_exact_and_rejects_stale_flm_blobs(self) -> None:
         settings = {"optimizer": {"enabled": True, "runs": 200}, "viaIR": True}

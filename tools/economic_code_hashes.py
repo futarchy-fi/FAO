@@ -22,6 +22,7 @@ BUILD_ROOT = Path("build-info/economic-core-code-hashes")
 BUILD_INFO_PATH = BUILD_ROOT / "build-info"
 MANIFEST_PATH = Path("metadata/economic-core-code-hashes.json")
 BROWSER_BUNDLE_PATH = Path("metadata/fao-creation-codes.json")
+EXECUTOR_RUNTIME_PATH = Path("metadata/genesis-treasury-executor-runtime.json")
 BLOB_DIR = Path("metadata/economic-creation-code")
 SOLIDITY_PATH = Path("src/generated/EconomicDeploymentCodeHashes.sol")
 
@@ -58,6 +59,12 @@ DEPLOYMENT_TARGETS = (
     Target("STACK_DEPLOYER", "src/FAOSiteStackDeployer.sol", "FAOSiteStackDeployer"),
 )
 TARGETS = (*CORE_TARGETS, *DEPLOYMENT_TARGETS)
+EXECUTOR_RUNTIME_TARGET = Target(
+    "TREASURY_EXECUTOR",
+    "src/GenesisTreasuryExecutor.sol",
+    "GenesisTreasuryExecutor",
+)
+COMPILER_TARGETS = (*TARGETS, EXECUTOR_RUNTIME_TARGET)
 
 
 def _build(root: Path) -> None:
@@ -78,7 +85,7 @@ def _build(root: Path) -> None:
             str(BUILD_ROOT / "out"),
             "--build-info-path",
             str(BUILD_INFO_PATH),
-            *(target.source for target in TARGETS),
+            *(target.source for target in COMPILER_TARGETS),
         ],
         root,
     )
@@ -158,6 +165,111 @@ def _read_compiled(root: Path, target: Target) -> CompiledTarget:
     if artifact != build_info:
         raise GenerationError(f"artifact/build-info mismatch for {target.contract}")
     return artifact
+
+
+def _deployed_runtime(value: Any, label: str) -> tuple[bytes, tuple[tuple[int, int], ...]]:
+    if not isinstance(value, dict) or value.get("linkReferences") != {}:
+        raise GenerationError(f"{label} has unresolved deployed-runtime links")
+    code = _compiler_bytes(value.get("object"), f"{label} deployed runtime")
+    immutables = value.get("immutableReferences")
+    if not isinstance(immutables, dict) or len(immutables) != 1:
+        raise GenerationError(f"{label} must have exactly one immutable")
+    raw_references = next(iter(immutables.values()))
+    if not isinstance(raw_references, list) or not raw_references:
+        raise GenerationError(f"{label} immutable has no runtime references")
+
+    references: list[tuple[int, int]] = []
+    for raw in raw_references:
+        if not isinstance(raw, dict) or set(raw) != {"start", "length"}:
+            raise GenerationError(f"{label} immutable references are malformed")
+        start, length = raw["start"], raw["length"]
+        if (
+            not isinstance(start, int)
+            or isinstance(start, bool)
+            or length != 32
+            or start < 0
+            or start + length > len(code)
+            or any(code[start : start + length])
+        ):
+            raise GenerationError(f"{label} immutable references are malformed")
+        references.append((start, length))
+    references.sort()
+    if any(start < previous + length for (previous, length), (start, _) in zip(references, references[1:])):
+        raise GenerationError(f"{label} immutable references overlap")
+    return code, tuple(references)
+
+
+def _read_executor_runtime(root: Path) -> tuple[bytes, tuple[tuple[int, int], ...]]:
+    path = root / BUILD_ROOT / EXECUTOR_RUNTIME_TARGET.artifact
+    try:
+        artifact = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GenerationError(f"cannot read Foundry artifact {path}: {exc}") from exc
+    artifact_runtime = _deployed_runtime(
+        artifact.get("deployedBytecode"), EXECUTOR_RUNTIME_TARGET.contract
+    )
+
+    candidates: list[tuple[bytes, tuple[tuple[int, int], ...]]] = []
+    for build_path in sorted((root / BUILD_INFO_PATH).glob("*.json")):
+        try:
+            value = json.loads(build_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise GenerationError(f"cannot read build-info {build_path}: {exc}") from exc
+        output = value.get("output") if isinstance(value, dict) else None
+        contracts = output.get("contracts") if isinstance(output, dict) else None
+        by_source = (
+            contracts.get(EXECUTOR_RUNTIME_TARGET.source)
+            if isinstance(contracts, dict)
+            else None
+        )
+        raw = (
+            by_source.get(EXECUTOR_RUNTIME_TARGET.contract)
+            if isinstance(by_source, dict)
+            else None
+        )
+        if raw is not None:
+            evm = raw.get("evm") if isinstance(raw, dict) else None
+            candidates.append(
+                _deployed_runtime(
+                    evm.get("deployedBytecode") if isinstance(evm, dict) else None,
+                    EXECUTOR_RUNTIME_TARGET.contract,
+                )
+            )
+    if not candidates:
+        raise GenerationError("no exact build-info runtime found for GenesisTreasuryExecutor")
+    if any(item != candidates[0] for item in candidates[1:]):
+        raise GenerationError("ambiguous build-info runtimes for GenesisTreasuryExecutor")
+    if artifact_runtime != candidates[0]:
+        raise GenerationError("artifact/build-info runtime mismatch for GenesisTreasuryExecutor")
+    return artifact_runtime
+
+
+def _executor_runtime_output(
+    compiled: CompiledTarget,
+    code: bytes,
+    references: tuple[tuple[int, int], ...],
+    hash_: Callable[[bytes], str] = flm_code_hashes.keccak256,
+) -> bytes:
+    return json.dumps(
+        {
+            "schemaVersion": 1,
+            "source": compiled.target.source,
+            "contract": compiled.target.contract,
+            "compiler": {
+                "solcVersion": compiled.solc_version,
+                "solcSettingsKeccak256": hash_(flm_code_hashes._canonical(compiled.settings)),
+            },
+            "deployedRuntime": {
+                "template": "0x" + code.hex(),
+                "bytes": len(code),
+                "keccak256": hash_(code),
+                "immutableReferences": [
+                    {"start": start, "length": length} for start, length in references
+                ],
+            },
+        },
+        indent=2,
+    ).encode("utf-8") + b"\n"
 
 
 def _output(
@@ -293,7 +405,15 @@ def _browser_bundle(
 def generate(root: Path = ROOT, *, check: bool = False) -> tuple[CompiledTarget, ...]:
     _build(root)
     compiled = tuple(_read_compiled(root, target) for target in TARGETS)
+    executor = _read_compiled(root, EXECUTOR_RUNTIME_TARGET)
+    flm_code_hashes._compiler_context((*compiled, executor))
+    executor_runtime, executor_references = _read_executor_runtime(root)
     flm_code_hashes._write_or_check(root / MANIFEST_PATH, _output(compiled), check)
+    flm_code_hashes._write_or_check(
+        root / EXECUTOR_RUNTIME_PATH,
+        _executor_runtime_output(executor, executor_runtime, executor_references),
+        check,
+    )
     flm_code_hashes._write_or_check(root / SOLIDITY_PATH, _solidity(compiled), check)
     by_key = {item.target.constant: item for item in compiled}
     for target in TARGETS:
