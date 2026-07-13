@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHAIN_ID = flm_deployment.CHAIN_ID
 FEE_TIER = flm_deployment.FEE_TIER
 OBSERVATION_CARDINALITY = flm_deployment.MIN_CARDINALITY_NEXT
+MAX_VESTING_GRANTS = 16
 DEAD = flm_deployment.DEAD
 ZERO = "0x" + "00" * 20
 POOL_INIT_CODE_HASH = (
@@ -739,7 +740,7 @@ def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any]
             raise ManifestError(f"coreConfig.{key} must be a string")
 
     raw_grants = _require_list(manifest["grants"], "grants")
-    if len(raw_grants) > 32:
+    if len(raw_grants) > MAX_VESTING_GRANTS:
         raise ManifestError("grants exceeds the vault maximum")
     grants = []
     for index, raw in enumerate(raw_grants):

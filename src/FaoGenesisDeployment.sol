@@ -20,6 +20,7 @@ import {FAOSiteStackDeployer} from "./FAOSiteStackDeployer.sol";
 import {FAOTwapResolver} from "./FAOTwapResolver.sol";
 import {FutarchyArbitration} from "./FutarchyArbitration.sol";
 import {
+    GENESIS_MAX_VESTING_GRANTS,
     GenesisVault,
     IGenesisArbitration,
     IGenesisBootstrapHook,
@@ -91,7 +92,6 @@ contract FaoGenesisDeployment {
 
     uint256 private constant CORE_CODE_BLOB_COUNT = 6;
     uint256 private constant FLM_CODE_BLOB_COUNT = 5;
-    uint256 private constant MAX_VESTING_GRANTS = 32;
     uint24 public constant FEE_TIER = 500;
     int24 public constant TICK_LOWER = -887_270;
     int24 public constant TICK_UPPER = 887_270;
@@ -102,7 +102,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant ARBITRATION_CODE_HASH =
         0xa013f13694e439351383e11933ba6fd9f7471c7f6e71b61bd916e4c5a3e6eb6e;
     bytes32 public constant VAULT_CODE_HASH =
-        0xeb9e34894fbe7fae48057559fb02770037acf1b70238dddefb413c000b5bc50b;
+        0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f;
     bytes32 public constant RELEASE_STRATEGY_CODE_HASH =
         0x522d5fde9e454fb06cb61d574a409589d73833694d16401293ac1dc9d10c347b;
     bytes32 public constant ZERO_VOTING_CODE_HASH =
@@ -577,7 +577,7 @@ contract FaoGenesisDeployment {
         _requireDependency(config.wrapped1155Factory);
         _requireDependency(config.uniswapV3Factory);
         if (
-            grantCount > MAX_VESTING_GRANTS || config.graduationThreshold == 0
+            grantCount > GENESIS_MAX_VESTING_GRANTS || config.graduationThreshold == 0
                 || config.arbitrationTimeout == 0 || config.siteMinActivationBond == 0
                 || config.treasuryMinActivationBond == 0 || config.twapWindow == 0
                 || config.twapWindow > config.twapTimeout

@@ -26,7 +26,12 @@ import {FAOSiteStackDeployer} from "../src/FAOSiteStackDeployer.sol";
 import {FAOTwapResolver} from "../src/FAOTwapResolver.sol";
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
-import {GenesisVault, IGenesisArbitration, IGenesisBootstrapHook} from "../src/GenesisVault.sol";
+import {
+    GENESIS_MAX_VESTING_GRANTS,
+    GenesisVault,
+    IGenesisArbitration,
+    IGenesisBootstrapHook
+} from "../src/GenesisVault.sol";
 import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {IUniswapV3FactoryLike} from "../src/interfaces/IUniswapV3FactoryLike.sol";
@@ -295,6 +300,23 @@ contract FaoGenesisDeploymentTest is Test {
         assertEq(_createAddress(address(receipt), 1).code.length, 0);
     }
 
+    function test_coreRejectsMoreThanTheVaultGrantLimitBeforeCreate() public {
+        GenesisVault.GrantConfig[] memory grants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
+        for (uint256 i; i < grants.length; ++i) {
+            grants[i] = GenesisVault.GrantConfig({
+                beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
+            });
+        }
+        FaoGenesisDeployment receipt = new FaoGenesisDeployment(
+            keccak256(abi.encode(_coreConfig(), grants)), keccak256(abi.encode(_flmConfig()))
+        );
+
+        vm.expectRevert(FaoGenesisDeployment.InvalidConfig.selector);
+        receipt.deployCore(_coreConfig(), grants, _coreCodes());
+        assertEq(_createAddress(address(receipt), 1).code.length, 0);
+    }
+
     function test_emptyPoolCanNormalizeAtZeroDeltaWithoutBuyerAssets() public {
         FaoGenesisDeployment receipt = _deployedReceipt();
         uint256 terminalPrice = 2e16;
@@ -354,14 +376,16 @@ contract FaoGenesisDeploymentTest is Test {
         assertLt(
             coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), _grants()).length, 49_152
         );
-        GenesisVault.GrantConfig[] memory maxGrants = new GenesisVault.GrantConfig[](32);
+        GenesisVault.GrantConfig[] memory maxGrants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS);
         for (uint256 i; i < maxGrants.length; ++i) {
             maxGrants[i] = GenesisVault.GrantConfig({
                 beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
             });
         }
         assertLt(
-            coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), maxGrants).length, 49_152
+            coreCodes[1].length + abi.encode(_vaultConfigShape(receipt), maxGrants).length,
+            49_152 - 256
         );
     }
 
@@ -544,14 +568,14 @@ contract FaoGenesisDeploymentTest is Test {
         });
     }
 
-    function _coreCodes() private pure returns (bytes[] memory codes) {
+    function _coreCodes() private view returns (bytes[] memory codes) {
         codes = new bytes[](6);
-        codes[0] = type(FutarchyArbitration).creationCode;
-        codes[1] = type(GenesisVault).creationCode;
-        codes[2] = type(SXArbitrationExecutionStrategy).creationCode;
-        codes[3] = type(AlwaysZeroVotingStrategy).creationCode;
-        codes[4] = type(EconGateway).creationCode;
-        codes[5] = type(FAOEconomicEvaluationPipeline).creationCode;
+        codes[0] = vm.readFileBinary("metadata/economic-creation-code/arbitration.bin");
+        codes[1] = vm.readFileBinary("metadata/economic-creation-code/vault.bin");
+        codes[2] = vm.readFileBinary("metadata/economic-creation-code/release_strategy.bin");
+        codes[3] = vm.readFileBinary("metadata/economic-creation-code/zero_voting.bin");
+        codes[4] = vm.readFileBinary("metadata/economic-creation-code/econ_gateway.bin");
+        codes[5] = vm.readFileBinary("metadata/economic-creation-code/econ_evaluator.bin");
     }
 
     function _flmCodes() private view returns (bytes[] memory codes) {

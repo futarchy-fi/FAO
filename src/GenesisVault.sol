@@ -11,6 +11,8 @@ import {FaoToken} from "./FaoToken.sol";
 import {FAOTreasuryActions} from "./FAOTreasuryActions.sol";
 import {GenesisTreasuryExecutor} from "./GenesisTreasuryExecutor.sol";
 
+uint256 constant GENESIS_MAX_VESTING_GRANTS = 16;
+
 interface IGenesisFlm is IERC20 {
     function BOOTSTRAP_RECIPIENT() external view returns (address);
     function COMPANY_TOKEN() external view returns (address);
@@ -63,7 +65,7 @@ contract GenesisVault is ReentrancyGuard {
 
     uint256 public constant WAD = 1e18;
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant MAX_VESTING_GRANTS = 32;
+    uint256 public constant MAX_VESTING_GRANTS = GENESIS_MAX_VESTING_GRANTS;
     uint256 public constant MAX_ASSET_POLICIES = 8;
     uint256 public constant TREASURY_GRACE = 24 hours;
     uint256 public constant TREASURY_EXPIRY = 7 days;
@@ -243,6 +245,7 @@ contract GenesisVault is ReentrancyGuard {
         uint256 expiresAt
     );
     event CriticalActionExecuted(bytes32 indexed baseHash, address indexed target, uint256 value);
+    event Buyback(address indexed caller, uint256 wethSpent, uint256 companyBurned);
 
     IERC20 public immutable WETH;
     FaoToken public immutable COMPANY_TOKEN;
@@ -577,6 +580,27 @@ contract GenesisVault is ReentrancyGuard {
             amount = IERC20(asset).balanceOf(address(this));
             _pushExact(IERC20(asset), address(TREASURY_EXECUTOR), amount);
         }
+    }
+
+    /// @notice Permissionlessly buys undervalued FAO under the executor's fixed policy and burns
+    /// it.
+    function buyback() external nonReentrant returns (uint256 wethSpent, uint256 companyBurned) {
+        if (phase != Phase.LIVE) revert InvalidPhase();
+        address treasury = address(TREASURY_EXECUTOR);
+        uint256 companyBefore = COMPANY_TOKEN.balanceOf(treasury);
+        uint256 wethBefore = WETH.balanceOf(treasury);
+        uint256 supplyBefore = COMPANY_TOKEN.totalSupply();
+        (wethSpent, companyBurned) = TREASURY_EXECUTOR.buyback();
+        if (
+            companyBurned == 0 || COMPANY_TOKEN.balanceOf(treasury) - companyBefore != companyBurned
+                || wethBefore - WETH.balanceOf(treasury) != wethSpent
+        ) revert InvalidAssetTransfer();
+        _burnCompanyToken(treasury, companyBurned);
+        if (
+            COMPANY_TOKEN.balanceOf(treasury) != companyBefore
+                || supplyBefore - COMPANY_TOKEN.totalSupply() != companyBurned
+        ) revert InvalidAssetTransfer();
+        emit Buyback(msg.sender, wethSpent, companyBurned);
     }
 
     function transferActionHash(FAOTreasuryActions.TransferAction calldata action)

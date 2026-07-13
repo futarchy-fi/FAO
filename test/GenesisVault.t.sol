@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VestingWallet} from "@openzeppelin/contracts/finance/VestingWallet.sol";
 
 import {
+    GENESIS_MAX_VESTING_GRANTS,
     GenesisVault,
     IGenesisArbitration,
     IGenesisBootstrapHook,
@@ -97,6 +98,15 @@ contract GenesisVaultTest is Test {
 
         vm.expectRevert(GenesisVault.InvalidConfig.selector);
         new GenesisVault(config, grants);
+    }
+
+    function testRejectsMoreThanTheVestingGrantLimit() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants =
+            new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(_config(hook), grants);
     }
 
     function testRejectsDuplicateAssetPoliciesAndAcceptsEightUniquePolicies() public {

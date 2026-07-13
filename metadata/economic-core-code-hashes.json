@@ -14,8 +14,8 @@
     "VAULT": {
       "source": "src/GenesisVault.sol",
       "contract": "GenesisVault",
-      "baseCreationCodeBytes": 35581,
-      "baseCreationCodeKeccak256": "0xeb9e34894fbe7fae48057559fb02770037acf1b70238dddefb413c000b5bc50b"
+      "baseCreationCodeBytes": 45872,
+      "baseCreationCodeKeccak256": "0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f"
     },
     "RELEASE_STRATEGY": {
       "source": "src/SXArbitrationExecutionStrategy.sol",
@@ -44,8 +44,8 @@
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24527,
-      "baseCreationCodeKeccak256": "0xc754166904e57b1626c14c171b589ccec658329b23bbd991f61b081605e90d75"
+      "baseCreationCodeBytes": 24539,
+      "baseCreationCodeKeccak256": "0xc7e7db5f71088324ddab12d5267bef8cfd9cd70bbcfbf53e35ca80bddea60ab3"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",

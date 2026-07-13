@@ -96,6 +96,7 @@ contract GenesisManagerMock is ERC20 {
 
     bool public initializedFromBootstrap;
     bool public revertBootstrap;
+    bool public inConditionalMode;
     uint16 public companyUsageBps = 8000;
     uint16 public collateralUsageBps = 8000;
 
@@ -113,6 +114,10 @@ contract GenesisManagerMock is ERC20 {
         require(companyBps <= 10_000 && collateralBps <= 10_000);
         companyUsageBps = companyBps;
         collateralUsageBps = collateralBps;
+    }
+
+    function setConditionalMode(bool value) external {
+        inConditionalMode = value;
     }
 
     function initializeFromBootstrap(uint256 companyAmount, uint256 collateralAmount)

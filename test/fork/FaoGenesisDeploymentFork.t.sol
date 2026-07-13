@@ -4,8 +4,13 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, console2} from "forge-std/Test.sol";
 import {FutarchyLiquidityManager} from "flm/core/FutarchyLiquidityManager.sol";
+import {UniV3PoolStabilityGuard} from "flm/oracles/UniV3PoolStabilityGuard.sol";
 import {Space} from "lib/sx-evm/src/Space.sol";
 
+import {
+    IOperatorPoolLiquidity,
+    IOperatorSwapRouter
+} from "../../script/OperateFAOSepoliaEvaluation.s.sol";
 import {AlwaysZeroVotingStrategy} from "../../src/AlwaysZeroVotingStrategy.sol";
 import {EconGateway} from "../../src/EconGateway.sol";
 import {FAOEconomicEvaluationPipeline} from "../../src/FAOEconomicEvaluationPipeline.sol";
@@ -48,6 +53,9 @@ contract FaoGenesisDeploymentForkTest is Test {
     address private constant WRAPPED_1155 = 0xD194319D1804C1051DD21Ba1Dc931cA72410B79f;
     address private constant UNIV3_FACTORY = 0x0227628f3F023bb0B980b67D528571c95c6DaC1c;
     address private constant NPM = 0x1238536071E1c677A632429e3655c799b22cDA52;
+    address private constant SWAP_ROUTER = 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E;
+    bytes32 private constant SWAP_ROUTER_CODEHASH =
+        0xe7f98ee73dfe6d5c96cbf8936920f496b1b82f24326d6a415b4144a2252271de;
 
     uint256 private constant BUY_AMOUNT = 0.1 ether;
 
@@ -126,6 +134,76 @@ contract FaoGenesisDeploymentForkTest is Test {
         console2.log("economic core stage gas", coreGas);
         console2.log("economic FLM stage gas", flmGas);
         console2.log("economic atomic finalize gas", finalizeGas);
+    }
+
+    /// @dev No economic-genesis receipt is live on Sepolia yet: the predicted nonce-187 receipt
+    /// has no code, while the deployed site-release pool uses a different token without this
+    /// executor/burn path. This fresh fork composition therefore exercises the canonical pool.
+    function testFork_realUniV3BuybackBurnsDiscountedFAO() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
+            _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        GenesisTreasuryExecutor treasury = vault.TREASURY_EXECUTOR();
+        address buyer = makeAddr("canonical-buyback-seller");
+        uint256 cost = vault.reserveAt(BUY_AMOUNT);
+        vm.deal(buyer, 1 ether);
+        vm.startPrank(buyer);
+        IFaoGenesisForkWeth(WETH).deposit{value: cost}();
+        IERC20(WETH).approve(address(vault), cost);
+        vault.buy(BUY_AMOUNT, cost, block.timestamp);
+        vm.stopPrank();
+
+        vm.warp(coreConfig.saleEnd);
+        vault.seal();
+        vault.finalize();
+        vault.claim(buyer);
+
+        address company = receipt.companyToken();
+        address pool = receipt.spotPool();
+        assertEq(
+            IUniswapV3FactoryLike(UNIV3_FACTORY).getPool(company, WETH, receipt.FEE_TIER()), pool
+        );
+        assertGt(IOperatorPoolLiquidity(pool).liquidity(), 0);
+        assertGt(IERC20(WETH).balanceOf(address(treasury)), 0);
+        assertEq(SWAP_ROUTER.codehash, SWAP_ROUTER_CODEHASH);
+        assertEq(IOperatorSwapRouter(SWAP_ROUTER).factory(), UNIV3_FACTORY);
+
+        vm.startPrank(buyer);
+        IERC20(company).approve(SWAP_ROUTER, BUY_AMOUNT);
+        uint256 wethOut = IOperatorSwapRouter(SWAP_ROUTER)
+            .exactInputSingle(
+                IOperatorSwapRouter.ExactInputSingleParams({
+                    tokenIn: company,
+                    tokenOut: WETH,
+                    fee: receipt.FEE_TIER(),
+                    recipient: buyer,
+                    amountIn: BUY_AMOUNT,
+                    amountOutMinimum: 1,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+        vm.stopPrank();
+        assertGt(wethOut, 0);
+        assertEq(IERC20(company).balanceOf(buyer), 0);
+
+        vm.warp(block.timestamp + 30 minutes);
+        UniV3PoolStabilityGuard(receipt.guard()).assertStablePair(company, WETH);
+
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(treasury));
+        uint256 companyBefore = IERC20(company).balanceOf(address(treasury));
+        uint256 supplyBefore = IERC20(company).totalSupply();
+        vm.prank(makeAddr("permissionless-buyback-keeper"));
+        (uint256 wethSpent, uint256 companyBurned) = vault.buyback();
+
+        assertGt(wethSpent, 0);
+        assertGt(companyBurned, 0);
+        assertEq(wethBefore - IERC20(WETH).balanceOf(address(treasury)), wethSpent);
+        assertEq(IERC20(company).balanceOf(address(treasury)), companyBefore);
+        assertEq(supplyBefore - IERC20(company).totalSupply(), companyBurned);
+        UniV3PoolStabilityGuard(receipt.guard()).assertStablePair(company, WETH);
     }
 
     function testFork_realEmptyPoolSwapNormalizesWithoutPayment() public {
@@ -393,14 +471,14 @@ contract FaoGenesisDeploymentForkTest is Test {
         return FaoGenesisDeployment.Dependency({target: target, codehash: target.codehash});
     }
 
-    function _coreCodes() private pure returns (bytes[] memory codes) {
+    function _coreCodes() private view returns (bytes[] memory codes) {
         codes = new bytes[](6);
-        codes[0] = type(FutarchyArbitration).creationCode;
-        codes[1] = type(GenesisVault).creationCode;
-        codes[2] = type(SXArbitrationExecutionStrategy).creationCode;
-        codes[3] = type(AlwaysZeroVotingStrategy).creationCode;
-        codes[4] = type(EconGateway).creationCode;
-        codes[5] = type(FAOEconomicEvaluationPipeline).creationCode;
+        codes[0] = vm.readFileBinary("metadata/economic-creation-code/arbitration.bin");
+        codes[1] = vm.readFileBinary("metadata/economic-creation-code/vault.bin");
+        codes[2] = vm.readFileBinary("metadata/economic-creation-code/release_strategy.bin");
+        codes[3] = vm.readFileBinary("metadata/economic-creation-code/zero_voting.bin");
+        codes[4] = vm.readFileBinary("metadata/economic-creation-code/econ_gateway.bin");
+        codes[5] = vm.readFileBinary("metadata/economic-creation-code/econ_evaluator.bin");
     }
 
     function _flmCodes() private view returns (bytes[] memory codes) {

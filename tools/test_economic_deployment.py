@@ -1472,6 +1472,21 @@ class EconomicDeploymentTest(unittest.TestCase):
                 with self.assertRaisesRegex(economic_deployment.ManifestError, error):
                     economic_deployment.validate_manifest(broken, hash_=self.hash)
 
+    def test_manifest_validates_vesting_grant_limit(self) -> None:
+        at_limit = copy.deepcopy(self.manifest)
+        at_limit["grants"] = [copy.deepcopy(self.grants[0])] * (
+            economic_deployment.MAX_VESTING_GRANTS
+        )
+        _, grants, _ = economic_deployment._validate_config_preimages(at_limit)
+        self.assertEqual(len(grants), economic_deployment.MAX_VESTING_GRANTS)
+
+        over_limit = copy.deepcopy(at_limit)
+        over_limit["grants"].append(copy.deepcopy(self.grants[0]))
+        with self.assertRaisesRegex(
+            economic_deployment.ManifestError, "grants exceeds the vault maximum"
+        ):
+            economic_deployment._validate_config_preimages(over_limit)
+
     def test_outer_receipt_create_supports_operator_nonce_above_127(self) -> None:
         actual = economic_deployment._create_address(
             address(0xAAA), 185, economic_deployment.flm_code_hashes.keccak256
