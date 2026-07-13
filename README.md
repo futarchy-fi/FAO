@@ -1,5 +1,8 @@
 # Futarchy Autonomous Optimizer (FAO)
 
+The [agent-work v1 specification](docs/agent-work-v1.md) defines the ownerless publication index,
+canonical task/receipt/payment documents, and their exact binding to typed treasury transfers.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
