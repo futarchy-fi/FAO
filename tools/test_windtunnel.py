@@ -5,8 +5,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from tools.windtunnel import funding, keeper, schema
+from tools.windtunnel import anvil_drill, funding, keeper, schema
 from tools.windtunnel.indexer import Indexer, IndexerError, RpcCallError, SELECTORS
 
 
@@ -630,6 +631,61 @@ class FundingTest(unittest.TestCase):
         broken["roles"][1]["address"] = broken["roles"][0]["address"]
         with self.assertRaisesRegex(funding.FundingError, "separated"):
             funding.validate_funding_manifest(broken)
+
+
+class AnvilDrillTest(unittest.TestCase):
+    def test_full_economic_report_requires_ten_singleton_evaluations(self):
+        receipt_hash = digest(999)
+        instances = []
+        for index in range(10):
+            active = str(index + 1)
+            instances.append(
+                {
+                    "receipt": addr(str(index)),
+                    "coreHash": digest(index),
+                    "space": "0x%040x" % (100 + index),
+                    "arbitration": "0x%040x" % (200 + index),
+                    "evaluator": "0x%040x" % (300 + index),
+                    "activeEvaluationProposalId": active,
+                    "queue": [],
+                    "proposals": [
+                        {
+                            "proposalId": active,
+                            "state": "EVALUATING",
+                            "payloadSource": "gateway.transferProposed",
+                            "evaluationPayload": "0x1234",
+                        }
+                    ],
+                    "flm": {
+                        "manager": "0x%040x" % (400 + index),
+                        "mode": "spot",
+                        "activeProposalId": "0",
+                    },
+                    "hydrated": {
+                        "activeProposalId": active,
+                        "evaluatorMarket": None,
+                        "registrarCodeHash": receipt_hash,
+                    },
+                }
+            )
+        report = {"instances": instances}
+        anvil_drill._validate_economic_report(report, receipt_hash)
+        report["instances"][1]["arbitration"] = report["instances"][0]["arbitration"]
+        with self.assertRaisesRegex(anvil_drill.DrillError, "unique arbitration"):
+            anvil_drill._validate_economic_report(report, receipt_hash)
+
+    def test_failure_writes_explicit_non_success_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "failure.json"
+            with mock.patch.object(
+                anvil_drill, "run", side_effect=anvil_drill.DrillError("partial broadcast")
+            ):
+                with self.assertRaisesRegex(anvil_drill.DrillError, "partial broadcast"):
+                    anvil_drill.main(["economic-10", "--output", str(output)])
+            evidence = json.loads(output.read_text(encoding="utf-8"))
+            self.assertFalse(evidence["success"])
+            self.assertEqual(evidence["kind"], "fao.windtunnel.drill-failure")
+            self.assertEqual(evidence["mode"], "economic-10")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 # FAO wind tunnel P0
 
-This first slice is a read-only control plane. It adds no Solidity, daemon, signer, economic
-bytecode, or runtime dependency. One FAO still has exactly one active arbitration evaluation and
-one conditional market; scale comes from indexing multiple registrar-created instances.
+This control plane adds no daemon, signer, production economic bytecode, or runtime dependency. A
+local-only Foundry driver exercises the existing pinned production artifacts. One FAO still has
+exactly one active arbitration evaluation and one conditional market; scale comes from indexing
+multiple registrar-created instances.
 
 ## Frozen inputs and state
 
@@ -96,6 +97,26 @@ python3 -m tools.windtunnel.anvil_drill prebroadcast-10 \
 ```
 
 Its committed fixture says `broadcast: false`; this is deterministic pre-broadcast lifecycle
-evidence, not a live ten-FAO economic deployment. The remaining gap is full registrar/evaluator/FLM
-view hydration against ten deployed economic instances, followed by an injected external signer.
-RPC fault injection, 100/1000 tiers, subsidy automation, and UI remain deferred.
+evidence, not a live ten-FAO economic deployment.
+
+The full-economic gate starts a fresh loopback Anvil chain, rejects any chain other than 31337
+before sending, and uses only unlocked disposable Anvil accounts. It stages ten unique receipts
+through the real registrar, deploys each full core/evaluator and hash-pinned FLM, and leaves exactly
+one typed gateway proposal in `EVALUATING` on each independent arbitration:
+
+```bash
+python3 -m tools.windtunnel.anvil_drill economic-10 \
+  --output /tmp/windtunnel-economic-10.json
+```
+
+Success is written only after SQLite discovers, replays, and hydrates all ten instances; checks
+receipt/config hashes, singleton evaluation state, trusted gateway payload provenance, and FLM spot
+mode; and repeats replay byte-for-byte. The artifact records committed blob SHA-256 values,
+generated on-chain Keccak evidence, receipts, resource/gas/time totals, a deterministic digest that
+excludes the observed wall clock, and `publicBroadcasts: 0`.
+If a partial local broadcast or reconciliation fails, the requested output is instead an explicit
+`success: false` failure artifact. Every rerun owns a fresh zero-nonce Anvil process.
+
+This proves local deployment/reconciliation mechanics, not demand, subsidy viability, or a live
+deployment. Injected external signing, RPC fault injection, 100/1000 tiers, subsidy automation, and
+UI remain deferred.
