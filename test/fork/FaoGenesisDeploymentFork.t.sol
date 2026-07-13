@@ -10,11 +10,13 @@ import {AlwaysZeroVotingStrategy} from "../../src/AlwaysZeroVotingStrategy.sol";
 import {EconGateway} from "../../src/EconGateway.sol";
 import {FAOEconomicEvaluationPipeline} from "../../src/FAOEconomicEvaluationPipeline.sol";
 import {FAOFutarchyProposal} from "../../src/FAOFutarchyProposal.sol";
+import {FAOTreasuryActions} from "../../src/FAOTreasuryActions.sol";
 import {FaoGenesisDeployment} from "../../src/FaoGenesisDeployment.sol";
 import {FaoGenesisRegistrar} from "../../src/FaoGenesisRegistrar.sol";
 import {FAOSiteStackDeployer} from "../../src/FAOSiteStackDeployer.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../../src/GenesisVault.sol";
+import {GenesisTreasuryExecutor} from "../../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 import {EconomicDeploymentCodeHashes} from "../../src/generated/EconomicDeploymentCodeHashes.sol";
 import {IUniswapV3FactoryLike} from "../../src/interfaces/IUniswapV3FactoryLike.sol";
@@ -22,6 +24,19 @@ import {IUniswapV3PoolLike} from "../../src/interfaces/IUniswapV3PoolLike.sol";
 
 interface IFaoGenesisForkWeth {
     function deposit() external payable;
+}
+
+contract Lane4ForkTarget {
+    address public caller;
+    bytes32 public payload;
+    uint256 public value;
+
+    function perform(bytes32 payload_) external payable returns (uint256) {
+        caller = msg.sender;
+        payload = payload_;
+        value += msg.value;
+        return value;
+    }
 }
 
 contract FaoGenesisDeploymentForkTest is Test {
@@ -48,6 +63,7 @@ contract FaoGenesisDeploymentForkTest is Test {
         ) = _deployReceipt();
 
         GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        GenesisTreasuryExecutor treasury = vault.TREASURY_EXECUTOR();
         FutarchyLiquidityManager manager = FutarchyLiquidityManager(payable(receipt.manager()));
         address buyer = makeAddr("economic-genesis-buyer");
         uint256 cost = vault.reserveAt(BUY_AMOUNT);
@@ -80,7 +96,10 @@ contract FaoGenesisDeploymentForkTest is Test {
         );
         assertTrue(manager.initializedFromBootstrap());
         assertGt(manager.spotLiquidity(), 0);
-        assertEq(manager.balanceOf(address(vault)), shares);
+        assertEq(manager.balanceOf(address(vault)), 0);
+        assertEq(manager.balanceOf(address(treasury)), shares);
+        assertEq(IERC20(WETH).balanceOf(address(vault)), 0);
+        assertGt(IERC20(WETH).balanceOf(address(treasury)), 0);
         assertGt(shares, 0);
         assertEq(IERC20(receipt.companyToken()).allowance(address(vault), address(manager)), 0);
         assertEq(IERC20(WETH).allowance(address(vault), address(manager)), 0);
@@ -173,6 +192,113 @@ contract FaoGenesisDeploymentForkTest is Test {
         assertEq(Space(receipt.space()).owner(), address(0));
         assertEq(FutarchyArbitration(receipt.arbitration()).owner(), address(0));
         assertEq(FutarchyLiquidityManager(payable(receipt.manager())).owner(), receipt.DEAD());
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        assertEq(vault.TREASURY_EXECUTOR().VAULT(), address(vault));
+    }
+
+    function testFork_lane4CompressedTreasuryLifecycle() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
+            _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        GenesisTreasuryExecutor treasury = vault.TREASURY_EXECUTOR();
+        FutarchyArbitration arbitration = FutarchyArbitration(receipt.arbitration());
+        EconGateway gateway = EconGateway(receipt.proposalGateway());
+
+        address buyer = makeAddr("lane4-buyer");
+        uint256 cost = vault.reserveAt(BUY_AMOUNT);
+        vm.deal(buyer, 1 ether);
+        vm.startPrank(buyer);
+        IFaoGenesisForkWeth(WETH).deposit{value: cost}();
+        IERC20(WETH).approve(address(vault), type(uint256).max);
+        vault.buy(BUY_AMOUNT, cost, block.timestamp);
+        vm.stopPrank();
+        vm.warp(coreConfig.saleEnd);
+        vault.seal();
+        vault.finalize();
+        vault.claim(buyer);
+
+        vm.deal(address(this), 1 ether);
+        IFaoGenesisForkWeth(WETH).deposit{value: 0.2 ether}();
+        IERC20(WETH).transfer(address(treasury), 0.05 ether);
+        IERC20(WETH).approve(address(arbitration), type(uint256).max);
+        address recipient = makeAddr("lane4-recipient");
+
+        FAOTreasuryActions.TransferAction memory small = FAOTreasuryActions.TransferAction({
+            asset: WETH, recipient: recipient, amount: 0.005 ether, salt: bytes32("fork-small")
+        });
+        uint256 smallId = gateway.proposeTransfer(small);
+        arbitration.placeYesBond(smallId, 0.0001 ether);
+        vm.warp(block.timestamp + 30 minutes);
+        arbitration.finalizeByTimeout(smallId);
+        vault.queueTreasuryTransfer(small);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryTransfer(small);
+        assertEq(IERC20(WETH).balanceOf(recipient), small.amount);
+
+        FAOTreasuryActions.TransferAction memory medium = FAOTreasuryActions.TransferAction({
+            asset: WETH, recipient: recipient, amount: 0.02 ether, salt: bytes32("fork-medium")
+        });
+        uint256 mediumId = gateway.proposeTransfer(medium);
+        _settleEvaluatedYes(arbitration, receipt.evaluator(), mediumId);
+        vault.queueTreasuryTransfer(medium);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryTransfer(medium);
+        assertEq(IERC20(WETH).balanceOf(recipient), small.amount + medium.amount);
+
+        FAOTreasuryActions.ParamAction memory param = FAOTreasuryActions.ParamAction({
+            key: vault.KEY_TAP_BUDGET(), asset: WETH, value: 0.02 ether, salt: bytes32("fork-param")
+        });
+        uint256 paramId = gateway.proposeParam(param);
+        _settleEvaluatedYes(arbitration, receipt.evaluator(), paramId);
+        vault.queueTreasuryParam(param);
+        vm.warp(block.timestamp + vault.TREASURY_GRACE());
+        vault.executeTreasuryParam(param);
+        (,, uint128 tapBudget,,) = vault.assetPolicies(WETH);
+        assertEq(tapBudget, param.value);
+
+        Lane4ForkTarget target = new Lane4ForkTarget();
+        (bool funded,) = payable(address(treasury)).call{value: 0.002 ether}("");
+        assertTrue(funded);
+        FAOTreasuryActions.CriticalAction memory critical = FAOTreasuryActions.CriticalAction({
+            target: address(target),
+            value: 0.001 ether,
+            data: abi.encodeCall(target.perform, (bytes32("fork-critical"))),
+            salt: bytes32("fork-critical")
+        });
+        uint256 roundOne = gateway.proposeCriticalRound(critical, 1);
+        _settleEvaluatedYes(arbitration, receipt.evaluator(), roundOne);
+        vault.stageCriticalAction(critical);
+        vm.warp(block.timestamp + vault.CRITICAL_INTERVAL());
+        uint256 roundTwo = gateway.proposeCriticalRound(critical, 2);
+        _settleEvaluatedYes(arbitration, receipt.evaluator(), roundTwo);
+        vault.queueCriticalAction(critical);
+
+        address[] memory extras = new address[](0);
+        vm.prank(buyer);
+        vault.ragequit(0.01 ether, payable(buyer), extras);
+        assertEq(IERC20(receipt.companyToken()).balanceOf(buyer), 0.09 ether);
+
+        vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+        vault.executeCriticalAction(critical);
+        assertEq(target.caller(), address(treasury));
+        assertEq(target.payload(), bytes32("fork-critical"));
+        assertEq(target.value(), critical.value);
+    }
+
+    function _settleEvaluatedYes(
+        FutarchyArbitration arbitration,
+        address evaluator,
+        uint256 proposalId
+    ) private {
+        arbitration.placeYesBond(proposalId, 0.0001 ether);
+        arbitration.placeNoBond(proposalId);
+        arbitration.placeYesBond(proposalId, 0.01 ether);
+        arbitration.startNextEvaluation();
+        vm.prank(evaluator);
+        arbitration.resolveActiveEvaluation(true);
     }
 
     function _deployReceipt()
