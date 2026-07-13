@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "source": "src/AgentWorkIndex.sol",
+  "contract": "AgentWorkIndex",
+  "compiler": {
+    "solcVersion": "0.8.20+commit.a1b79de6",
+    "solcSettingsKeccak256": "0xb68de617889310001775008072534de8400024510d5e09eaad212e2b3f942376"
+  },
+  "creationCodeBytes": 401,
+  "creationCodeKeccak256": "0xd8e698ee533ee2e293601190990c3762df48b66e8f8de0d7a7f4ef7ac797a781",
+  "runtimeCodeBytes": 374,
+  "runtimeCodeKeccak256": "0x2e8a42e082d6ee00eb3edfe933feef37e2eb9a81745c440c51e2af6c9b4ad5e1",
+  "create2": {
+    "deployer": "0x4e59b44847b379578588920ca78fbf26c0b4956c",
+    "saltPreimage": "FAO_AGENT_WORK_INDEX_V1",
+    "salt": "0x42e43b332008715cd34a0232b58cd6b4efa707de7fd9c87bac4fab22f11285d4",
+    "predictedAddress": "0x07db8c5bd5a2ea12de1d5a322b73cea536afff49"
+  },
+  "economicBytecodeIncluded": false
+}

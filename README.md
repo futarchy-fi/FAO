@@ -1,5 +1,10 @@
 # Futarchy Autonomous Optimizer (FAO)
 
+The [agent-work v1 specification](docs/agent-work-v1.md) defines the ownerless publication index,
+canonical task/receipt/payment documents, and their exact binding to typed treasury transfers.
+Its P1 reference agent recomputes finalized state on every tick and keeps signing behind an
+injected boundary; `python3 tools/agent_anvil_drill.py` regenerates the 16-drill evidence matrix.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
@@ -135,6 +140,14 @@ SEPOLIA_RPC_URL=https://... PRIVATE_KEY=0x... \
 Override `ECONOMIC_METADATA_BUNDLE`, `EXPECTED_DEPLOYER`, and `EXPECTED_DEPLOYER_NONCE` together
 for a different deployment. The bundle must describe the release strategy derived from that
 deployer and nonce.
+
+Economic deployment manifests use schema v4. Both broadcast and finalized-chain reconstruction
+pin the exact live runtime hashes of the vault, proposal gateway, arbitration, and treasury
+executor; RPC verification rejects any substituted authority contract before trusting its views.
+Schema v4 keeps integer fields as JSON numbers. Browser clients must not recompute full core or FLM
+config preimages through ordinary `JSON.parse`, which loses integers above 2^53; they instead root
+disclosed hashes in canonical registrar/receipt provenance and verify finalized wiring plus the v4
+runtime hashes. The Python verifier remains the lossless full-preimage verifier.
 
 ## Gnosis Liquidity Stack Deploy
 
