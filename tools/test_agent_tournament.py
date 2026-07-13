@@ -200,7 +200,11 @@ class AgentTournamentTest(unittest.TestCase):
                     value = copy.deepcopy(baseline)
                     mutate(value)
                     if "recordedTranscriptSha256" in value:
-                        value["recordedTranscriptSha256"] = tournament._recorded_transcript_sha256(value)
+                        try:
+                            value["recordedTranscriptSha256"] = tournament._recorded_transcript_sha256(value)
+                        except KeyError:
+                            # A deleted transcript section cannot be honestly resealed.
+                            value["recordedTranscriptSha256"] = "0x" + "00" * 32
                     if label != "forged deterministic digest":
                         value["deterministicTournamentSha256"] = tournament._deterministic_tournament_sha256(value)
                     path = Path(directory) / (label.replace(" ", "-") + ".json")
