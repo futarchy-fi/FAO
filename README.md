@@ -27,6 +27,29 @@ It also records every transaction/receipt/log and every timestamp/manual-mine co
 source-pinned Anvil transcript is internally cross-checked evidence, not an externally
 authenticated chain attestation.
 
+## Rehearsal R0 S1 composed loop
+
+The fork-only S1 harness deploys one receipt genesis, raises and bootstraps it, creates an
+official futarchy market, migrates the FLM, settles a bounded YES trade by TWAP/CTF, proves one
+atomic guard rejection, and restores to spot. It pins Sepolia block `11265000`, hash
+`0xa493de27f3173b07abfc718634acd5bcafbfd7e1d4583ad824b1dee7e7d9cd29`, and rechecks every
+canonical dependency runtime before running two fresh loopback-only Anvil forks:
+
+```bash
+python3 tools/rehearsal_r0.py \
+  --fork-url https://sepolia.drpc.org \
+  --output /tmp/fao-rehearsal-r0-s1.json
+```
+
+The committed [S1 evidence](metadata/rehearsal-r0-s1-evidence.json) has byte-identical economic
+projections with digest
+`0x4f0454c029d5b2a77a56bbf37360eee9ebeadae6efb04b68322774aefc884e9d`; its file checksum is
+recorded in [the sidecar](metadata/rehearsal-r0-s1-evidence.json.sha256). This is source-pinned fork
+evidence with zero public broadcasts, not a public-chain deployment or external attestation. It
+proves the G2 composed-loop slice only: trader outcome inventory remains explicitly outstanding,
+while whole-run conservation, replay verifier/tamper checks, and G4–G7 evidence remain deferred to
+R0 S6.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
