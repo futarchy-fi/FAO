@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import tempfile
@@ -101,6 +102,62 @@ class AgentTournamentTest(unittest.TestCase):
             self.assertEqual(first.read_bytes(), second.read_bytes())
             self.assertEqual(first_digest, second_digest)
             self.assertEqual(first_digest, "0x" + hashlib.sha256(first.read_bytes()).hexdigest())
+
+    def test_committed_evidence_semantics_and_table_driven_mutations(self) -> None:
+        baseline = json.loads(tournament.EVIDENCE_PATH.read_bytes())
+        self.assertEqual(tournament.verify_evidence(), "0x" + hashlib.sha256(tournament.EVIDENCE_PATH.read_bytes()).hexdigest())
+        self.assertEqual((len(baseline["attemptLedger"]), len(baseline["anvilStateMutations"])), (66, 18))
+
+        def delete(name: str):
+            return lambda value: value.pop(name)
+
+        def set_value(*path_and_value):
+            *path, replacement = path_and_value
+
+            def mutate(value):
+                target = value
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = replacement
+
+            return mutate
+
+        mutations = (
+            ("empty ledger", lambda value: value["attemptLedger"].clear()),
+            ("reversed FIFO", lambda value: value["evaluationFifo"].reverse()),
+            ("impossible balance proof", set_value("reconciliation", "balanceProofs", "A-T1", "executorAfter", 1)),
+            ("rejected movement", set_value("reconciliation", "rejectedRecipientAfter", "B-T2", "1")),
+            ("removed metrics", delete("metrics")),
+            (
+                "forged repository commit and index",
+                lambda value: value["repository"].update({"commit": "0" * 40, "sourceIndexSha256": "0x" + "00" * 32}),
+            ),
+            ("forged deterministic digest", set_value("deterministicTournamentSha256", "0x" + "00" * 32)),
+            ("missing actors", delete("actors")),
+            ("missing tasks", delete("tasks")),
+            ("missing funding", delete("funding")),
+            ("missing round robin", delete("roundRobinTicks")),
+            ("grader flip", set_value("submissions", 0, "grader", "verdict", False)),
+            ("removed challenge", set_value("submissions", 1, "challenge", None)),
+            ("changed route", set_value("submissions", 0, "acceptanceRoute", "evaluated")),
+            ("zero runtime hash", set_value("stack", "runtimeCodeKeccak256", "index", "0x" + "00" * 32)),
+            ("duplicate gate", lambda value: value["gates"].append(copy.deepcopy(value["gates"][0]))),
+            ("empty claims", set_value("claims", {})),
+            ("forged count", set_value("counts", "payments", 5)),
+            ("forged pin", set_value("pins", "sepoliaForkBlock", "11262000")),
+            ("broken parent binding", set_value("submissions", 0, "taskDigest", "0x" + "00" * 32)),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for label, mutate in mutations:
+                with self.subTest(label=label):
+                    value = copy.deepcopy(baseline)
+                    mutate(value)
+                    if label != "forged deterministic digest":
+                        value["deterministicTournamentSha256"] = tournament._deterministic_tournament_sha256(value)
+                    path = Path(directory) / (label.replace(" ", "-") + ".json")
+                    runner.write_evidence(path, value)
+                    with self.assertRaises(tournament.TournamentError):
+                        tournament.verify_evidence(path)
 
 
 if __name__ == "__main__":

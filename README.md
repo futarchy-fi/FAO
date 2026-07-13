@@ -16,6 +16,10 @@ python3 tools/agent_tournament.py
 The tournament proves exact document binding, restart/race handling, and treasury accounting. It
 does not claim external work quality, demand, adoption, information aggregation, collusion
 resistance, or a sustainable subsidy.
+All six proposals receive an initial YES bond; the three challenged proposals then receive one
+graduation YES flip each, so the evidence reports six YES-bonded proposals, nine YES-bond
+transactions, and three graduation flips. Its complete ledger also includes the 12 stack-setup
+transactions and separately discloses every account, native-balance, and storage override.
 
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
