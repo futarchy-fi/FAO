@@ -144,6 +144,10 @@ deployer and nonce.
 Economic deployment manifests use schema v4. Both broadcast and finalized-chain reconstruction
 pin the exact live runtime hashes of the vault, proposal gateway, arbitration, and treasury
 executor; RPC verification rejects any substituted authority contract before trusting its views.
+Schema v4 keeps integer fields as JSON numbers. Browser clients must not recompute full core or FLM
+config preimages through ordinary `JSON.parse`, which loses integers above 2^53; they instead root
+disclosed hashes in canonical registrar/receipt provenance and verify finalized wiring plus the v4
+runtime hashes. The Python verifier remains the lossless full-preimage verifier.
 
 ## Gnosis Liquidity Stack Deploy
 
