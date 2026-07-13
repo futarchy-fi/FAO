@@ -5,6 +5,9 @@ canonical task/receipt/payment documents, and their exact binding to typed treas
 Its P1 reference agent recomputes finalized state on every tick and keeps signing behind an
 injected boundary; `python3 tools/agent_anvil_drill.py` regenerates the 16-drill evidence matrix.
 
+The [wind-tunnel P0 control plane](docs/windtunnel-p0.md) indexes finalized multi-instance state,
+replays reorgs deterministically, and prepares at most one unsigned permissionless keeper crank.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts

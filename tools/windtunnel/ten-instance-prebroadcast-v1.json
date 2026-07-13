@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "kind": "fao.windtunnel.prebroadcast-fixture",
+  "runId": "lane6-p1a-anvil-10",
+  "chainId": "31337",
+  "instanceCount": 10,
+  "scenario": {
+    "baseX": "2",
+    "timeout": "3600",
+    "minActivationBond": "1",
+    "yesBonds": ["1", "2"],
+    "noBond": "1",
+    "expectedAction": {
+      "kind": "startNextEvaluation",
+      "proposalId": "1",
+      "data": "0xd2b8360a"
+    }
+  },
+  "keeperAccountIndexes": [3, 4],
+  "broadcast": false
+}

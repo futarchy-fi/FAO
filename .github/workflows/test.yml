@@ -46,5 +46,11 @@ jobs:
       - name: Run Forge build
         run: forge build --sizes
 
+      - name: Run wind-tunnel Anvil keeper race
+        run: python3 -m tools.windtunnel.anvil_drill race --output /tmp/windtunnel-race.json
+
+      - name: Reconcile ten full economic FAOs on Anvil
+        run: python3 -m tools.windtunnel.anvil_drill economic-10 --output /tmp/windtunnel-economic-10.json
+
       - name: Run Forge tests
         run: forge test -vvv

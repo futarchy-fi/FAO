@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "rawLogKey": ["chainId", "blockHash", "logIndex"],
+  "finality": "eth_getBlockByNumber(finalized)",
+  "maxQueue": 16,
+  "derivedState": {
+    "instance": ["receipt", "registrar", "coreHash", "flmHash", "stager", "vault", "companyToken", "space", "arbitration", "evaluator", "spotPool", "manager", "relay", "spotAdapter", "activeEvaluationProposalId"],
+    "proposal": ["arbitration", "proposalId", "state", "lastStateChangeAt", "yesBond", "noBond", "queuePosition", "settled", "accepted", "futarchyProposal", "conditionId"],
+    "flm": ["manager", "mode", "activeProposalId"]
+  },
+  "events": [
+    {
+      "id": "registrar.genesisStaged",
+      "emitterRole": "registrar",
+      "signature": "GenesisStaged(address,bytes32,bytes32,address)",
+      "topic0": "0x8973a01bba3f334d825bf89174c5a81d41623a8065f3217205ab1a3e59a104f4",
+      "inputs": [
+        {"name": "receipt", "type": "address", "indexed": true},
+        {"name": "coreHash", "type": "bytes32", "indexed": true},
+        {"name": "flmHash", "type": "bytes32", "indexed": true},
+        {"name": "stager", "type": "address", "indexed": false}
+      ]
+    },
+    {
+      "id": "receipt.coreSealed",
+      "emitterRole": "receipt",
+      "signature": "CoreSealed(address,address,address,address,address,address)",
+      "topic0": "0x14ff846bb4cfd1fc5532bfd1985c0eb4c21898c217d598c527e99057d0a37e4c",
+      "inputs": [
+        {"name": "vault", "type": "address", "indexed": true},
+        {"name": "companyToken", "type": "address", "indexed": true},
+        {"name": "space", "type": "address", "indexed": true},
+        {"name": "arbitration", "type": "address", "indexed": false},
+        {"name": "evaluator", "type": "address", "indexed": false},
+        {"name": "spotPool", "type": "address", "indexed": false}
+      ]
+    },
+    {
+      "id": "receipt.flmSealed",
+      "emitterRole": "receipt",
+      "signature": "FlmSealed(address,address,address)",
+      "topic0": "0xaddc5fbefc27baeeb76557046cf0702c071bbfb91d131ff9312e6e401d6fe4e1",
+      "inputs": [
+        {"name": "manager", "type": "address", "indexed": true},
+        {"name": "relay", "type": "address", "indexed": false},
+        {"name": "spotAdapter", "type": "address", "indexed": false}
+      ]
+    },
+    {
+      "id": "arbitration.proposalCreated",
+      "emitterRole": "arbitration",
+      "signature": "ProposalCreated(uint256,address,uint256)",
+      "topic0": "0x3417b456fad6209c73445d5efd446d686e75e4560f0f50c13b5a5cde976447b4",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "creator", "type": "address", "indexed": true},
+        {"name": "minActivationBond", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "arbitration.bondPlaced",
+      "emitterRole": "arbitration",
+      "signature": "BondPlaced(uint256,uint8,address,uint256,address,uint256)",
+      "topic0": "0x37867b6a5362cbba0f5401df42ce2f18fb7a8e2e119b5770fd073d48d665d599",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "newState", "type": "uint8", "indexed": true},
+        {"name": "bidder", "type": "address", "indexed": true},
+        {"name": "amount", "type": "uint256", "indexed": false},
+        {"name": "replacedBidder", "type": "address", "indexed": false},
+        {"name": "replacedAmount", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "arbitration.proposalGraduated",
+      "emitterRole": "arbitration",
+      "signature": "ProposalGraduated(uint256,uint32,uint256,uint256)",
+      "topic0": "0x784b0c1803b11feba5db3de64a09acaef26c41e17c3dcbd8bc17fa277dbcda1e",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "queuePosition", "type": "uint32", "indexed": true},
+        {"name": "requiredYesBond", "type": "uint256", "indexed": false},
+        {"name": "yesBondAmount", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "arbitration.evaluationStarted",
+      "emitterRole": "arbitration",
+      "signature": "EvaluationStarted(uint256)",
+      "topic0": "0xedd08d0aa2cf9f235d07f386f0d17152c6a0a63a8034e0ce104562f734a9bbce",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true}
+      ]
+    },
+    {
+      "id": "arbitration.evaluationResolved",
+      "emitterRole": "arbitration",
+      "signature": "EvaluationResolved(uint256,bool,address,uint256)",
+      "topic0": "0x2965d210a9541058549ce0fc2c65fd69906fe56f43b4f1c8098dd1297d05f9df",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "accepted", "type": "bool", "indexed": false},
+        {"name": "winner", "type": "address", "indexed": false},
+        {"name": "payout", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "arbitration.finalizedByTimeout",
+      "emitterRole": "arbitration",
+      "signature": "FinalizedByTimeout(uint256,bool,address,uint256)",
+      "topic0": "0x21fb0fb88b7301a082d55a407ce7156163cbd42ec94e1609ac0cd83074b517c9",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "accepted", "type": "bool", "indexed": false},
+        {"name": "winner", "type": "address", "indexed": false},
+        {"name": "payout", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "evaluator.economicMarketCreated",
+      "emitterRole": "evaluator",
+      "signature": "EvaluationMarketCreated(uint256,uint256,address,bytes32,bytes32)",
+      "topic0": "0xd7e709ab1598db581565e7aad534e68a676bec8d3798097318a307bf97c19f88",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "futarchyProposalId", "type": "uint256", "indexed": true},
+        {"name": "futarchyProposal", "type": "address", "indexed": true},
+        {"name": "payloadKind", "type": "bytes32", "indexed": false},
+        {"name": "payloadCommitment", "type": "bytes32", "indexed": false}
+      ]
+    },
+    {
+      "id": "evaluator.siteMarketCreated",
+      "emitterRole": "evaluator",
+      "signature": "EvaluationMarketCreated(uint256,uint256,address,bytes32)",
+      "topic0": "0x331f0119e91ea934c609bbe142d03fee4eb65e9aca65e9f1ff3dcaf624224648",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "futarchyProposalId", "type": "uint256", "indexed": true},
+        {"name": "futarchyProposal", "type": "address", "indexed": true},
+        {"name": "artifactDigest", "type": "bytes32", "indexed": false}
+      ]
+    },
+    {
+      "id": "evaluator.evaluationResolved",
+      "emitterRole": "evaluator",
+      "signature": "EvaluationResolved(uint256,address,bytes32,bool)",
+      "topic0": "0x7222096ed291bcba9a4052224819104be2f0c48006d356c4e6cfd5d4c01a5e6a",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "futarchyProposal", "type": "address", "indexed": true},
+        {"name": "conditionId", "type": "bytes32", "indexed": true},
+        {"name": "accepted", "type": "bool", "indexed": false}
+      ]
+    },
+    {
+      "id": "flm.migratedToConditional",
+      "emitterRole": "manager",
+      "signature": "LiquidityMigratedToConditional(uint256,uint128,uint256)",
+      "topic0": "0x13451b13d29068d8dcb60d66917dfa2ab62c099823731266e1c091885d3bae6c",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "spotRemoved", "type": "uint128", "indexed": false},
+        {"name": "conditionalAdded", "type": "uint256", "indexed": false}
+      ]
+    },
+    {
+      "id": "flm.migratedBackToSpot",
+      "emitterRole": "manager",
+      "signature": "LiquidityMigratedBackToSpot(uint256,uint256,uint128)",
+      "topic0": "0x833175cda65d2d1a3006f2780aa3e6b39aa6989c70c43a9463147a6c06c90ff5",
+      "inputs": [
+        {"name": "proposalId", "type": "uint256", "indexed": true},
+        {"name": "conditionalRemoved", "type": "uint256", "indexed": false},
+        {"name": "spotAdded", "type": "uint128", "indexed": false}
+      ]
+    }
+  ]
+}
