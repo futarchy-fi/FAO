@@ -251,6 +251,8 @@ def _ready(port: int) -> tuple[str, runner.JsonRpc]:
 
 
 def _prepare_actors(rpc: runner.JsonRpc, fork: bool) -> None:
+    rpc.request("evm_setIntervalMining", [0])
+    rpc.request("anvil_setAutomine", [True])
     for address in ACTOR_ADDRESSES.values():
         rpc.request("anvil_impersonateAccount", [address])
         rpc.request("anvil_setBalance", [address, hex(100 * 10**18)])
@@ -266,20 +268,43 @@ def _prepare_actors(rpc: runner.JsonRpc, fork: bool) -> None:
             raise TournamentError("canonical Sepolia WETH runtime hash drifted")
 
 
+def _next_block(rpc: runner.JsonRpc, seconds: int = 1) -> None:
+    timestamp = _quantity(rpc.block("latest")["timestamp"])
+    rpc.request("evm_setNextBlockTimestamp", [timestamp + seconds])
+
+
+def _mine(rpc: runner.JsonRpc, seconds: int = 1) -> None:
+    _next_block(rpc, seconds)
+    rpc.request("evm_mine", [])
+
+
+def _send_setup(
+    rpc: runner.JsonRpc, sender: str, target: str, data: str, *, value: int = 0
+) -> tuple[str, dict[str, Any]]:
+    _next_block(rpc)
+    return drill._send(rpc, sender, target, data, value=value)
+
+
+def _deploy(contract: str, url: str, sender: str, arguments: Sequence[str] = ()) -> str:
+    rpc = runner.JsonRpc(url)
+    _next_block(rpc)
+    return drill._deploy(contract, url, sender, arguments)
+
+
 def _stack(url: str, rpc: runner.JsonRpc, fork: bool) -> dict[str, Any]:
     steward = ACTOR_ADDRESSES["steward"]
     start_block = _quantity(rpc.block("latest")["number"])
     if fork:
         asset = SEPOLIA_WETH
         for name in ("steward", "agentA", "agentB", "agentC"):
-            drill._send(rpc, ACTOR_ADDRESSES[name], asset, "0xd0e30db0", value=10**17)
+            _send_setup(rpc, ACTOR_ADDRESSES[name], asset, "0xd0e30db0", value=10**17)
     else:
-        asset = drill._deploy("src/FAOSiteToken.sol:FAOSiteToken", url, steward, (steward, str(10**24)))
+        asset = _deploy("src/FAOSiteToken.sol:FAOSiteToken", url, steward, (steward, str(10**24)))
         for name in ("agentA", "agentB", "agentC"):
-            drill._send(rpc, steward, asset, drill._token_call("transfer(address,uint256)", ACTOR_ADDRESSES[name], 1000))
+            _send_setup(rpc, steward, asset, drill._token_call("transfer(address,uint256)", ACTOR_ADDRESSES[name], 1000))
 
-    arbitration = drill._deploy("src/FutarchyArbitration.sol:FutarchyArbitration", url, steward, (asset, "100", "10"))
-    index = drill._deploy("src/AgentWorkIndex.sol:AgentWorkIndex", url, steward)
+    arbitration = _deploy("src/FutarchyArbitration.sol:FutarchyArbitration", url, steward, (asset, "100", "10"))
+    index = _deploy("src/AgentWorkIndex.sol:AgentWorkIndex", url, steward)
     now = _quantity(rpc.block("latest")["timestamp"])
     policy = (10**16, 10**16, 12 * ONE_MILLIWETH, 12 * ONE_MILLIWETH)
     config_arg = (
@@ -287,12 +312,12 @@ def _stack(url: str, rpc: runner.JsonRpc, fork: bool) -> dict[str, Any]:
         "1000000000000000000000,1000000000000000000,0,1000,[(%s,%d,%d,%d,%d)])"
         % (asset, steward, arbitration, index, now + 10_000, now + 20_000, asset, *policy)
     )
-    vault = drill._deploy("src/GenesisVault.sol:GenesisVault", url, steward, (config_arg, "[]"))
+    vault = _deploy("src/GenesisVault.sol:GenesisVault", url, steward, (config_arg, "[]"))
     executor = drill._address_view(rpc, vault, "TREASURY_EXECUTOR()")
-    gateway = drill._deploy(
+    gateway = _deploy(
         "src/EconGateway.sol:EconGateway", url, steward, (index, index, arbitration, vault, "1", "2")
     )
-    drill._send(
+    _send_setup(
         rpc, steward, arbitration,
         "0x" + runner._selector("setProposalGateway(address)") + bytes(12).hex() + gateway[2:],
     )
@@ -301,9 +326,9 @@ def _stack(url: str, rpc: runner.JsonRpc, fork: bool) -> dict[str, Any]:
         "anvil_setStorageAt",
         [arbitration, "0x6", "0x" + (bytes(12) + bytes.fromhex(steward[2:])).hex()],
     )
-    drill._mine(rpc)
+    _mine(rpc)
     for name in ("agentA", "agentB", "agentC"):
-        drill._send(
+        _send_setup(
             rpc, ACTOR_ADDRESSES[name], asset,
             drill._token_call("approve(address,uint256)", arbitration, 1000),
         )
@@ -367,6 +392,7 @@ class Recorder:
             tx["gas"] = hex(25_000_000)
         else:
             self.rpc.call(tx, "latest")
+        _next_block(self.rpc)
         tx_hash = self.rpc.request("eth_sendTransaction", [tx])
         receipt = drill._receipt(self.rpc, tx_hash)
         self.record(kind, actor, target, data, tx_hash, receipt, proposal)
@@ -505,10 +531,14 @@ def _race_queue(rpc: runner.JsonRpc, recorder: Recorder, submission: dict[str, A
     actors = (ACTOR_ADDRESSES["agentB"], ACTOR_ADDRESSES["agentC"])
     for actor in actors:
         rpc.call({"from": actor, "to": submission["config"]["vault"], "data": data, "value": "0x0"}, "latest")
+    rpc.request("anvil_setAutomine", [False])
+    _next_block(rpc)
     hashes = [
         rpc.request("eth_sendTransaction", [{"from": actor, "to": submission["config"]["vault"], "data": data, "value": "0x0", "gas": hex(5_000_000)}])
         for actor in actors
     ]
+    rpc.request("evm_mine", [])
+    rpc.request("anvil_setAutomine", [True])
     receipts = [drill._receipt(rpc, tx_hash) for tx_hash in hashes]
     for actor, tx_hash, receipt in zip(actors, hashes, receipts):
         recorder.record("queue-race:A-T3", actor, submission["config"]["vault"], data, tx_hash, receipt, submission["proposalId"])
@@ -621,7 +651,7 @@ def _run_tournament(url: str, rpc: runner.JsonRpc, stack: dict[str, Any], reposi
         if submission_id == "A-T2":
             restart.append(_state_pin("evaluated", url, submission))
 
-    drill._mine(rpc, 11)
+    _mine(rpc, 11)
     for submission_id in ("A-T1", "A-T3", "C-T3"):
         submission = by_id[submission_id]
         _, receipt = recorder.send(
@@ -651,7 +681,7 @@ def _run_tournament(url: str, rpc: runner.JsonRpc, stack: dict[str, Any], reposi
     race = _race_queue(rpc, recorder, by_id["A-T3"])
 
     lineage_a = LatestRpc(url).finalized_block()
-    drill._mine(rpc)
+    _mine(rpc)
     lineage_b = LatestRpc(url).finalized_block()
     if lineage_b["parentHash"].lower() != lineage_a["hash"].lower():
         raise TournamentError("consecutive finalized-lineage snapshots are discontinuous")
@@ -667,7 +697,7 @@ def _run_tournament(url: str, rpc: runner.JsonRpc, stack: dict[str, Any], reposi
         "fund-executor:initial", ACTOR_ADDRESSES["steward"], stack["asset"],
         drill._token_call("transfer(address,uint256)", stack["executor"], 6 * ONE_MILLIWETH),
     )
-    drill._mine(rpc, 86_400)
+    _mine(rpc, 86_400)
     balance_proofs: dict[str, Any] = {}
     completion: dict[str, int] = {}
     for submission_id in ("A-T1", "A-T2", "A-T3"):
@@ -791,6 +821,7 @@ def _run_tournament(url: str, rpc: runner.JsonRpc, stack: dict[str, Any], reposi
         "mode": mode,
         "finalityModel": "anvil-latest",
         "blockIntervalSeconds": "1",
+        "miningClock": "one-second next-block timestamps; wall-clock interval disabled immediately after genesis",
         "pins": {
             "sepoliaForkBlock": str(SEPOLIA_FORK_BLOCK), "sepoliaForkBlockHash": SEPOLIA_FORK_HASH,
             "selectionFinalizedHead": "11261302",
