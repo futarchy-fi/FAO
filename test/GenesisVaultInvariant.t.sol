@@ -16,6 +16,7 @@ import {
 } from "../src/GenesisVault.sol";
 import {FaoToken} from "../src/FaoToken.sol";
 import {FAOTreasuryActions} from "../src/FAOTreasuryActions.sol";
+import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {
     GenesisArbitrationMock,
     GenesisAssetMock,
@@ -90,6 +91,14 @@ abstract contract GenesisVaultInvariantHarness is Test {
     function _deploy(uint256 minimumRaise) internal returns (GenesisVault vault) {
         GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.AssetPolicyConfig[] memory policies = new GenesisVault.AssetPolicyConfig[](1);
+        policies[0] = GenesisVault.AssetPolicyConfig({
+            asset: address(weth),
+            c1: 0.1 ether,
+            c2: 1 ether,
+            tapBudget: 0.2 ether,
+            tapBudgetMax: 2 ether
+        });
         GenesisVault.Config memory config = GenesisVault.Config({
             tokenName: "Futarchy Autonomous Organization",
             tokenSymbol: "FAO",
@@ -104,7 +113,8 @@ abstract contract GenesisVaultInvariantHarness is Test {
             tokenMaxSupply: 3000 ether,
             initialPrice: INITIAL_PRICE,
             slope: SLOPE,
-            bootstrapBps: BOOTSTRAP_BPS
+            bootstrapBps: BOOTSTRAP_BPS,
+            assetPolicies: policies
         });
         vault = new GenesisVault(config, grants);
     }
@@ -130,13 +140,15 @@ abstract contract GenesisVaultInvariantHarness is Test {
         vault.finalize();
     }
 
-    function _acceptAndQueue(GenesisVault vault, FAOTreasuryActions.TreasuryAction memory action)
-        internal
-        returns (bytes32 actionHash)
-    {
-        actionHash = vault.treasuryActionHash(action);
-        arbitration.setOutcome(uint256(actionHash), true, true);
-        vault.queueTreasuryAction(action);
+    function _acceptAndQueueCritical(
+        GenesisVault vault,
+        FAOTreasuryActions.CriticalAction memory action
+    ) internal returns (bytes32 baseHash) {
+        arbitration.setOutcome(vault.criticalActionProposalId(action, 1), true, true, true);
+        baseHash = vault.stageCriticalAction(action);
+        vm.warp(block.timestamp + vault.CRITICAL_INTERVAL());
+        arbitration.setOutcome(vault.criticalActionProposalId(action, 2), true, true, true);
+        vault.queueCriticalAction(action);
     }
 }
 
@@ -228,33 +240,42 @@ contract GenesisVaultPropertyTest is GenesisVaultInvariantHarness {
         _fundAndApprove(BOB, vault);
         _buy(vault, ALICE, aliceAmount);
         _buy(vault, BOB, bobAmount);
-        GenesisManagerMock manager = _bindAndFinalize(vault);
+        vm.warp(vault.SALE_END());
+        vault.seal();
+        GenesisRedeemableManagerMock manager = new GenesisRedeemableManagerMock(
+            address(vault), address(vault.COMPANY_TOKEN()), address(weth)
+        );
+        vault.bindManager(IGenesisFlm(address(manager)));
+        vault.finalize();
         vault.claim(ALICE);
         vault.claim(BOB);
 
         FaoToken token = vault.COMPANY_TOKEN();
-        uint256 managerTokens = token.balanceOf(address(manager));
-        FAOTreasuryActions.TreasuryAction memory burnManager = FAOTreasuryActions.TreasuryAction({
-            target: address(token),
+        address executor = address(vault.TREASURY_EXECUTOR());
+        uint256 managerShares = manager.balanceOf(executor);
+        FAOTreasuryActions.CriticalAction memory redeemManager = FAOTreasuryActions.CriticalAction({
+            target: address(manager),
             value: 0,
-            data: abi.encodeCall(token.burnFromVault, (address(manager), managerTokens)),
-            salt: keccak256("remove-manager-denominator-for-final-holder-test")
+            data: abi.encodeCall(manager.redeem, (managerShares, executor)),
+            salt: keccak256("redeem-manager-inventory-for-final-holder-test")
         });
-        _acceptAndQueue(vault, burnManager);
-        vm.warp(block.timestamp + vault.TREASURY_GRACE());
-        vault.executeTreasuryAction(burnManager);
+        _acceptAndQueueCritical(vault, redeemManager);
+        vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+        vault.executeCriticalAction(redeemManager);
+        assertEq(manager.balanceOf(executor), 0);
+        assertEq(token.balanceOf(address(manager)), 0);
         assertEq(vault.effectiveSupply(), aliceAmount + bobAmount);
 
         GenesisAssetMock extra = new GenesisAssetMock("EXTRA");
         uint256 wethDonation = bound(uint256(wethDonationRaw), 0, 10 ether);
         uint256 extraDonation = bound(uint256(extraDonationRaw), 0, 10_000 ether);
         uint256 nativeDonation = bound(uint256(nativeDonationRaw), 0, 10 ether);
-        weth.mint(address(vault), wethDonation);
-        extra.mint(address(vault), extraDonation);
-        vm.deal(address(vault), nativeDonation);
+        weth.mint(executor, wethDonation);
+        extra.mint(executor, extraDonation);
+        vm.deal(executor, nativeDonation);
 
-        uint256 initialWeth = weth.balanceOf(address(vault));
-        uint256 initialShares = manager.balanceOf(address(vault));
+        uint256 initialWeth = weth.balanceOf(executor);
+        uint256 initialShares = manager.balanceOf(executor);
         uint256 supply = vault.effectiveSupply();
         uint256 expectedAliceWeth = initialWeth * aliceAmount / supply;
         uint256 expectedAliceShares = initialShares * aliceAmount / supply;
@@ -285,10 +306,14 @@ contract GenesisVaultPropertyTest is GenesisVaultInvariantHarness {
         assertEq(extra.balanceOf(BOB), extraDonation - expectedAliceExtra);
         assertEq(BOB.balance - bobNativeBefore, nativeDonation - expectedAliceNative);
         assertEq(weth.balanceOf(address(vault)), 0);
+        assertEq(weth.balanceOf(executor), 0);
         assertEq(manager.balanceOf(address(vault)), 0);
+        assertEq(manager.balanceOf(executor), 0);
         assertEq(extra.balanceOf(address(vault)), 0);
+        assertEq(extra.balanceOf(executor), 0);
         assertEq(address(vault).balance, 0);
-        assertEq(token.totalSupply(), 0);
+        assertEq(executor.balance, 0);
+        assertEq(token.totalSupply(), token.balanceOf(executor));
         assertEq(vault.effectiveSupply(), 0);
     }
 
@@ -317,9 +342,9 @@ contract GenesisVaultPropertyTest is GenesisVaultInvariantHarness {
 
         GenesisAssetMock extra = new GenesisAssetMock("EXTRA");
         uint256 initialExtra = bound(uint256(extraRaw), 1000, 1_000_000);
-        extra.mint(address(vault), initialExtra);
-        uint256 initialCombinedWeth =
-            weth.balanceOf(address(vault)) + weth.balanceOf(address(manager));
+        address executor = address(vault.TREASURY_EXECUTOR());
+        extra.mint(executor, initialExtra);
+        uint256 initialCombinedWeth = weth.balanceOf(executor) + weth.balanceOf(address(manager));
         uint256 externalSupply = aliceAmount + bobAmount;
         uint256 maxAliceWeth = Math.mulDiv(initialCombinedWeth, aliceAmount, externalSupply);
         uint256 maxAliceExtra = Math.mulDiv(initialExtra, aliceAmount, externalSupply);
@@ -352,54 +377,59 @@ contract GenesisVaultPropertyTest is GenesisVaultInvariantHarness {
         assertLe(extraDust, cycles * 4 + 4);
     }
 
-    function test_TreasuryWindowsReplayAndPostconditionsAreTerminalOrAtomic() public {
+    function test_TreasuryWindowsReplayAndFailedCallsAreTerminalOrAtomic() public {
         GenesisVault vault = _deploy(2);
         _fundAndApprove(ALICE, vault);
         _buy(vault, ALICE, 400 ether);
         GenesisManagerMock manager = _bindAndFinalize(vault);
         GenesisTreasuryTargetMock target = new GenesisTreasuryTargetMock();
 
-        FAOTreasuryActions.TreasuryAction memory atBoundary = FAOTreasuryActions.TreasuryAction({
+        FAOTreasuryActions.CriticalAction memory atBoundary = FAOTreasuryActions.CriticalAction({
             target: address(target),
             value: 0,
             data: abi.encodeCall(target.perform, (bytes32("last-valid-second"))),
             salt: bytes32(uint256(1))
         });
-        bytes32 boundaryHash = _acceptAndQueue(vault, atBoundary);
+        bytes32 boundaryHash = _acceptAndQueueCritical(vault, atBoundary);
         (, uint64 expiresAt,,) = vault.queuedActions(boundaryHash);
         vm.warp(expiresAt);
-        vault.executeTreasuryAction(atBoundary);
+        vault.executeCriticalAction(atBoundary);
         vm.expectRevert(GenesisVault.ActionAlreadyQueued.selector);
-        vault.executeTreasuryAction(atBoundary);
+        vault.executeCriticalAction(atBoundary);
 
-        FAOTreasuryActions.TreasuryAction memory expired = FAOTreasuryActions.TreasuryAction({
+        FAOTreasuryActions.CriticalAction memory expired = FAOTreasuryActions.CriticalAction({
             target: address(target),
             value: 0,
             data: abi.encodeCall(target.perform, (bytes32("expired"))),
             salt: bytes32(uint256(2))
         });
-        bytes32 expiredHash = _acceptAndQueue(vault, expired);
+        bytes32 expiredHash = _acceptAndQueueCritical(vault, expired);
         (, uint64 secondExpiry,,) = vault.queuedActions(expiredHash);
         vm.warp(uint256(secondExpiry) + 1);
         vm.expectRevert(GenesisVault.ActionExpired.selector);
-        vault.executeTreasuryAction(expired);
-        vault.expireTreasuryAction(expired);
+        vault.executeCriticalAction(expired);
+        vault.expireQueuedAction(expiredHash);
         (,,, bool permanentlyExpired) = vault.queuedActions(expiredHash);
         assertTrue(permanentlyExpired);
 
         FaoToken token = vault.COMPANY_TOKEN();
-        FAOTreasuryActions.TreasuryAction memory violatesPostcondition =
-            FAOTreasuryActions.TreasuryAction({
-                target: address(token),
-                value: 0,
-                data: abi.encodeCall(token.approve, (address(manager), 1)),
-                salt: bytes32(uint256(3))
-            });
-        bytes32 badHash = _acceptAndQueue(vault, violatesPostcondition);
-        vm.warp(block.timestamp + vault.TREASURY_GRACE());
-        vm.expectRevert(GenesisVault.InvalidTreasuryAction.selector);
-        vault.executeTreasuryAction(violatesPostcondition);
-        assertEq(token.allowance(address(vault), address(manager)), 0);
+        FAOTreasuryActions.CriticalAction memory failedCall = FAOTreasuryActions.CriticalAction({
+            target: address(token),
+            value: 0,
+            data: abi.encodeCall(token.burnFromVault, (address(manager), 1)),
+            salt: bytes32(uint256(3))
+        });
+        bytes32 badHash = _acceptAndQueueCritical(vault, failedCall);
+        vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+        uint256 managerTokens = token.balanceOf(address(manager));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GenesisTreasuryExecutor.CallFailed.selector,
+                abi.encodeWithSelector(FaoToken.OnlyVault.selector)
+            )
+        );
+        vault.executeCriticalAction(failedCall);
+        assertEq(token.balanceOf(address(manager)), managerTokens);
         (,, bool executed, bool isExpired) = vault.queuedActions(badHash);
         assertFalse(executed);
         assertFalse(isExpired);
@@ -488,7 +518,10 @@ contract GenesisVaultHandler is Test {
     }
 
     function donateWeth(uint96 amountRaw) external {
-        weth.mint(address(vault), _clamp(uint256(amountRaw), 0, 1 ether));
+        address recipient = vault.phase() == GenesisVault.Phase.LIVE
+            ? address(vault.TREASURY_EXECUTOR())
+            : address(vault);
+        weth.mint(recipient, _clamp(uint256(amountRaw), 0, 1 ether));
     }
 
     function donateCompany(uint256 actorSeed, uint256 amountRaw) external {
@@ -579,10 +612,12 @@ contract GenesisVaultStatefulInvariantTest is StdInvariant, GenesisVaultInvarian
 
     function invariant_ClosedTokenSystemsConserveSupply() public view {
         FaoToken token = vault.COMPANY_TOKEN();
-        uint256 companyBalances =
-            token.balanceOf(address(vault)) + token.balanceOf(address(manager));
-        uint256 wethBalances = weth.balanceOf(address(vault)) + weth.balanceOf(address(manager));
-        uint256 shareBalances = manager.balanceOf(address(vault));
+        address executor = address(vault.TREASURY_EXECUTOR());
+        uint256 companyBalances = token.balanceOf(address(vault))
+            + token.balanceOf(address(manager)) + token.balanceOf(executor);
+        uint256 wethBalances = weth.balanceOf(address(vault)) + weth.balanceOf(address(manager))
+            + weth.balanceOf(executor);
+        uint256 shareBalances = manager.balanceOf(address(vault)) + manager.balanceOf(executor);
         for (uint256 i; i < actors.length; ++i) {
             companyBalances += token.balanceOf(actors[i]);
             wethBalances += weth.balanceOf(actors[i]);
@@ -601,6 +636,8 @@ contract GenesisVaultStatefulInvariantTest is StdInvariant, GenesisVaultInvarian
             assertTrue(token.mintingFinished());
             assertTrue(manager.initializedFromBootstrap());
             assertGe(token.balanceOf(address(vault)), vault.totalUnclaimedSold());
+            assertEq(weth.balanceOf(address(vault)), 0);
+            assertEq(manager.balanceOf(address(vault)), 0);
             assertEq(token.allowance(address(vault), address(manager)), 0);
             assertEq(weth.allowance(address(vault), address(manager)), 0);
             vault.effectiveSupply();
