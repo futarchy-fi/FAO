@@ -542,6 +542,10 @@ def _seal_unchecked(path: Path, value: dict) -> None:
 
 
 class RehearsalR0AgentsEvidenceTest(unittest.TestCase):
+    def test_committed_evidence_and_sidecar_verify(self) -> None:
+        expected = agents.EVIDENCE_PATH.with_suffix(".json.sha256").read_text(encoding="ascii").strip()
+        self.assertEqual(agents.verify_evidence(), expected)
+
     def test_check_is_bytes_only_and_offline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "s3.json"
