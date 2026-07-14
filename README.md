@@ -74,6 +74,31 @@ provisioned only on local Anvil with the runtime of a same-run mock template bef
 failed twin receives no pool code. This evidence makes no real-AMM, fork-equivalence, external
 attestation, demand, or public-deployment claim, and it performs zero public broadcasts.
 
+## Rehearsal R0 S3 fork-only agent composition
+
+S3 composes the sealed six-submission P2a agent matrix with the exact S1 Sepolia stack. Three
+receipt-bound evaluations run serially through real conditional pools, the FLM, bounded trades,
+7-day/1-day TWAP resolution, CTF settlement, and full spot restoration: one resolves YES and two
+resolve NO. The other three proposals settle by timeout. The transcript reconciles hero-scale
+bonds, four exact vault payments, the executor tap, rejected-payment failures, and treasury
+balances without public broadcasts or contract-storage overrides.
+
+```bash
+python3 tools/rehearsal_r0_agents.py \
+  --fork-url https://sepolia.drpc.org \
+  --output metadata/rehearsal-r0-s3-evidence.json
+
+python3 tools/rehearsal_r0_agents.py \
+  --check \
+  --output metadata/rehearsal-r0-s3-evidence.json
+```
+
+Generation requires two fresh byte-identical forks at the S1 pin; `--single-run` is diagnostic and
+cannot produce sealable evidence. Verification is bytes-only and offline. S3 does not claim that
+the agents performed external work, that users demand the work or markets, that the subsidy is
+sustainable, or that any transaction was deployed or paid on a public chain. The C-T3 shortfall is
+not replayed here; its sealed P2a drill remains the evidence for that separate failure mode.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
