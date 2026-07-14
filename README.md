@@ -50,6 +50,30 @@ proves the G2 composed-loop slice only: trader outcome inventory remains explici
 while whole-run conservation, replay verifier/tamper checks, and G4–G7 evidence remain deferred to
 R0 S6.
 
+## Rehearsal R0 S2 local hero slice
+
+S2 composes a successful 60 FAO genesis and a refundable failed twin on two fresh local Anvil
+chains. It proves permissionless spot deposits and redemption, a no-vote Snapshot X site release
+selected by an unchallenged YES timeout, bounded treasury transfers with atomic failure evidence,
+and a 25% holder ragequit followed by FLM redemption. Both runs pin chain `31337` and genesis time
+`1800000000`; their complete 119-transaction projections are byte-identical.
+
+```bash
+python3 tools/rehearsal_r0_local.py \
+  --output /tmp/fao-rehearsal-r0-s2-local.json
+
+python3 tools/rehearsal_r0_local.py \
+  --check \
+  --output metadata/rehearsal-r0-s2-evidence.json
+```
+
+The committed [S2 evidence](metadata/rehearsal-r0-s2-evidence.json) has economic projection digest
+`0xb0bfe88d5a5c2ab559dd8bde3b8b7b62ebe2e55d445f9c82c8f72e65c55c299c`; its file checksum is in
+[the sidecar](metadata/rehearsal-r0-s2-evidence.json.sha256). The canonical predicted hero pool is
+provisioned only on local Anvil with the runtime of a same-run mock template before economics. The
+failed twin receives no pool code. This evidence makes no real-AMM, fork-equivalence, external
+attestation, demand, or public-deployment claim, and it performs zero public broadcasts.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts

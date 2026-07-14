@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "fao.rehearsal.r0-hostile-site-fixture",
+  "archivePath": "tools/fixtures/rehearsal-r0-hostile-site.tar",
+  "archiveFormat": "uncompressed-tar",
+  "archiveBytes": 10240,
+  "artifactDigest": "0x87dbbe9ead61a2ab66cc5a79ee8a075526cee2218f688a5ad8cc98724deea344",
+  "artifactDigestAlgorithm": "keccak256",
+  "archiveSha256": "0x52a71d8a295e8e9147be135fe4ae71be5a63955610f346282eddedff8d9e677b",
+  "sourceCommit": "7201de8a54641ab49f5438176a124a1724d35c8c",
+  "sourceTree": [
+    {
+      "path": "index.html",
+      "mode": "100644",
+      "gitBlob": "92f2c344e32cefae95b3abaeca81cc59990f1bdb",
+      "sha256": "0xd06574ab9b46ff63733063ad562a4285952446a200c4a65dee049f7cba147dde"
+    }
+  ],
+  "generator": {
+    "repository": "https://github.com/futarchy-fi/fao-site-publisher",
+    "commit": "6ed7f56596c15fcf51500e1952df830ce836f79d",
+    "entrypoint": "release_artifact.py:create_bundle",
+    "scriptSha256": "0x4b700a8761904cb7ed07d85f4a8dba2469d0c98d855bc6ccf71e21560552764b"
+  },
+  "boundary": {
+    "hostileMeaning": "complete governed-site tree replacement with no FAO controls; not an archive-extraction attack",
+    "publisherRuntimeDependency": false,
+    "publicFetches": 0,
+    "publicDeployments": 0
+  },
+  "verification": {
+    "generatedTwiceByteIdentical": true,
+    "publisherExtractionAccepted": true
+  }
+}
