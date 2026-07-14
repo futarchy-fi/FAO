@@ -8,6 +8,97 @@ injected boundary; `python3 tools/agent_anvil_drill.py` regenerates the 16-drill
 The [wind-tunnel P0 control plane](docs/windtunnel-p0.md) indexes finalized multi-instance state,
 replays reorgs deterministically, and prepares at most one unsigned permissionless keeper crank.
 
+Lane 5 P2a adds a closed-world three-agent tournament with no new contracts, stored keys, or
+public broadcasts. CI rehearses it on plain Anvil; the sealed evidence is regenerated from one
+plain-local run plus two byte-identical runs at pinned Sepolia block 11,261,000:
+
+```bash
+python3 tools/agent_tournament.py
+```
+
+The tournament proves exact document binding, restart/race handling, and treasury accounting. It
+does not claim external work quality, demand, adoption, information aggregation, collusion
+resistance, or a sustainable subsidy.
+All six proposals receive an initial YES bond; the three challenged proposals then receive one
+graduation YES flip each, so the evidence reports six YES-bonded proposals, nine YES-bond
+transactions, and three graduation flips. Its complete ledger also includes the 12 stack-setup
+transactions and separately discloses every account, native-balance, and storage override.
+It also records every transaction/receipt/log and every timestamp/manual-mine control. That
+source-pinned Anvil transcript is internally cross-checked evidence, not an externally
+authenticated chain attestation.
+
+## Rehearsal R0 S1 composed loop
+
+The fork-only S1 harness deploys one receipt genesis, raises and bootstraps it, creates an
+official futarchy market, migrates the FLM, settles a bounded YES trade by TWAP/CTF, proves one
+atomic guard rejection, and restores to spot. It pins Sepolia block `11265000`, hash
+`0xa493de27f3173b07abfc718634acd5bcafbfd7e1d4583ad824b1dee7e7d9cd29`, and rechecks every
+canonical dependency runtime before running two fresh loopback-only Anvil forks:
+
+```bash
+python3 tools/rehearsal_r0.py \
+  --fork-url https://sepolia.drpc.org \
+  --output /tmp/fao-rehearsal-r0-s1.json
+```
+
+The committed [S1 evidence](metadata/rehearsal-r0-s1-evidence.json) has byte-identical economic
+projections with digest
+`0x4f0454c029d5b2a77a56bbf37360eee9ebeadae6efb04b68322774aefc884e9d`; its file checksum is
+recorded in [the sidecar](metadata/rehearsal-r0-s1-evidence.json.sha256). This is source-pinned fork
+evidence with zero public broadcasts, not a public-chain deployment or external attestation. It
+proves the G2 composed-loop slice only: trader outcome inventory remains explicitly outstanding,
+while whole-run conservation, replay verifier/tamper checks, and G4–G7 evidence remain deferred to
+R0 S6.
+
+## Rehearsal R0 S2 local hero slice
+
+S2 composes a successful 60 FAO genesis and a refundable failed twin on two fresh local Anvil
+chains. It proves permissionless spot deposits and redemption, a no-vote Snapshot X site release
+selected by an unchallenged YES timeout, bounded treasury transfers with atomic failure evidence,
+and a 25% holder ragequit followed by FLM redemption. Both runs pin chain `31337` and genesis time
+`1800000000`; their complete 119-transaction projections are byte-identical.
+
+```bash
+python3 tools/rehearsal_r0_local.py \
+  --output /tmp/fao-rehearsal-r0-s2-local.json
+
+python3 tools/rehearsal_r0_local.py \
+  --check \
+  --output metadata/rehearsal-r0-s2-evidence.json
+```
+
+The committed [S2 evidence](metadata/rehearsal-r0-s2-evidence.json) has economic projection digest
+`0xb0bfe88d5a5c2ab559dd8bde3b8b7b62ebe2e55d445f9c82c8f72e65c55c299c`; its file checksum is in
+[the sidecar](metadata/rehearsal-r0-s2-evidence.json.sha256). The canonical predicted hero pool is
+provisioned only on local Anvil with the runtime of a same-run mock template before economics. The
+failed twin receives no pool code. This evidence makes no real-AMM, fork-equivalence, external
+attestation, demand, or public-deployment claim, and it performs zero public broadcasts.
+
+## Rehearsal R0 S3 fork-only agent composition
+
+S3 composes the sealed six-submission P2a agent matrix with the exact S1 Sepolia stack. Three
+receipt-bound evaluations run serially through real conditional pools, the FLM, bounded trades,
+7-day/1-day TWAP resolution, CTF settlement, and full spot restoration: one resolves YES and two
+resolve NO. The other three proposals settle by timeout. The transcript reconciles hero-scale
+bonds, four exact vault payments, the executor tap, rejected-payment failures, and treasury
+balances without public broadcasts or contract-storage overrides.
+
+```bash
+python3 tools/rehearsal_r0_agents.py \
+  --fork-url https://sepolia.drpc.org \
+  --output metadata/rehearsal-r0-s3-evidence.json
+
+python3 tools/rehearsal_r0_agents.py \
+  --check \
+  --output metadata/rehearsal-r0-s3-evidence.json
+```
+
+Generation requires two fresh byte-identical forks at the S1 pin; `--single-run` is diagnostic and
+cannot produce sealable evidence. Verification is bytes-only and offline. S3 does not claim that
+the agents performed external work, that users demand the work or markets, that the subsidy is
+sustainable, or that any transaction was deployed or paid on a public chain. The C-T3 shortfall is
+not replayed here; its sealed P2a drill remains the evidence for that separate failure mode.
+
 This repository contains the smart contracts for the Futarchy Autonomous Optimizer token (FAO) and its sale mechanics. The codebase is implemented with [Foundry](https://book.getfoundry.sh/) and relies on OpenZeppelin libraries for security-reviewed primitives.
 
 ## Contracts
