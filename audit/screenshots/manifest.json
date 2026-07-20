@@ -1,43 +1,43 @@
 {
-  "generatedAt": "2026-05-22T19:29:50.555Z",
-  "runStartedAt": "2026-05-22T19:29:21.532Z",
+  "generatedAt": "2026-07-20T05:59:28.283Z",
+  "runStartedAt": "2026-07-20T05:58:59.480Z",
   "tool": "Playwright Chromium",
-  "baseUrl": "http://127.0.0.1:8772/",
+  "baseUrl": "http://127.0.0.1:8766/",
   "pages": [
     {
       "page": "home",
       "path": "/",
-      "sourceUrl": "http://127.0.0.1:8772/",
+      "sourceUrl": "http://127.0.0.1:8766/",
       "waitForTestId": "rankings-rows"
     },
     {
       "page": "sale",
       "path": "/sale",
-      "sourceUrl": "http://127.0.0.1:8772/sale.html",
+      "sourceUrl": "http://127.0.0.1:8766/sale.html",
       "waitForTestId": "sale-decision-strip"
     },
     {
       "page": "proposals",
       "path": "/proposals",
-      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
+      "sourceUrl": "http://127.0.0.1:8766/proposals.html",
       "waitForTestId": "create-proposal-name"
     },
     {
       "page": "create",
       "path": "/create",
-      "sourceUrl": "http://127.0.0.1:8772/create.html",
+      "sourceUrl": "http://127.0.0.1:8766/create.html",
       "waitForTestId": "create-name"
     },
     {
       "page": "contracts",
       "path": "/contracts",
-      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
+      "sourceUrl": "http://127.0.0.1:8766/contracts.html",
       "waitForTestId": "skip-nav"
     },
     {
       "page": "docs",
       "path": "/docs",
-      "sourceUrl": "http://127.0.0.1:8772/docs.html",
+      "sourceUrl": "http://127.0.0.1:8766/docs.html",
       "waitForTestId": "skip-nav"
     }
   ],
@@ -59,132 +59,132 @@
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/",
-      "capturedAt": "2026-05-22T19:29:24.075Z",
+      "sourceUrl": "http://127.0.0.1:8766/",
+      "capturedAt": "2026-07-20T05:59:01.976Z",
       "file": "audit/screenshots/home-desktop.png",
-      "sha256": "b363165c020872eef212674367c9b0b6cfd0b47ed63a4133f396303b30a3e898",
-      "bytes": 57006
+      "sha256": "0a8e893918990a8b930eb570cbca6892ea6e7b61bc774af3310fe17072d5462c",
+      "bytes": 61300
     },
     {
       "page": "home",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/",
-      "capturedAt": "2026-05-22T19:29:26.502Z",
+      "sourceUrl": "http://127.0.0.1:8766/",
+      "capturedAt": "2026-07-20T05:59:04.383Z",
       "file": "audit/screenshots/home-mobile.png",
-      "sha256": "93ff43e66833313245708a20b8944577e7d707e1dc88d2b79ad7778bca7087a2",
-      "bytes": 48846
+      "sha256": "f912b99a9e4de375e587c6a874db2a67d0544cadd8a1f3f56c7d2d1ef9c6a7ec",
+      "bytes": 52266
     },
     {
       "page": "sale",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/sale.html",
-      "capturedAt": "2026-05-22T19:29:28.922Z",
+      "sourceUrl": "http://127.0.0.1:8766/sale.html",
+      "capturedAt": "2026-07-20T05:59:06.814Z",
       "file": "audit/screenshots/sale-desktop.png",
-      "sha256": "3c74dc47cf895f83c4a905cb3366066296d890e9e1c593f900b0a21189fcb37f",
-      "bytes": 38635
+      "sha256": "7547d2f831f34a52f4b52a0fe96c06fee8b7c803c9934550248c2ffceda2e833",
+      "bytes": 41101
     },
     {
       "page": "sale",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/sale.html",
-      "capturedAt": "2026-05-22T19:29:31.328Z",
+      "sourceUrl": "http://127.0.0.1:8766/sale.html",
+      "capturedAt": "2026-07-20T05:59:09.214Z",
       "file": "audit/screenshots/sale-mobile.png",
-      "sha256": "241a8ac512c592f01df639bd59000b5d9c74467612f1ea4730443141e3df381c",
-      "bytes": 22020
+      "sha256": "2ba97d596ae8da54c791f9416166671349f8add0f870e3811960a540afe89518",
+      "bytes": 27975
     },
     {
       "page": "proposals",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
-      "capturedAt": "2026-05-22T19:29:33.753Z",
+      "sourceUrl": "http://127.0.0.1:8766/proposals.html",
+      "capturedAt": "2026-07-20T05:59:11.618Z",
       "file": "audit/screenshots/proposals-desktop.png",
-      "sha256": "b796703a0383769f2edbcf9d2d4e11ec878a6982b3b9cbac60d1da01e7c413c8",
-      "bytes": 63882
+      "sha256": "6f7eb1d58ab6a5ac02a14462bdb6597b9f65972c0b7b7a2dde56037c8cf14be8",
+      "bytes": 70040
     },
     {
       "page": "proposals",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/proposals.html",
-      "capturedAt": "2026-05-22T19:29:36.103Z",
+      "sourceUrl": "http://127.0.0.1:8766/proposals.html",
+      "capturedAt": "2026-07-20T05:59:13.984Z",
       "file": "audit/screenshots/proposals-mobile.png",
-      "sha256": "54d4cd0244c288b812b0fd4454b26c1d7dc63a570f34ffd0e837e767176860ba",
-      "bytes": 55221
+      "sha256": "f9f4952a2839ab4f265a6c35dce794a6410aedf249b999b2ed710e7a3e6f69f3",
+      "bytes": 59151
     },
     {
       "page": "create",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/create.html",
-      "capturedAt": "2026-05-22T19:29:38.553Z",
+      "sourceUrl": "http://127.0.0.1:8766/create.html",
+      "capturedAt": "2026-07-20T05:59:16.384Z",
       "file": "audit/screenshots/create-desktop.png",
-      "sha256": "926f495cf726f6138814f11d35c91ca59a4750488e477504e9b431231ceb0960",
-      "bytes": 53935
+      "sha256": "48b3df13fe97623850676e051ec7c0d3e762a5c83dc233c9c42fa4ac76da1bca",
+      "bytes": 57277
     },
     {
       "page": "create",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/create.html",
-      "capturedAt": "2026-05-22T19:29:40.945Z",
+      "sourceUrl": "http://127.0.0.1:8766/create.html",
+      "capturedAt": "2026-07-20T05:59:18.749Z",
       "file": "audit/screenshots/create-mobile.png",
-      "sha256": "7a17bcecabe58e869c532f745c050ebb7a70292208e030bded8c697b39a7b3f8",
-      "bytes": 41969
+      "sha256": "8dddb3b49a6cc7b99d82c3df41f55fbe58b934a9fd57182eb9b3a6d534d62b0b",
+      "bytes": 44582
     },
     {
       "page": "contracts",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
-      "capturedAt": "2026-05-22T19:29:43.369Z",
+      "sourceUrl": "http://127.0.0.1:8766/contracts.html",
+      "capturedAt": "2026-07-20T05:59:21.138Z",
       "file": "audit/screenshots/contracts-desktop.png",
-      "sha256": "9903e52392e78522529af2d45e1c892c62f213552ebc9052b73ee32ed307706e",
-      "bytes": 61090
+      "sha256": "da6348b43f9ca273d6f64d35fb1be63688ab8ed53e2b051522b0fbc634c1c10d",
+      "bytes": 64722
     },
     {
       "page": "contracts",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/contracts.html",
-      "capturedAt": "2026-05-22T19:29:45.762Z",
+      "sourceUrl": "http://127.0.0.1:8766/contracts.html",
+      "capturedAt": "2026-07-20T05:59:23.506Z",
       "file": "audit/screenshots/contracts-mobile.png",
-      "sha256": "2dfd9a1c5909f47daa8d1ffb1b677d7d247bef0f63b252131e56107fb8e052b2",
-      "bytes": 56102
+      "sha256": "72c7d392ccac08632c9afa0645c1e451a1fb569bcfff9c17d733da89554b3392",
+      "bytes": 59997
     },
     {
       "page": "docs",
       "viewport": "desktop",
       "width": 1280,
       "height": 720,
-      "sourceUrl": "http://127.0.0.1:8772/docs.html",
-      "capturedAt": "2026-05-22T19:29:48.168Z",
+      "sourceUrl": "http://127.0.0.1:8766/docs.html",
+      "capturedAt": "2026-07-20T05:59:25.889Z",
       "file": "audit/screenshots/docs-desktop.png",
-      "sha256": "1cd004900f88d87efcef1295dbbffd1650c6dabd529702b39761a0fb6cb5988e",
-      "bytes": 46644
+      "sha256": "312092ac75734ba0b2becedcbfb3cfdb40a4d6fab34c5577d72f49c5a8c26890",
+      "bytes": 49539
     },
     {
       "page": "docs",
       "viewport": "mobile",
       "width": 390,
       "height": 844,
-      "sourceUrl": "http://127.0.0.1:8772/docs.html",
-      "capturedAt": "2026-05-22T19:29:50.519Z",
+      "sourceUrl": "http://127.0.0.1:8766/docs.html",
+      "capturedAt": "2026-07-20T05:59:28.252Z",
       "file": "audit/screenshots/docs-mobile.png",
-      "sha256": "9e0353eeac9afd60666c1bdf8226eaaccf1390f570ff01f1fcf55722e13c1d87",
-      "bytes": 40307
+      "sha256": "d81568f2827531c0ea31bfe7678b333f6dcbed8450d9f98485b85d3992612dfe",
+      "bytes": 42951
     }
   ]
 }
