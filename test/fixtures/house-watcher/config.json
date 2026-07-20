@@ -1,0 +1,22 @@
+{
+  "mode": "fixture",
+  "generated_at": 5000,
+  "source_commit": "8cee5bc80329d223730e9df1b6d13f1b2040d9f0",
+  "config_digest": "fixture-config-v1",
+  "house_epochs": [
+    {
+      "address": "0x00000000000000000000000000000000000000a1",
+      "effective_from_block": 0
+    }
+  ],
+  "manifest": {
+    "chain_id": 11155111,
+    "arbitration_address": "0x0000000000000000000000000000000000000abc",
+    "runtime_codehash": "0xfixturecodehash"
+  },
+  "max_heartbeat_age_s": 60,
+  "max_finalized_lag_blocks": 5,
+  "min_signer_balance_raw": "100",
+  "min_signer_allowance_raw": "100",
+  "minimum_adjudicated_organic": 2
+}

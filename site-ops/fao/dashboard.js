@@ -158,6 +158,83 @@ function renderOverview(allTopicRounds) {
   }).join('');
 }
 
+function houseWatcherText(value) {
+  return String(value ?? '—').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  })[character]);
+}
+
+function houseWatcherMetric(label, value, detail = '') {
+  const shown = value ?? '—';
+  return `<div class="house-watcher-card"><span>${houseWatcherText(label)}</span><strong>${houseWatcherText(shown)}</strong><small>${houseWatcherText(detail)}</small></div>`;
+}
+
+async function renderHouseWatcher() {
+  const root = document.getElementById('house-watcher-panel');
+  const url = new URL('telemetry/house-watcher-v1.json', document.baseURI).toString();
+  const response = await fetch(url, { cache: 'no-cache' });
+  if (!response.ok) throw new Error(`Could not load watcher telemetry (${response.status})`);
+  const snapshot = await response.json();
+  const ttfc = snapshot.ttfc || {};
+  const any = ttfc.eligible_s?.any || {};
+  const economics = snapshot.economics || {};
+  const health = snapshot.health || {};
+  const telemetry = health.telemetry || {};
+  const status = snapshot.mode === 'fixture' && !health.ready ? 'FIXTURE · BLOCKED' : 'UNVERIFIED';
+  const reasons = (health.reasons || []).join(' · ') || 'missing gate reasons';
+  const sources = ttfc.first_source_counts || {};
+  const proposalRows = (snapshot.proposals || []).map(proposal => `<tr>
+    <td>${houseWatcherText(proposal.arbitration_id)}</td>
+    <td>${houseWatcherText(proposal.origin)}</td>
+    <td>${houseWatcherText(proposal.first_any_source)}</td>
+    <td>${houseWatcherText(proposal.t_first_house_no)}</td>
+    <td>${houseWatcherText(proposal.t_first_external_no)}</td>
+    <td>${houseWatcherText(proposal.ttfc_created_s?.any)}</td>
+    <td>${houseWatcherText(proposal.ttfc_eligible_s?.any)}</td>
+    <td>${proposal.censored ? `yes · ${houseWatcherText(proposal.eligible_exposure_s)}s` : 'no'}</td>
+    <td>${houseWatcherText(proposal.content_digest_status)}</td>
+  </tr>`).join('');
+  const pokerRows = (snapshot.poker?.rows || []).map(row => `<tr>
+    <td>${houseWatcherText(row.regime)}</td>
+    <td>${houseWatcherText(row.participation_cost_raw)}</td>
+    <td>${houseWatcherText(row.stake_scale_raw)}</td>
+    <td>${houseWatcherText(row.realized_informed_pnl_raw)}</td>
+    <td>${houseWatcherText(row.subsidy_configured_raw)} / ${houseWatcherText(row.subsidy_paid_raw)}</td>
+    <td>${houseWatcherText(row.funding_source_balance_raw)}</td>
+    <td>${houseWatcherText(row.knee_a_recommendation)}</td>
+    <td>${row.complete ? 'complete' : 'UNKNOWN'}</td>
+  </tr>`).join('');
+  root.innerHTML = `
+    <div class="house-watcher-status"><strong>${status}</strong><span>${houseWatcherText(reasons)}</span></div>
+    <div class="house-watcher-grid">
+      ${houseWatcherMetric('run / version', `${telemetry.run_id ?? '—'} / ${telemetry.watcher_version ?? '—'}`, telemetry.manifest_id)}
+      ${houseWatcherMetric('heartbeat age', telemetry.heartbeat_age_s, 'seconds')}
+      ${houseWatcherMetric('finalized lag', telemetry.finalized_lag_blocks, `blocks · parity ${telemetry.deploy_parity ?? 'UNKNOWN'}`)}
+      ${houseWatcherMetric('signer balance / allowance', `${telemetry.signer_balance_raw ?? '—'} / ${telemetry.signer_allowance_raw ?? '—'}`, 'fixture raw units')}
+      ${houseWatcherMetric('last inspect / house NO', `${telemetry.last_successful_inspect_at ?? '—'} / ${telemetry.last_confirmed_house_challenge_at ?? '—'}`, 'fixture Unix seconds')}
+      ${houseWatcherMetric('proposals', ttfc.proposal_count, `${ttfc.censored_count ?? '—'} censored`)}
+      ${houseWatcherMetric('eligible TTFC p50', any.p50, 'seconds · any source')}
+      ${houseWatcherMetric('eligible TTFC p90/p95', `${any.p90 ?? '—'} / ${any.p95 ?? '—'}`, 'seconds · observed only')}
+      ${houseWatcherMetric('first NO source', `${sources.external ?? 0} ext / ${sources.house ?? 0} house`, 'address-epoch provenance')}
+      ${houseWatcherMetric('organic β bad', economics.beta_bad?.rate_bps, 'basis points')}
+      ${houseWatcherMetric('complete cost p95', economics.cost_organic_raw?.p95, `${economics.incomplete_cost_count ?? '—'} incomplete`)}
+      ${houseWatcherMetric('competition S', economics.reward_competition_s?.rate_bps, 'basis points')}
+      ${houseWatcherMetric('house reliance', economics.house_reliance?.rate_bps, 'basis points')}
+      ${houseWatcherMetric('classifier q', economics.classifier_q?.accuracy?.rate_bps, 'accuracy basis points')}
+      ${houseWatcherMetric('failures / bad slips', `${snapshot.alerts?.length ?? 0} / ${economics.bad_timeout_slips?.length ?? 0}`, 'blocking safety outcomes')}
+      ${houseWatcherMetric('poker knee', snapshot.poker?.ready ? 'ready' : 'blocked', 'missing funding stays UNKNOWN')}
+    </div>
+    <div class="house-watcher-table-wrap"><table class="house-watcher-table">
+      <thead><tr><th>proposal</th><th>origin</th><th>first NO</th><th>house at</th><th>external at</th><th>created TTFC</th><th>eligible TTFC</th><th>censored / exposure</th><th>digest</th></tr></thead>
+      <tbody>${proposalRows || '<tr><td colspan="9">no proposal rows</td></tr>'}</tbody>
+    </table></div>
+    <h3 class="house-watcher-subhead">Poker subsidy fixture · separate from arbitration bond floor</h3>
+    <div class="house-watcher-table-wrap"><table class="house-watcher-table">
+      <thead><tr><th>regime</th><th>cost</th><th>stake</th><th>informed P&amp;L</th><th>subsidy configured / paid</th><th>funding</th><th>knee A</th><th>evidence</th></tr></thead>
+      <tbody>${pokerRows || '<tr><td colspan="8">UNKNOWN</td></tr>'}</tbody>
+    </table></div>`;
+}
+
 // Format an ISO timestamp into a short human label for the x-axis.
 function fmtTs(ts) {
   if (!ts) return '';
@@ -473,5 +550,8 @@ async function refresh() {
 
 document.addEventListener('DOMContentLoaded', () => {
   refresh();
+  renderHouseWatcher().catch((error) => {
+    document.getElementById('house-watcher-panel').textContent = `Watcher telemetry unavailable: ${error.message}`;
+  });
   setInterval(refresh, 30_000);
 });

@@ -1,0 +1,680 @@
+{
+  "alerts": [
+    {
+      "arbitration_id": "D",
+      "decision_id": "fixture-decision-d",
+      "error_class": "fixture_state_changed",
+      "event_at": 4020,
+      "event_id": "d-confirm-fail",
+      "kind": "challenge_failure",
+      "retry_allowed": false
+    }
+  ],
+  "economics": {
+    "bad_timeout_slips": [
+      "C"
+    ],
+    "beta_bad": {
+      "denominator": 2,
+      "numerator": 2,
+      "rate_bps": 10000,
+      "sample_status": "sufficient"
+    },
+    "classifier_q": {
+      "accuracy": {
+        "denominator": 2,
+        "numerator": 1,
+        "rate_bps": 5000,
+        "sample_status": "sufficient"
+      },
+      "confusion": {
+        "false_bad": 0,
+        "false_good": 1,
+        "true_bad": 1,
+        "true_good": 0
+      }
+    },
+    "cost_all_raw": {
+      "count": 2,
+      "p50": "10",
+      "p90": "100",
+      "p95": "100"
+    },
+    "cost_organic_raw": {
+      "count": 1,
+      "p50": "100",
+      "p90": "100",
+      "p95": "100"
+    },
+    "house_reliance": {
+      "denominator": 1,
+      "numerator": 0,
+      "rate_bps": 0
+    },
+    "incomplete_cost_count": 1,
+    "reward_competition_s": {
+      "denominator": 1,
+      "numerator": 1,
+      "rate_bps": 10000
+    }
+  },
+  "generated_at": "1970-01-01T01:23:20Z",
+  "health": {
+    "heartbeat_event_id": "heartbeat-1",
+    "ready": false,
+    "reasons": [
+      "bad_timeout_slip",
+      "challenge_failure_or_retry",
+      "fixture_only",
+      "incomplete_cost_inputs",
+      "missing_poker_regime_or_funding",
+      "no_authorized_testnet_e2e"
+    ],
+    "signing_enabled": false,
+    "telemetry": {
+      "checkpoint_block": 103,
+      "classifier_version": "fixture-classifier-v1",
+      "deploy_parity": "PASS",
+      "finalized_block": 103,
+      "finalized_lag_blocks": 1,
+      "head_block": 105,
+      "heartbeat_age_s": 5,
+      "last_confirmed_house_challenge_at": 2030,
+      "last_successful_inspect_at": 3020,
+      "manifest_id": "fixture-sepolia-v1",
+      "run_id": "fixture-run-1",
+      "signer_allowance_raw": "1000",
+      "signer_balance_raw": "1000",
+      "watcher_version": "fixture-v1"
+    }
+  },
+  "mode": "fixture",
+  "poker": {
+    "ready": false,
+    "rows": [
+      {
+        "complete": true,
+        "efficiency_bps": 9000,
+        "entrant_count": 2,
+        "event_id": "poker-cheap",
+        "funding_source_balance_raw": "1000",
+        "informed": true,
+        "knee_a_recommendation": "0",
+        "participation_cost_raw": "1",
+        "realized_informed_pnl_raw": "90",
+        "regime": "cheap",
+        "stake_scale_raw": "100",
+        "subsidy_configured_raw": "0",
+        "subsidy_paid_raw": "0"
+      },
+      {
+        "complete": true,
+        "efficiency_bps": 7500,
+        "entrant_count": 2,
+        "event_id": "poker-default",
+        "funding_source_balance_raw": "1000",
+        "informed": true,
+        "knee_a_recommendation": "0",
+        "participation_cost_raw": "10",
+        "realized_informed_pnl_raw": "75",
+        "regime": "default",
+        "stake_scale_raw": "100",
+        "subsidy_configured_raw": "0",
+        "subsidy_paid_raw": "0"
+      },
+      {
+        "complete": true,
+        "efficiency_bps": 4000,
+        "entrant_count": 2,
+        "event_id": "poker-pricey",
+        "funding_source_balance_raw": "1000",
+        "informed": true,
+        "knee_a_recommendation": "50",
+        "participation_cost_raw": "50",
+        "realized_informed_pnl_raw": "40",
+        "regime": "pricey",
+        "stake_scale_raw": "100",
+        "subsidy_configured_raw": "50",
+        "subsidy_paid_raw": "50"
+      },
+      {
+        "complete": true,
+        "efficiency_bps": 0,
+        "entrant_count": 2,
+        "event_id": "poker-prohibitive",
+        "funding_source_balance_raw": "1000",
+        "informed": true,
+        "knee_a_recommendation": "100",
+        "participation_cost_raw": "100",
+        "realized_informed_pnl_raw": "0",
+        "regime": "prohibitive",
+        "stake_scale_raw": "100",
+        "subsidy_configured_raw": "100",
+        "subsidy_paid_raw": "100"
+      },
+      {
+        "complete": false,
+        "efficiency_bps": 7500,
+        "entrant_count": 2,
+        "event_id": "poker-missing-funding",
+        "funding_source_balance_raw": null,
+        "informed": true,
+        "knee_a_recommendation": "UNKNOWN",
+        "participation_cost_raw": "10",
+        "realized_informed_pnl_raw": "75",
+        "regime": "unknown",
+        "stake_scale_raw": "100",
+        "subsidy_configured_raw": "0",
+        "subsidy_paid_raw": "0"
+      }
+    ]
+  },
+  "proposals": [
+    {
+      "adjudication": {
+        "event_at": 1060,
+        "label": "bad"
+      },
+      "arbitration_address": "0x0000000000000000000000000000000000000abc",
+      "arbitration_id": "A",
+      "censor_status": null,
+      "censored": false,
+      "chain_id": 11155111,
+      "challenge_failures": [],
+      "config_digest": "fixture-config-v1",
+      "content_digest_status": "valid",
+      "deadline": 1610,
+      "eligible_exposure_s": null,
+      "event_ids": [
+        "a-seen",
+        "a-yes",
+        "a-inspection",
+        "a-no-house",
+        "a-settled",
+        "a-adjudicated"
+      ],
+      "first_any_source": "house",
+      "inspection_count": 1,
+      "inspections": [
+        {
+          "cost_complete": true,
+          "event_at": 1020,
+          "event_id": "a-inspection",
+          "predicted_quality": "bad"
+        }
+      ],
+      "min_activation_bond_raw": "100",
+      "origin": "synthetic",
+      "settled": {
+        "event_at": 1050,
+        "route": "challenged"
+      },
+      "t_created": 1000,
+      "t_eligible": 1010,
+      "t_first_external_no": null,
+      "t_first_house_no": 1040,
+      "tier_id": "fixture-tier",
+      "ttfc_created_s": {
+        "any": 40,
+        "external": null,
+        "house": 40
+      },
+      "ttfc_eligible_s": {
+        "any": 30,
+        "external": null,
+        "house": 30
+      }
+    },
+    {
+      "adjudication": {
+        "event_at": 2050,
+        "label": "bad"
+      },
+      "arbitration_address": "0x0000000000000000000000000000000000000abc",
+      "arbitration_id": "B",
+      "censor_status": null,
+      "censored": false,
+      "chain_id": 11155111,
+      "challenge_failures": [],
+      "config_digest": "fixture-config-v1",
+      "content_digest_status": "valid",
+      "deadline": 2610,
+      "eligible_exposure_s": null,
+      "event_ids": [
+        "b-seen",
+        "b-yes",
+        "b-inspection",
+        "b-no-reorg",
+        "b-no-house",
+        "b-settled",
+        "b-adjudicated"
+      ],
+      "first_any_source": "external",
+      "inspection_count": 1,
+      "inspections": [
+        {
+          "cost_complete": true,
+          "event_at": 2015,
+          "event_id": "b-inspection",
+          "predicted_quality": "bad"
+        }
+      ],
+      "min_activation_bond_raw": "100",
+      "origin": "organic",
+      "settled": {
+        "event_at": 2040,
+        "route": "challenged"
+      },
+      "t_created": 2000,
+      "t_eligible": 2010,
+      "t_first_external_no": 2025,
+      "t_first_house_no": 2030,
+      "tier_id": "fixture-tier",
+      "ttfc_created_s": {
+        "any": 25,
+        "external": 25,
+        "house": 30
+      },
+      "ttfc_eligible_s": {
+        "any": 15,
+        "external": 15,
+        "house": 20
+      }
+    },
+    {
+      "adjudication": {
+        "event_at": 3620,
+        "label": "bad"
+      },
+      "arbitration_address": "0x0000000000000000000000000000000000000abc",
+      "arbitration_id": "C",
+      "censor_status": "timeout",
+      "censored": true,
+      "chain_id": 11155111,
+      "challenge_failures": [],
+      "config_digest": "fixture-config-v1",
+      "content_digest_status": "valid",
+      "deadline": 3610,
+      "eligible_exposure_s": 600,
+      "event_ids": [
+        "c-seen",
+        "c-yes",
+        "c-inspection",
+        "c-settled",
+        "c-adjudicated"
+      ],
+      "first_any_source": null,
+      "inspection_count": 1,
+      "inspections": [
+        {
+          "cost_complete": false,
+          "event_at": 3020,
+          "event_id": "c-inspection",
+          "predicted_quality": "good"
+        }
+      ],
+      "min_activation_bond_raw": "100",
+      "origin": "organic",
+      "settled": {
+        "event_at": 3610,
+        "route": "timeout"
+      },
+      "t_created": 3000,
+      "t_eligible": 3010,
+      "t_first_external_no": null,
+      "t_first_house_no": null,
+      "tier_id": "fixture-tier",
+      "ttfc_created_s": {
+        "any": null,
+        "external": null,
+        "house": null
+      },
+      "ttfc_eligible_s": {
+        "any": null,
+        "external": null,
+        "house": null
+      }
+    },
+    {
+      "adjudication": null,
+      "arbitration_address": "0x0000000000000000000000000000000000000abc",
+      "arbitration_id": "D",
+      "censor_status": "live",
+      "censored": true,
+      "chain_id": 11155111,
+      "challenge_failures": [
+        {
+          "decision_id": "fixture-decision-d",
+          "error_class": "fixture_state_changed",
+          "event_at": 4020,
+          "event_id": "d-confirm-fail",
+          "retry_allowed": false
+        }
+      ],
+      "config_digest": "fixture-config-v1",
+      "content_digest_status": "valid",
+      "deadline": 4610,
+      "eligible_exposure_s": 600,
+      "event_ids": [
+        "d-seen",
+        "d-yes",
+        "d-submit",
+        "d-confirm-fail"
+      ],
+      "first_any_source": null,
+      "inspection_count": 0,
+      "inspections": [],
+      "min_activation_bond_raw": "100",
+      "origin": "organic",
+      "settled": null,
+      "t_created": 4000,
+      "t_eligible": 4010,
+      "t_first_external_no": null,
+      "t_first_house_no": null,
+      "tier_id": "fixture-tier",
+      "ttfc_created_s": {
+        "any": null,
+        "external": null,
+        "house": null
+      },
+      "ttfc_eligible_s": {
+        "any": null,
+        "external": null,
+        "house": null
+      }
+    }
+  ],
+  "schema": "fao.house-watcher.snapshot.v1",
+  "source": {
+    "canonical_events": 28,
+    "checkpoint_block": 103,
+    "checkpoint_rewinds": 1,
+    "config_digest": "fixture-config-v1",
+    "duplicate_events_ignored": 1,
+    "input_events": 30,
+    "reorg_replacements": 1,
+    "source_commit": "8cee5bc80329d223730e9df1b6d13f1b2040d9f0"
+  },
+  "ttfc": {
+    "by_origin": {
+      "organic": {
+        "censor_rate": {
+          "denominator": 3,
+          "numerator": 2,
+          "rate_bps": 6666
+        },
+        "censored_count": 2,
+        "created_s": {
+          "any": {
+            "count": 1,
+            "p50": 25,
+            "p90": 25,
+            "p95": 25
+          },
+          "external": {
+            "count": 1,
+            "p50": 25,
+            "p90": 25,
+            "p95": 25
+          },
+          "house": {
+            "count": 1,
+            "p50": 30,
+            "p90": 30,
+            "p95": 30
+          }
+        },
+        "eligible_s": {
+          "any": {
+            "count": 1,
+            "p50": 15,
+            "p90": 15,
+            "p95": 15
+          },
+          "external": {
+            "count": 1,
+            "p50": 15,
+            "p90": 15,
+            "p95": 15
+          },
+          "house": {
+            "count": 1,
+            "p50": 20,
+            "p90": 20,
+            "p95": 20
+          }
+        },
+        "first_source_counts": {
+          "external": 1,
+          "house": 0
+        },
+        "observed_count": 1,
+        "proposal_count": 3
+      },
+      "seeded": {
+        "censor_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate_bps": null
+        },
+        "censored_count": 0,
+        "created_s": {
+          "any": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          }
+        },
+        "eligible_s": {
+          "any": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          }
+        },
+        "first_source_counts": {
+          "external": 0,
+          "house": 0
+        },
+        "observed_count": 0,
+        "proposal_count": 0
+      },
+      "synthetic": {
+        "censor_rate": {
+          "denominator": 1,
+          "numerator": 0,
+          "rate_bps": 0
+        },
+        "censored_count": 0,
+        "created_s": {
+          "any": {
+            "count": 1,
+            "p50": 40,
+            "p90": 40,
+            "p95": 40
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 1,
+            "p50": 40,
+            "p90": 40,
+            "p95": 40
+          }
+        },
+        "eligible_s": {
+          "any": {
+            "count": 1,
+            "p50": 30,
+            "p90": 30,
+            "p95": 30
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 1,
+            "p50": 30,
+            "p90": 30,
+            "p95": 30
+          }
+        },
+        "first_source_counts": {
+          "external": 0,
+          "house": 1
+        },
+        "observed_count": 1,
+        "proposal_count": 1
+      },
+      "unknown": {
+        "censor_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate_bps": null
+        },
+        "censored_count": 0,
+        "created_s": {
+          "any": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          }
+        },
+        "eligible_s": {
+          "any": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "external": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          },
+          "house": {
+            "count": 0,
+            "p50": null,
+            "p90": null,
+            "p95": null
+          }
+        },
+        "first_source_counts": {
+          "external": 0,
+          "house": 0
+        },
+        "observed_count": 0,
+        "proposal_count": 0
+      }
+    },
+    "censor_rate": {
+      "denominator": 4,
+      "numerator": 2,
+      "rate_bps": 5000
+    },
+    "censored_count": 2,
+    "cohort_dimensions": [
+      "origin",
+      "config_digest",
+      "chain_id",
+      "arbitration_address",
+      "min_activation_bond_raw",
+      "tier_id"
+    ],
+    "created_s": {
+      "any": {
+        "count": 2,
+        "p50": 25,
+        "p90": 40,
+        "p95": 40
+      },
+      "external": {
+        "count": 1,
+        "p50": 25,
+        "p90": 25,
+        "p95": 25
+      },
+      "house": {
+        "count": 2,
+        "p50": 30,
+        "p90": 40,
+        "p95": 40
+      }
+    },
+    "eligible_s": {
+      "any": {
+        "count": 2,
+        "p50": 15,
+        "p90": 30,
+        "p95": 30
+      },
+      "external": {
+        "count": 1,
+        "p50": 15,
+        "p90": 15,
+        "p95": 15
+      },
+      "house": {
+        "count": 2,
+        "p50": 20,
+        "p90": 30,
+        "p95": 30
+      }
+    },
+    "first_source_counts": {
+      "external": 1,
+      "house": 1
+    },
+    "observed_count": 2,
+    "organic_external_first": 1,
+    "proposal_count": 4,
+    "synthetic_external_adoption": 0
+  }
+}
