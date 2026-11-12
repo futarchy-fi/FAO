@@ -65,11 +65,13 @@ abstract contract Base is Test {
         pool.setTick(baseTick + up * DOUBLING * int24(int256(doublings)));
     }
 
-    /// @dev Pokes once a day for `n` days at the current pool price.
+    /// @dev Takes a checkpoint now if one is due, then one a day for `n` days at the current
+    /// pool price: `n` day-long intervals.
     function _pokeDays(uint256 n) internal {
+        beacon.poke();
         for (uint256 i; i < n; ++i) {
-            beacon.poke();
             skip(1 days);
+            beacon.poke();
         }
     }
 

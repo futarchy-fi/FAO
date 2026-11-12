@@ -63,9 +63,11 @@ contract FaoShortFacilityTest is Base {
     function test_oldHighsStopCountingAfterTheLookback() public {
         _setMultiple(3);
         beacon.poke();
-        skip(8 days);
+        skip(1 days);
+        beacon.poke(); // one day at 8x is on record
         _setMultiple(0);
-        (, uint256 lock) = _open(N);
+        skip(8 days);
+        (, uint256 lock) = _open(N); // the 8x day ended more than seven days ago
         assertEq(lock, N * 2 * base / WAD);
     }
 

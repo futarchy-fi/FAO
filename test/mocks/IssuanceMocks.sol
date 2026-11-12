@@ -13,11 +13,20 @@ contract MockWETH is ERC20 {
     }
 }
 
-/// @dev Constant-tick pool: observe() reports the configured tick as the average.
+/// @dev Pool that accumulates its tick over time like Uniswap v3. "Now" is exact; older points
+/// assume the current tick was in force, which is enough for the 30-minute average in tests.
 contract MockPool {
     int24 public tick;
+    int56 public cumulative;
+    uint256 public lastUpdate;
+
+    constructor() {
+        lastUpdate = block.timestamp;
+    }
 
     function setTick(int24 tick_) external {
+        cumulative += int56(tick) * int56(uint56(block.timestamp - lastUpdate));
+        lastUpdate = block.timestamp;
         tick = tick_;
     }
 
@@ -28,10 +37,9 @@ contract MockPool {
     {
         tickCumulatives = new int56[](secondsAgos.length);
         liquidity = new uint160[](secondsAgos.length);
-        // cumulative(t) = tick * t; report relative to "now" = secondsAgos[0] seconds after start.
-        uint32 span = secondsAgos[0];
+        int56 nowCumulative = cumulative + int56(tick) * int56(uint56(block.timestamp - lastUpdate));
         for (uint256 i; i < secondsAgos.length; ++i) {
-            tickCumulatives[i] = int56(tick) * int56(uint56(span - secondsAgos[i]));
+            tickCumulatives[i] = nowCumulative - int56(tick) * int56(uint56(secondsAgos[i]));
         }
     }
 }

@@ -22,13 +22,17 @@ interface IBeaconPool {
         );
 }
 
-/// @notice Daily price record for the FAO/WETH spot pool, with no owner and no oracle.
-/// Anyone may call `poke()` at any time. Each poke reads the pool's 30-minute average price and
-/// folds it into that UTC day's low and high. Nothing is recorded before the sale has finalized,
-/// because until then the pool is empty and its price costs nothing to set. Consumers that reward
-/// a high price read the LOW
-/// (anyone can poke during a dip to lower it); consumers that must not be fooled by a pushed-down
-/// price read the HIGH (anyone can poke during a peak to raise it).
+/// @notice Price record for the FAO/WETH spot pool, with no owner and no oracle.
+///
+/// The pool keeps a running total of its tick over time. Anyone may call `poke()`. A poke made
+/// at least `PERIOD` after the previous checkpoint reads that total, closes the interval since
+/// the previous checkpoint and stores the interval's time-weighted average price. Because an
+/// interval is at least a day long, its average cannot be moved by a short push in either
+/// direction, and it does not matter who pokes or when: the average covers every second of the
+/// interval. Reading the running total "now" never depends on how much history the pool keeps.
+///
+/// Nothing is recorded before the sale has finalized: until then the pool is empty and its price
+/// costs nothing to set.
 contract FaoPriceBeacon {
     error OnlyBinder();
     error AlreadyBound();
@@ -39,14 +43,18 @@ contract FaoPriceBeacon {
     error InvalidPrice();
 
     uint256 public constant WAD = 1e18;
+    /// @notice Shortest interval between two checkpoints.
+    uint256 public constant PERIOD = 1 days;
+    /// @notice Longest interval that still counts as evidence of a sustained price.
+    uint256 public constant MAX_INTERVAL = 2 days;
     uint32 public constant TWAP_WINDOW = 30 minutes;
     uint256 public constant SLOTS = 64;
     uint8 private constant PHASE_LIVE = 2;
 
-    struct Day {
-        uint64 day;
-        uint96 low;
-        uint96 high;
+    struct Interval {
+        uint48 start;
+        uint48 end;
+        uint96 price; // time-weighted average over [start, end], WETH per FAO scaled by 1e18
     }
 
     IBeaconPoolFactory public immutable FACTORY;
@@ -57,10 +65,18 @@ contract FaoPriceBeacon {
     IBeaconVault public vault;
     address public token;
     address public pool;
-    Day[SLOTS] private _days;
+
+    /// @notice Time and running tick total of the latest checkpoint. Zero time means none yet.
+    uint48 public checkpointAt;
+    int56 public checkpointCumulative;
+
+    /// @notice Number of intervals ever closed. Interval i lives in slot i % SLOTS.
+    uint256 public intervalCount;
+    Interval[SLOTS] private _intervals;
 
     event Bound(address indexed token);
-    event Poked(uint64 indexed day, uint256 price, uint256 low, uint256 high);
+    event Checkpointed(uint256 timestamp);
+    event IntervalClosed(uint256 indexed index, uint256 start, uint256 end, uint256 price);
 
     constructor(IBeaconPoolFactory factory, address weth, uint24 fee) {
         if (address(factory) == address(0) || weth == address(0) || fee == 0) {
@@ -83,106 +99,160 @@ contract FaoPriceBeacon {
         emit Bound(token_);
     }
 
-    /// @notice Current 30-minute average price, in WETH per FAO scaled by 1e18.
-    function twap() public view returns (uint256 price) {
+    // ------------------------------------------------------------------ recording
+
+    /// @notice Takes a checkpoint if at least `PERIOD` has passed since the last one, closing the
+    /// interval in between. Does nothing otherwise.
+    function poke() public {
         address token_ = token;
         if (token_ == address(0)) revert NotBound();
+        if (vault.phase() != PHASE_LIVE) revert NotLive();
         address pool_ = pool;
         if (pool_ == address(0)) {
             pool_ = FACTORY.getPool(token_, WETH, FEE);
             if (pool_ == address(0)) revert PoolMissing();
+            pool = pool_;
         }
+
+        uint256 last = checkpointAt;
+        if (last != 0 && block.timestamp - last < PERIOD) return;
+
+        int56 cumulative = _cumulativeNow(pool_);
+        if (last != 0) {
+            uint256 price = _meanPrice(cumulative - checkpointCumulative, block.timestamp - last);
+            uint256 index = intervalCount;
+            _intervals[index % SLOTS] =
+                Interval(uint48(last), uint48(block.timestamp), uint96(price));
+            intervalCount = index + 1;
+            emit IntervalClosed(index, last, block.timestamp, price);
+        }
+        checkpointAt = uint48(block.timestamp);
+        checkpointCumulative = cumulative;
+        emit Checkpointed(block.timestamp);
+    }
+
+    // ------------------------------------------------------------------ reading
+
+    /// @notice Interval `index` (0 is the first ever closed). Reverts once the ring has reused
+    /// its slot.
+    function interval(uint256 index)
+        external
+        view
+        returns (uint256 start, uint256 end, uint256 price)
+    {
+        uint256 count = intervalCount;
+        if (index >= count || count - index > SLOTS) revert InvalidPrice();
+        Interval memory i = _intervals[index % SLOTS];
+        return (i.start, i.end, i.price);
+    }
+
+    /// @notice True when the most recent closed intervals, back to at least `daysHeld` days
+    /// before the latest checkpoint, each averaged at least `level` and none is longer than
+    /// `MAX_INTERVAL`, and the latest checkpoint is itself no older than `MAX_INTERVAL`.
+    function heldAbove(uint256 level, uint256 daysHeld) external view returns (bool) {
+        uint256 count = intervalCount;
+        uint256 needed = daysHeld * 1 days;
+        if (needed == 0 || count == 0) return false;
+        if (block.timestamp - checkpointAt > MAX_INTERVAL) return false;
+
+        uint256 covered;
+        uint256 oldest = count > SLOTS ? count - SLOTS : 0;
+        for (uint256 index = count; index > oldest;) {
+            unchecked {
+                --index;
+            }
+            Interval memory i = _intervals[index % SLOTS];
+            uint256 length = uint256(i.end) - i.start;
+            if (length > MAX_INTERVAL || i.price < level) return false;
+            covered += length;
+            if (covered >= needed) return true;
+        }
+        return false;
+    }
+
+    /// @notice Highest average among intervals that ended within the last `lookbackDays` days.
+    function highOver(uint256 lookbackDays) public view returns (uint256 highest) {
+        uint256 count = intervalCount;
+        uint256 horizon = lookbackDays * 1 days;
+        uint256 oldest = count > SLOTS ? count - SLOTS : 0;
+        for (uint256 index = count; index > oldest;) {
+            unchecked {
+                --index;
+            }
+            Interval memory i = _intervals[index % SLOTS];
+            if (block.timestamp - i.end > horizon) break;
+            if (i.price > highest) highest = i.price;
+        }
+    }
+
+    /// @notice Current 30-minute average price, in WETH per FAO scaled by 1e18.
+    function twap() public view returns (uint256) {
+        address pool_ = _poolView();
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = TWAP_WINDOW;
         (int56[] memory tickCumulatives,) = IBeaconPool(pool_).observe(secondsAgos);
         if (tickCumulatives.length != 2) revert InvalidPrice();
-        int56 delta = tickCumulatives[1] - tickCumulatives[0];
-        int56 divisor = int56(uint56(TWAP_WINDOW));
+        return _meanPrice(tickCumulatives[1] - tickCumulatives[0], TWAP_WINDOW);
+    }
+
+    /// @notice Pokes, then returns a price that a short push downwards cannot lower: the highest
+    /// of the current 30-minute average, the average since the latest checkpoint, and the
+    /// highest interval average of the last `lookbackDays` days.
+    function pokeAndReference(uint256 lookbackDays) external returns (uint256 refPrice) {
+        poke();
+        refPrice = twap();
+        uint256 recent = highOver(lookbackDays);
+        if (recent > refPrice) refPrice = recent;
+        uint256 elapsed = block.timestamp - checkpointAt;
+        if (elapsed >= TWAP_WINDOW) {
+            uint256 running = _meanPrice(_cumulativeNow(pool) - checkpointCumulative, elapsed);
+            if (running > refPrice) refPrice = running;
+        }
+    }
+
+    // ------------------------------------------------------------------ internals
+
+    function _poolView() private view returns (address pool_) {
+        pool_ = pool;
+        if (pool_ == address(0)) {
+            address token_ = token;
+            if (token_ == address(0)) revert NotBound();
+            pool_ = FACTORY.getPool(token_, WETH, FEE);
+            if (pool_ == address(0)) revert PoolMissing();
+        }
+    }
+
+    function _cumulativeNow(address pool_) private view returns (int56) {
+        uint32[] memory secondsAgos = new uint32[](1);
+        (int56[] memory tickCumulatives,) = IBeaconPool(pool_).observe(secondsAgos);
+        if (tickCumulatives.length != 1) revert InvalidPrice();
+        return tickCumulatives[0];
+    }
+
+    /// @dev Average price over `elapsed` seconds from a change in the pool's running tick total.
+    /// The mean tick is oriented so that a dearer FAO is a higher tick and rounded down, so the
+    /// price is never overstated.
+    function _meanPrice(int56 delta, uint256 elapsed) private view returns (uint256 price) {
+        bool companyIsToken0 = token < WETH;
+        if (!companyIsToken0) delta = -delta;
+        int56 divisor = int56(uint56(elapsed));
         int56 mean = delta / divisor;
         if (delta < 0 && delta % divisor != 0) mean--;
         if (mean < -887_272 || mean > 887_272) revert InvalidPrice();
-        price = _quoteAtTick(int24(mean), token_ < WETH);
+        // In the oriented frame the company is always the base token.
+        price = _quoteAtTick(int24(mean));
         if (price == 0 || price > type(uint96).max) revert InvalidPrice();
     }
 
-    /// @notice Records the current average price into today's low and high.
-    function poke() public returns (uint256 price) {
-        address token_ = token;
-        if (token_ == address(0)) revert NotBound();
-        if (vault.phase() != PHASE_LIVE) revert NotLive();
-        if (pool == address(0)) {
-            address pool_ = FACTORY.getPool(token_, WETH, FEE);
-            if (pool_ == address(0)) revert PoolMissing();
-            pool = pool_;
-        }
-        price = twap();
-        uint64 day = uint64(block.timestamp / 1 days);
-        Day storage slot = _days[day % SLOTS];
-        if (slot.day != day) {
-            slot.day = day;
-            slot.low = uint96(price);
-            slot.high = uint96(price);
-        } else {
-            if (price < slot.low) slot.low = uint96(price);
-            if (price > slot.high) slot.high = uint96(price);
-        }
-        emit Poked(day, price, slot.low, slot.high);
-    }
-
-    function today() public view returns (uint64) {
-        return uint64(block.timestamp / 1 days);
-    }
-
-    /// @return recorded Whether `day` has a record still held in the ring.
-    function dayRecord(uint64 day) public view returns (bool recorded, uint256 low, uint256 high) {
-        Day storage slot = _days[day % SLOTS];
-        if (slot.day != day || slot.high == 0) return (false, 0, 0);
-        return (true, slot.low, slot.high);
-    }
-
-    /// @notice True when each of the `count` complete days before today has a record whose low
-    /// is at least `level`. Today is excluded because its low can still fall.
-    function heldAbove(uint256 level, uint256 count) external view returns (bool) {
-        uint64 day = today();
-        if (count == 0 || count >= SLOTS || day < count) return false;
-        for (uint64 d = day - uint64(count); d < day; ++d) {
-            (bool recorded, uint256 low,) = dayRecord(d);
-            if (!recorded || low < level) return false;
-        }
-        return true;
-    }
-
-    /// @notice Highest recorded price over today and the `count` days before it.
-    function highOver(uint256 count) public view returns (uint256 highest) {
-        uint64 day = today();
-        if (count >= SLOTS) count = SLOTS - 1;
-        uint64 first = day > count ? day - uint64(count) : 0;
-        for (uint64 d = first; d <= day; ++d) {
-            (bool recorded,, uint256 high) = dayRecord(d);
-            if (recorded && high > highest) highest = high;
-        }
-    }
-
-    /// @notice Pokes, then returns the higher of the current average and the recent recorded high.
-    function pokeAndHighOver(uint256 count) external returns (uint256) {
-        uint256 current = poke();
-        uint256 recent = highOver(count);
-        return current > recent ? current : recent;
-    }
-
-    /// @dev WETH per company token at `tick`, scaled by 1e18.
-    function _quoteAtTick(int24 tick, bool companyIsToken0) private pure returns (uint256) {
+    /// @dev Quote-per-base price at `tick` (1.0001^tick), scaled by 1e18.
+    function _quoteAtTick(int24 tick) private pure returns (uint256) {
         uint160 sqrtRatioX96 = _sqrtRatioAtTick(tick);
         if (sqrtRatioX96 <= type(uint128).max) {
             uint256 ratioX192 = uint256(sqrtRatioX96) * sqrtRatioX96;
-            return companyIsToken0
-                ? Math.mulDiv(ratioX192, WAD, uint256(1) << 192)
-                : Math.mulDiv(uint256(1) << 192, WAD, ratioX192);
+            return Math.mulDiv(ratioX192, WAD, uint256(1) << 192);
         }
         uint256 ratioX128 = Math.mulDiv(sqrtRatioX96, sqrtRatioX96, uint256(1) << 64);
-        return companyIsToken0
-            ? Math.mulDiv(ratioX128, WAD, uint256(1) << 128)
-            : Math.mulDiv(uint256(1) << 128, WAD, ratioX128);
+        return Math.mulDiv(ratioX128, WAD, uint256(1) << 128);
     }
 
     /// @dev Canonical Uniswap V3 TickMath.getSqrtRatioAtTick (same constants as

@@ -22,14 +22,15 @@ interface IOptionsToken {
 
 interface IOptionsBeacon {
     function token() external view returns (address);
-    function heldAbove(uint256 level, uint256 count) external view returns (bool);
+    function heldAbove(uint256 level, uint256 daysHeld) external view returns (bool);
 }
 
 /// @notice Team and insider allocation as price-milestone options. Nothing is minted at genesis.
 ///
 /// The pool is `POOL_BPS` of the tokens sold in the genesis sale, split into ten equal tranches.
 /// Tranche k (k = 0..9) opens only after the market has held at least 2^(k+1) times the sale's
-/// closing price for `SUSTAIN_DAYS` complete days in a row (the daily LOW of the price beacon).
+/// closing price for `SUSTAIN_DAYS` days in a row, measured as the time-weighted average of
+/// every interval of a day or more recorded by the price beacon.
 /// An opened tranche becomes exercisable linearly over `VESTING`, and nothing is exercisable
 /// before `CLIFF` after genesis. To exercise, the holder pays `strike` WETH per token to the
 /// treasury and the token is minted. Unexercised options lapse `EXPIRY` after genesis.

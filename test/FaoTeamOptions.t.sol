@@ -74,40 +74,62 @@ contract FaoTeamOptionsTest is Base {
         options.open(0);
     }
 
-    function test_trancheNeedsThirtyCompleteDays() public {
+    function test_trancheNeedsThirtyDaysOfAverages() public {
         _setMultiple(1);
         _pokeDays(29);
-        beacon.poke(); // day 30 is today and not complete
         vm.expectRevert(FaoTeamOptions.NotHeld.selector);
         options.open(0);
         skip(1 days);
+        beacon.poke();
         options.open(0);
         assertGt(options.openedAt(0), 0);
         vm.expectRevert(FaoTeamOptions.AlreadyOpen.selector);
         options.open(0);
     }
 
-    function test_oneDayDipBlocksOpening() public {
+    function test_oneDayBelowTheLevelRestartsTheCount() public {
         _setMultiple(1);
         _pokeDays(15);
-        _setMultiple(0); // anyone pokes during a dip
+        _setMultiple(0); // one whole day back at the base price
+        skip(1 days);
         beacon.poke();
         _setMultiple(1);
-        beacon.poke(); // same day, back up: the day's low stays at the dip
-        skip(1 days);
-        _pokeDays(15);
+        _pokeDays(20);
         vm.expectRevert(FaoTeamOptions.NotHeld.selector);
         options.open(0);
-        _pokeDays(15); // 30 clean days after the dip
+        _pokeDays(10); // 30 clean days after the dip
         options.open(0);
     }
 
-    function test_unrecordedDayBlocksOpening() public {
+    function test_dailyThirtyMinutePumpsDoNotOpenATranche() public {
+        beacon.poke();
+        for (uint256 i; i < 30; ++i) {
+            _setMultiple(10); // 1024x for half an hour
+            skip(30 minutes);
+            _setMultiple(0);
+            skip(1 days - 30 minutes);
+            beacon.poke();
+        }
+        vm.expectRevert(FaoTeamOptions.NotHeld.selector);
+        options.open(0);
+    }
+
+    function test_staleRecordCannotOpenATranche() public {
+        _setMultiple(1);
+        _pokeDays(30);
+        skip(3 days); // nobody has checkpointed for longer than the allowed interval
+        vm.expectRevert(FaoTeamOptions.NotHeld.selector);
+        options.open(0);
+    }
+
+    function test_gapLongerThanTwoDaysBreaksTheRun() public {
         _setMultiple(1);
         _pokeDays(10);
-        skip(1 days); // nobody poked this day
-        _pokeDays(20);
+        skip(3 days); // the next checkpoint closes a three-day interval
+        _pokeDays(25);
         vm.expectRevert(FaoTeamOptions.NotHeld.selector);
+        options.open(0);
+        _pokeDays(5);
         options.open(0);
     }
 

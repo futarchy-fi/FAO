@@ -25,15 +25,16 @@ interface IShortToken is IERC20 {
 
 interface IShortBeacon {
     function token() external view returns (address);
-    function pokeAndHighOver(uint256 count) external returns (uint256);
+    function pokeAndReference(uint256 lookbackDays) external returns (uint256);
 }
 
 /// @notice Permanent, permissionless way to short FAO from the first day.
 ///
 /// Anyone may mint new FAO by locking WETH worth `LOCK_MULTIPLE` times the reference price per
-/// token (and never less than the sale's closing price). The reference price is the higher of the
-/// pool's current 30-minute average and the highest daily reading of the last `LOOKBACK_DAYS`,
-/// so a briefly pushed-down price cannot be used to mint cheaply.
+/// token (and never less than the sale's closing price). The reference price is the highest of the
+/// pool's current 30-minute average, its average since the beacon's latest checkpoint, and the
+/// highest day-long average of the last `LOOKBACK_DAYS`, so a briefly pushed-down price cannot
+/// be used to mint cheaply.
 ///
 /// The minter sells the FAO. Returning the same amount before the term ends burns it and releases
 /// the lock, less a fee to the treasury that grows with time and is never below one 30-day period.
@@ -74,7 +75,7 @@ contract FaoShortFacility is ReentrancyGuard {
     uint16 public immutable FEE_BPS_PER_30_DAYS;
     /// @notice Longest a position may stay open.
     uint32 public immutable TERM;
-    /// @notice Days of recorded highs included in the reference price.
+    /// @notice Days of recorded interval averages included in the reference price.
     uint8 public immutable LOOKBACK_DAYS;
     /// @notice Open short tokens may not exceed this share of the ragequit-entitled supply, in bps.
     uint32 public immutable MAX_OPEN_BPS;
@@ -202,7 +203,7 @@ contract FaoShortFacility is ReentrancyGuard {
             revert OpenInterestCap();
         }
 
-        uint256 refPrice = BEACON.pokeAndHighOver(LOOKBACK_DAYS);
+        uint256 refPrice = BEACON.pokeAndReference(LOOKBACK_DAYS);
         lock = Math.mulDiv(amount, lockPrice(refPrice), WAD, Math.Rounding.Up);
         if (lock == 0) revert ZeroAmount();
         if (lock > maxLock) revert LockExceedsMax();
