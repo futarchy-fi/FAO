@@ -4,7 +4,7 @@
     "economicManifestPath": "metadata/economic-core-code-hashes.json",
     "economicManifestKeccak256": "0x9eb38363ae057dea95590ad7d8e597c5ca8f9c6bbdac6a1eeb8eda210087214a",
     "flmManifestPath": "metadata/sepolia-flm-code-hashes.json",
-    "flmManifestKeccak256": "0x1aec5c6eff11143f5b74f1039922a92457e04ad8c6a0ab9a26c25ccc8aeef3c7"
+    "flmManifestKeccak256": "0x55f5c739d177726c93c21d15173a4630087257b8dd1c3501de63052f137ae432"
   },
   "codeHashes": {
     "receipt": "0x854fd08d34c78434512dfc1a2a2ade7dc034991616878438a553b213fab6bc13",
