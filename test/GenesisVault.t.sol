@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
 import {SaleCurveFixture} from "./mocks/SaleCurveFixture.sol";
 import {Test} from "forge-std/Test.sol";
 import {VestingWallet} from "@openzeppelin/contracts/finance/VestingWallet.sol";
@@ -617,6 +618,75 @@ contract GenesisVaultTest is SaleCurveFixture {
         arbitration.setOutcome(vault.criticalActionProposalId(action, 2), true, true, true);
         vault.queueCriticalAction(action);
         vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+    }
+
+    // ─── sale through a fixed-price window into the doubling curve
+    // ─────────────────────────────
+
+    function testFixedWindowSellsEveryTokenAtTheSamePrice() public {
+        (GenesisVault vault,) = _deployWindowVault(100 ether);
+        assertEq(_buyFor(vault, 100 ether), 0.1 ether);
+        assertEq(_buyFor(vault, 300 ether), 0.3 ether);
+        assertEq(vault.terminalPrice(), INITIAL_PRICE);
+    }
+
+    function testAfterTheWindowPriceDoublesWhenSupplyDoubles() public {
+        (GenesisVault vault, FaoSaleCurve curve) = _deployWindowVault(100 ether);
+        assertEq(_buyFor(vault, 200 ether), 0.2 ether);
+
+        vm.warp(block.timestamp + 14 days);
+        assertEq(_buyFor(vault, 200 ether), 0.3 ether); // 1.5x the fixed raise to double the supply
+        assertTrue(curve.started());
+        assertEq(curve.base(), 200 ether);
+        assertEq(vault.terminalPrice(), 2 * INITIAL_PRICE);
+        assertEq(vault.totalRaised(), 0.5 ether);
+    }
+
+    function testBelowTheMinimumTheFixedPriceContinuesAfterTheWindow() public {
+        (GenesisVault vault, FaoSaleCurve curve) = _deployWindowVault(500 ether);
+        assertEq(_buyFor(vault, 100 ether), 0.1 ether);
+
+        vm.warp(block.timestamp + 14 days);
+        assertEq(_buyFor(vault, 400 ether), 0.4 ether);
+        assertEq(curve.base(), 500 ether);
+        assertEq(vault.terminalPrice(), INITIAL_PRICE);
+        assertEq(_buyFor(vault, 500 ether), 0.75 ether);
+        assertEq(vault.terminalPrice(), 2 * INITIAL_PRICE);
+    }
+
+    function testRejectsACurveBuiltForAnotherVault() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.saleCurve = address(new FaoSaleCurve(address(this), INITIAL_PRICE, SLOPE, 0, 0));
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
+    function _deployWindowVault(uint256 fixedMinimum)
+        internal
+        returns (GenesisVault vault, FaoSaleCurve curve)
+    {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.slope = 0;
+        config.saleEnd = uint64(block.timestamp + 30 days);
+        config.bootstrapDeadline = uint64(block.timestamp + 40 days);
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        curve = new FaoSaleCurve(
+            predicted, INITIAL_PRICE, 0, uint64(block.timestamp + 14 days), fixedMinimum
+        );
+        config.saleCurve = address(curve);
+        vault = new GenesisVault(config, grants);
+    }
+
+    function _buyFor(GenesisVault vault, uint256 amount) internal returns (uint256 cost) {
+        _fundAndApprove(BUYER, address(vault), 10 ether);
+        uint256 deadline = vault.SALE_END();
+        vm.prank(BUYER);
+        cost = vault.buy(amount, type(uint256).max, deadline);
     }
 
     function _deployVault() internal returns (GenesisVault vault) {
