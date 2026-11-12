@@ -8,14 +8,14 @@
     "ARBITRATION": {
       "source": "src/FutarchyArbitration.sol",
       "contract": "FutarchyArbitration",
-      "baseCreationCodeBytes": 7381,
-      "baseCreationCodeKeccak256": "0xa013f13694e439351383e11933ba6fd9f7471c7f6e71b61bd916e4c5a3e6eb6e"
+      "baseCreationCodeBytes": 7950,
+      "baseCreationCodeKeccak256": "0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d"
     },
     "VAULT": {
       "source": "src/GenesisVault.sol",
       "contract": "GenesisVault",
-      "baseCreationCodeBytes": 45872,
-      "baseCreationCodeKeccak256": "0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f"
+      "baseCreationCodeBytes": 46868,
+      "baseCreationCodeKeccak256": "0xf8e1c3d4b080ac2cb4d83660aea56a2a45ee18ee68a13f7de0fc30e764a95cce"
     },
     "RELEASE_STRATEGY": {
       "source": "src/SXArbitrationExecutionStrategy.sol",
@@ -38,14 +38,14 @@
     "ECON_EVALUATOR": {
       "source": "src/FAOEconomicEvaluationPipeline.sol",
       "contract": "FAOEconomicEvaluationPipeline",
-      "baseCreationCodeBytes": 7968,
-      "baseCreationCodeKeccak256": "0x434e6a8a8e7441c08008f063f77521d6f22ac311c3c70b34eedfdce59e852955"
+      "baseCreationCodeBytes": 8338,
+      "baseCreationCodeKeccak256": "0xe8dcbc46700bb5551979f163af9e91876651726e60d46d185ae3d57c278db0a5"
     },
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24539,
-      "baseCreationCodeKeccak256": "0xc7e7db5f71088324ddab12d5267bef8cfd9cd70bbcfbf53e35ca80bddea60ab3"
+      "baseCreationCodeBytes": 24732,
+      "baseCreationCodeKeccak256": "0x854fd08d34c78434512dfc1a2a2ade7dc034991616878438a553b213fab6bc13"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",
@@ -62,8 +62,8 @@
     "STACK_DEPLOYER": {
       "source": "src/FAOSiteStackDeployer.sol",
       "contract": "FAOSiteStackDeployer",
-      "baseCreationCodeBytes": 16530,
-      "baseCreationCodeKeccak256": "0x0170f0b0d3dcca4fcf66ee642a5e6e09cbf6c670c1057283b46c87f0a647fef8"
+      "baseCreationCodeBytes": 18401,
+      "baseCreationCodeKeccak256": "0xcd7756cc7b96a94c32553ef3521db4b649bee5677ec387dfb7447c22e211f8c9"
     }
   }
 }

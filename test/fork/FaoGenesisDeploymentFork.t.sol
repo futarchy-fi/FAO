@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {FaoSaleCurve} from "../../src/FaoSaleCurve.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, console2} from "forge-std/Test.sol";
 import {FutarchyLiquidityManager} from "flm/core/FutarchyLiquidityManager.sol";
@@ -45,6 +46,8 @@ contract Lane4ForkTarget {
 }
 
 contract FaoGenesisDeploymentForkTest is Test {
+    address internal saleCurve;
+
     address private constant SX_PROXY_FACTORY = 0x4B4F7f64Be813Ccc66AEFC3bFCe2baA01188631c;
     address private constant SX_SPACE_IMPLEMENTATION = 0xC3031A7d3326E47D49BfF9D374d74f364B29CE4D;
     address private constant SX_PROPOSAL_VALIDATION = 0x9A39194F870c410633C170889E9025fba2113c79;
@@ -390,6 +393,13 @@ contract FaoGenesisDeploymentForkTest is Test {
     {
         FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
         FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
+        address predictedReceipt =
+            vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        saleCurve = address(
+            new FaoSaleCurve(
+                vm.computeCreateAddress(predictedReceipt, 2), 0.01 ether, 0.001 ether, 0, 0
+            )
+        );
         coreConfig = _coreConfig(stackDeployer, proposalImplementation);
         FaoGenesisDeployment.FlmConfig memory flmConfig = _flmConfig();
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
@@ -440,7 +450,10 @@ contract FaoGenesisDeploymentForkTest is Test {
             tokenMaxSupply: 4 ether,
             initialPrice: 0.01 ether,
             slope: 0.001 ether,
-            bootstrapBps: 5000
+            bootstrapBps: 5000,
+            saleCurve: saleCurve,
+            optionIssuer: address(0),
+            shortIssuer: address(0)
         });
     }
 

@@ -9,6 +9,7 @@ import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.s
 interface IFAOSiteEvaluationArbitration {
     function activeEvaluationProposalId() external view returns (uint256);
     function resolveActiveEvaluation(bool accepted) external;
+    function startNextEvaluation() external;
 }
 
 interface IFAOSiteEvaluationOrchestrator {

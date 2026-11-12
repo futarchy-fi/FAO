@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {SaleCurveFixture} from "./mocks/SaleCurveFixture.sol";
 import {Test} from "forge-std/Test.sol";
 import {VestingWallet} from "@openzeppelin/contracts/finance/VestingWallet.sol";
 
@@ -25,7 +26,7 @@ import {
     GenesisWethMock
 } from "./mocks/GenesisVaultMocks.sol";
 
-contract GenesisVaultTest is Test {
+contract GenesisVaultTest is SaleCurveFixture {
     uint256 internal constant SALE_CAP = 1000 ether;
     uint256 internal constant MINIMUM_RAISE = 0.1 ether;
     uint256 internal constant GRANT_AMOUNT = 200 ether;
@@ -105,8 +106,9 @@ contract GenesisVaultTest is Test {
         GenesisVault.GrantConfig[] memory grants =
             new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
 
+        GenesisVault.Config memory config = _config(hook);
         vm.expectRevert(GenesisVault.InvalidConfig.selector);
-        new GenesisVault(_config(hook), grants);
+        new GenesisVault(config, grants);
     }
 
     function testRejectsDuplicateAssetPoliciesAndAcceptsEightUniquePolicies() public {
@@ -125,6 +127,8 @@ contract GenesisVaultTest is Test {
                 asset: address(asset), c1: 1, c2: 2, tapBudget: 3, tapBudgetMax: 4
             });
         }
+        // The reverted creation above used up the address the first curve was built for.
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
         GenesisVault vault = new GenesisVault(config, grants);
         assertEq(vault.assetPolicyCount(), 8);
 
@@ -636,7 +640,6 @@ contract GenesisVaultTest is Test {
 
     function _config(GenesisBootstrapHookMock hook)
         internal
-        view
         returns (GenesisVault.Config memory config)
     {
         GenesisVault.AssetPolicyConfig[] memory policies = new GenesisVault.AssetPolicyConfig[](2);
@@ -669,8 +672,12 @@ contract GenesisVaultTest is Test {
             initialPrice: INITIAL_PRICE,
             slope: SLOPE,
             bootstrapBps: BOOTSTRAP_BPS,
-            assetPolicies: policies
+            assetPolicies: policies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: address(0)
         });
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
     }
 
     function _bindManager(GenesisVault vault) internal returns (GenesisManagerMock manager) {

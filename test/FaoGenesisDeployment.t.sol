@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
@@ -140,6 +141,8 @@ contract FaoGenesisPoolMock is IUniswapV3PoolLike {
 }
 
 contract FaoGenesisDeploymentTest is Test {
+    address internal saleCurve;
+
     uint256 private constant GRADUATION_THRESHOLD = 100 ether;
     uint256 private constant ACTIVATION_BOND = 1 ether;
     uint256 private constant TREASURY_BOND = 2 ether;
@@ -291,6 +294,7 @@ contract FaoGenesisDeploymentTest is Test {
         FaoGenesisDeployment.CoreConfig memory config = _coreConfig();
         config.initialPrice = type(uint256).max;
         config.slope = 0;
+        _prepareSaleCurve();
         FaoGenesisDeployment receipt = new FaoGenesisDeployment(
             keccak256(abi.encode(config, _grants())), keccak256(abi.encode(_flmConfig()))
         );
@@ -308,6 +312,7 @@ contract FaoGenesisDeploymentTest is Test {
                 beneficiary: vm.addr(i + 1), start: 1, duration: 1, amount: 1
             });
         }
+        _prepareSaleCurve();
         FaoGenesisDeployment receipt = new FaoGenesisDeployment(
             keccak256(abi.encode(_coreConfig(), grants)), keccak256(abi.encode(_flmConfig()))
         );
@@ -492,6 +497,7 @@ contract FaoGenesisDeploymentTest is Test {
     }
 
     function _newReceipt() private returns (FaoGenesisDeployment) {
+        _prepareSaleCurve();
         return new FaoGenesisDeployment(
             keccak256(abi.encode(_coreConfig(), _grants())), keccak256(abi.encode(_flmConfig()))
         );
@@ -529,8 +535,20 @@ contract FaoGenesisDeploymentTest is Test {
             tokenMaxSupply: 1000 ether,
             initialPrice: 0.01 ether,
             slope: 0.001 ether,
-            bootstrapBps: 5000
+            bootstrapBps: 5000,
+            saleCurve: saleCurve,
+            optionIssuer: address(0),
+            shortIssuer: address(0)
         });
+    }
+
+    /// @dev Deploys the sale curve for the vault of the receipt this contract creates next
+    /// (the receipt creates its vault with nonce 2).
+    function _prepareSaleCurve() private {
+        address receipt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        saleCurve = address(
+            new FaoSaleCurve(vm.computeCreateAddress(receipt, 2), 0.01 ether, 0.001 ether, 0, 0)
+        );
     }
 
     function _flmConfig() private view returns (FaoGenesisDeployment.FlmConfig memory) {
@@ -615,7 +633,10 @@ contract FaoGenesisDeploymentTest is Test {
             initialPrice: config.initialPrice,
             slope: config.slope,
             bootstrapBps: config.bootstrapBps,
-            assetPolicies: config.assetPolicies
+            assetPolicies: config.assetPolicies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: config.saleCurve
         });
     }
 }

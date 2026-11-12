@@ -48,11 +48,24 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
     mapping(address => Binding) public bindings;
 
+    /// @notice Running tick totals of both pools, recorded once at or after the start of the
+    /// averaging window. With a checkpoint the decision reads only the pools' current totals, so
+    /// it does not depend on how much history the pools still hold.
+    struct Checkpoint {
+        int56 yesCumulative;
+        int56 noCumulative;
+        uint48 timestamp;
+    }
+
+    mapping(address => Checkpoint) public windowStart;
+
     error NotOrchestrator();
     error OrchestratorAlreadySet();
     error AlreadyBound(address proposal);
     error NotBound(address proposal);
     error AlreadyResolved(address proposal);
+    error AlreadyCheckpointed(address proposal);
+    error CheckpointUnavailable(address proposal);
     error TooEarly(address proposal, uint256 windowEnd);
     error InvalidPair(address pool, address token);
     error InvalidConfig(uint32 timeout, uint32 window);
@@ -66,6 +79,7 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         uint48 anchorTimestamp,
         bytes32 questionId
     );
+    event WindowStartCheckpointed(address indexed proposal, uint48 timestamp);
     event ProposalResolved(
         address indexed proposal,
         bool accepted,
@@ -117,6 +131,27 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         emit ProposalBound(proposal, yesPool, noPool, anchorTimestamp, qId);
     }
 
+    /// @notice Record both pools' running tick totals as the start of the averaging window.
+    /// @dev Anyone may call once, at or after `anchor + TIMEOUT - TWAP_WINDOW`. Whoever has a
+    ///      bond on the proposal has the incentive to. If it is called late the window simply
+    ///      starts late: `resolve` then waits until a full TWAP_WINDOW has passed since it.
+    function checkpointWindowStart(address proposal) external {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        if (windowStart[proposal].timestamp != 0) revert AlreadyCheckpointed(proposal);
+
+        uint256 earliest = uint256(b.anchorTimestamp) + TIMEOUT - TWAP_WINDOW;
+        if (block.timestamp < earliest) revert TooEarly(proposal, earliest);
+
+        (int56 yesCumulative, bool yesFailed) = _cumulativeNow(b.yesPool);
+        (int56 noCumulative, bool noFailed) = _cumulativeNow(b.noPool);
+        if (yesFailed || noFailed) revert CheckpointUnavailable(proposal);
+
+        windowStart[proposal] = Checkpoint(yesCumulative, noCumulative, uint48(block.timestamp));
+        emit WindowStartCheckpointed(proposal, uint48(block.timestamp));
+    }
+
     /// @inheritdoc IFAOFutarchyOracle
     /// @custom:spec INV-TWAP-002 — resolution determinism. See audit/specs/INVARIANTS.md.
     function resolve(address proposal) external {
@@ -128,11 +163,27 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         if (block.timestamp < windowEnd) revert TooEarly(proposal, windowEnd);
 
         (address yesCo, address noCo) = _companyWrappers(proposal);
-        (int24 yesAvgTick, bool yesFailed) = _arithmeticMeanTick(b.yesPool, yesCo, windowEnd);
+        int24 yesAvgTick;
         int24 noAvgTick;
+        bool yesFailed;
         bool noFailed;
-        if (!yesFailed) {
-            (noAvgTick, noFailed) = _arithmeticMeanTick(b.noPool, noCo, windowEnd);
+        Checkpoint memory start = windowStart[proposal];
+        if (start.timestamp != 0) {
+            // Checkpointed window: [checkpoint, now], at least TWAP_WINDOW long.
+            uint256 earliest = uint256(start.timestamp) + TWAP_WINDOW;
+            if (block.timestamp < earliest) revert TooEarly(proposal, earliest);
+            uint256 elapsed = block.timestamp - start.timestamp;
+            (yesAvgTick, yesFailed) = _meanTickSince(b.yesPool, yesCo, start.yesCumulative, elapsed);
+            if (!yesFailed) {
+                (noAvgTick, noFailed) = _meanTickSince(b.noPool, noCo, start.noCumulative, elapsed);
+            }
+        } else {
+            // No checkpoint was taken: read the window from the pools' stored history. This
+            // fails, and resolves NO, if the pools no longer hold that history.
+            (yesAvgTick, yesFailed) = _arithmeticMeanTick(b.yesPool, yesCo, windowEnd);
+            if (!yesFailed) {
+                (noAvgTick, noFailed) = _arithmeticMeanTick(b.noPool, noCo, windowEnd);
+            }
         }
 
         // A genuinely unreadable market cannot be allowed to wedge the arbitration queue.
@@ -165,7 +216,9 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     function isReadyToResolve(address proposal) external view returns (bool) {
         Binding storage b = bindings[proposal];
         if (b.anchorTimestamp == 0 || b.resolved) return false;
-        return block.timestamp >= uint256(b.anchorTimestamp) + TIMEOUT;
+        if (block.timestamp < uint256(b.anchorTimestamp) + TIMEOUT) return false;
+        uint256 checkpointed = windowStart[proposal].timestamp;
+        return checkpointed == 0 || block.timestamp >= checkpointed + TWAP_WINDOW;
     }
 
     // ─── internals
@@ -217,6 +270,43 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         // tick is already in that orientation; else negate.
         address t0 = p.token0();
         if (t0 != companyWrapper) avgTick = -avgTick;
+    }
+
+    /// @dev The pool's running tick total at this block. Reading "now" never depends on how
+    /// many observations the pool keeps.
+    function _cumulativeNow(address pool) internal view returns (int56 cumulative, bool failed) {
+        uint32[] memory secondsAgos = new uint32[](1);
+        uint256 gasBefore = gasleft();
+        try IUniswapV3PoolLike(pool).observe(secondsAgos) returns (
+            int56[] memory tickCumulatives, uint160[] memory
+        ) {
+            if (tickCumulatives.length != 1) return (0, true);
+            return (tickCumulatives[0], false);
+        } catch {
+            if (gasleft() < gasBefore / 64) revert InsufficientGas();
+            return (0, true);
+        }
+    }
+
+    /// @dev Mean tick of `pool` since a checkpoint, oriented so a dearer company token is a
+    /// higher tick, and rounded down in that orientation for both pools alike.
+    function _meanTickSince(
+        address pool,
+        address companyWrapper,
+        int56 startCumulative,
+        uint256 elapsed
+    ) internal view returns (int24 avgTick, bool failed) {
+        (int56 nowCumulative, bool readFailed) = _cumulativeNow(pool);
+        if (readFailed) return (0, true);
+        int56 delta = nowCumulative - startCumulative;
+        if (IUniswapV3PoolLike(pool).token0() != companyWrapper) delta = -delta;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int56 divisor = int56(uint56(elapsed));
+        int56 mean = delta / divisor;
+        if (delta < 0 && delta % divisor != 0) mean--;
+        if (mean < type(int24).min || mean > type(int24).max) return (0, true);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        avgTick = int24(mean);
     }
 
     /// @dev Returns the (yesCompanyWrap, noCompanyWrap) for a proposal. Outcome indexing

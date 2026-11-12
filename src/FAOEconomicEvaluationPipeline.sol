@@ -122,7 +122,13 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         return arbitrationContract;
     }
 
+    /// @dev When no evaluation is active this also moves the head of the queue into evaluation,
+    ///      so starting and creating the market happen in one transaction. If the payload is not
+    ///      the head's, the whole call reverts and the queue is untouched.
     function startEvaluation(uint256 proposalId, bytes calldata evaluationPayload) external {
+        IFAOSiteEvaluationArbitration arbitration_ =
+            IFAOSiteEvaluationArbitration(arbitrationContract);
+        if (arbitration_.activeEvaluationProposalId() == 0) arbitration_.startNextEvaluation();
         _assertActive(proposalId);
         if (futarchyProposalOf[proposalId] != address(0)) {
             revert EvaluationAlreadyStarted(proposalId);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {SaleCurveFixture} from "./mocks/SaleCurveFixture.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -260,7 +261,7 @@ contract BuybackVaultMock {
     }
 }
 
-contract GenesisBuybackTest is Test {
+contract GenesisBuybackTest is SaleCurveFixture {
     using Math for uint256;
 
     uint160 private constant UP_LIMIT = 1_455_037_516_157_182_476_416_095_806;
@@ -531,8 +532,12 @@ contract GenesisBuybackTest is Test {
             initialPrice: 0.001 ether,
             slope: 0.000_001 ether,
             bootstrapBps: 5000,
-            assetPolicies: policies
+            assetPolicies: policies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: address(0)
         });
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
         GenesisVault vault = new GenesisVault(config, grants);
         address buyer = address(0xB0B);
@@ -595,8 +600,12 @@ contract GenesisBuybackTest is Test {
             initialPrice: 1 ether,
             slope: 0,
             bootstrapBps: 5000,
-            assetPolicies: policies
+            assetPolicies: policies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: address(0)
         });
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
         GenesisVault vault = new GenesisVault(config, grants);
         vm.expectRevert(GenesisVault.InvalidPhase.selector);
