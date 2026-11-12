@@ -122,20 +122,30 @@ contract FAOTwapResolverCheckpointTest is Test {
     }
 
     function test_lateCheckpointDelaysResolutionByAFullWindow() public {
-        vm.warp(anchor + 60 hours); // 12 hours late
+        vm.warp(anchor + 52 hours); // 4 hours late, inside the 6-hour grace
         resolver.checkpointWindowStart(address(proposal));
         assertFalse(resolver.isReadyToResolve(address(proposal)));
         vm.warp(anchor + 72 hours);
         vm.expectRevert(
             abi.encodeWithSelector(
-                FAOTwapResolver.TooEarly.selector, address(proposal), anchor + 84 hours
+                FAOTwapResolver.TooEarly.selector, address(proposal), anchor + 76 hours
             )
         );
         resolver.resolve(address(proposal));
-        vm.warp(anchor + 84 hours);
+        vm.warp(anchor + 76 hours);
         assertTrue(resolver.isReadyToResolve(address(proposal)));
         resolver.resolve(address(proposal));
         assertTrue(_accepted());
+    }
+
+    function test_checkpointCannotBeTakenAfterTheGracePeriod() public {
+        vm.warp(anchor + 54 hours + 1); // grace ends 6 hours after the scheduled start
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FAOTwapResolver.CheckpointTooLate.selector, address(proposal), anchor + 54 hours
+            )
+        );
+        resolver.checkpointWindowStart(address(proposal));
     }
 
     function test_onlyPricesInsideTheWindowCount() public {

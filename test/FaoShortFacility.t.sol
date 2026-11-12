@@ -75,6 +75,20 @@ contract FaoShortFacilityTest is Base {
         assertEq(lock, N * base / WAD);
     }
 
+    function test_lockNeverBelowTheWethOneTokenCanRedeem() public {
+        weth.mint(address(vault), 4 * SOLD * base / WAD); // treasury WETH per token is now 5x base
+        (, uint256 lock) = _open(N);
+        assertEq(lock, N * 5 * base / WAD);
+    }
+
+    function test_sameBlockOpenAndCloseStillPaysOneFeePeriod() public {
+        (uint256 id, uint256 lock) = _open(N);
+        vm.prank(shorter);
+        (uint256 released, uint256 fee) = shorts.close(id, N, shorter);
+        assertEq(fee, lock / 100);
+        assertEq(released, lock - fee);
+    }
+
     function test_maxLockProtectsTheOpener() public {
         vm.prank(shorter);
         vm.expectRevert(FaoShortFacility.LockExceedsMax.selector);

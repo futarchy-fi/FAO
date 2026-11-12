@@ -44,8 +44,8 @@
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24732,
-      "baseCreationCodeKeccak256": "0x854fd08d34c78434512dfc1a2a2ade7dc034991616878438a553b213fab6bc13"
+      "baseCreationCodeBytes": 24726,
+      "baseCreationCodeKeccak256": "0xca4a81ed38a2f32cc1bb9269f2da5bc8903124d60c2316d556a7c0761efc98c0"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",
@@ -62,8 +62,8 @@
     "STACK_DEPLOYER": {
       "source": "src/FAOSiteStackDeployer.sol",
       "contract": "FAOSiteStackDeployer",
-      "baseCreationCodeBytes": 18401,
-      "baseCreationCodeKeccak256": "0xcd7756cc7b96a94c32553ef3521db4b649bee5677ec387dfb7447c22e211f8c9"
+      "baseCreationCodeBytes": 18374,
+      "baseCreationCodeKeccak256": "0x7199295cf149ad691453fb9bef7b51c3c76c018d6ee7f0dd146833861c733ece"
     }
   }
 }

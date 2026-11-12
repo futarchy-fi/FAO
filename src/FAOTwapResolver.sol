@@ -59,12 +59,16 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
     mapping(address => Checkpoint) public windowStart;
 
+    /// @notice The checkpoint must be taken within TWAP_WINDOW / 4 of the scheduled start.
+    uint256 public constant CHECKPOINT_GRACE_DIVISOR = 4;
+
     error NotOrchestrator();
     error OrchestratorAlreadySet();
     error AlreadyBound(address proposal);
     error NotBound(address proposal);
     error AlreadyResolved(address proposal);
     error AlreadyCheckpointed(address proposal);
+    error CheckpointTooLate(address proposal, uint256 latest);
     error CheckpointUnavailable(address proposal);
     error TooEarly(address proposal, uint256 windowEnd);
     error InvalidPair(address pool, address token);
@@ -143,6 +147,10 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
         uint256 earliest = uint256(b.anchorTimestamp) + TIMEOUT - TWAP_WINDOW;
         if (block.timestamp < earliest) revert TooEarly(proposal, earliest);
+        // A late checkpoint would let its caller choose the window. Past the grace period the
+        // decision falls back to the pools' stored history.
+        uint256 latest = earliest + TWAP_WINDOW / CHECKPOINT_GRACE_DIVISOR;
+        if (block.timestamp > latest) revert CheckpointTooLate(proposal, latest);
 
         (int56 yesCumulative, bool yesFailed) = _cumulativeNow(b.yesPool);
         (int56 noCumulative, bool noFailed) = _cumulativeNow(b.noPool);
@@ -261,15 +269,27 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         }
         if (cums.length != 2) return (0, true);
 
-        int56 delta = cums[1] - cums[0];
-        // forge-lint: disable-next-line(unsafe-typecast)
-        avgTick = int24(delta / int56(uint56(TWAP_WINDOW)));
-
         // Normalize: pool tick = log(token1/token0). We want log(currency/company)
         // — i.e. company-as-token0 orientation. If token0 is the company wrapper,
         // tick is already in that orientation; else negate.
-        address t0 = p.token0();
-        if (t0 != companyWrapper) avgTick = -avgTick;
+        return _orientedMean(cums[1] - cums[0], TWAP_WINDOW, p.token0() == companyWrapper);
+    }
+
+    /// @dev Mean tick over `elapsed` seconds, oriented so a dearer company token is a higher
+    /// tick and rounded down in that orientation. Shared by both resolve paths.
+    function _orientedMean(int56 delta, uint256 elapsed, bool companyIsToken0)
+        internal
+        pure
+        returns (int24 avgTick, bool failed)
+    {
+        if (!companyIsToken0) delta = -delta;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int56 divisor = int56(uint56(elapsed));
+        int56 mean = delta / divisor;
+        if (delta < 0 && delta % divisor != 0) mean--;
+        if (mean < type(int24).min || mean > type(int24).max) return (0, true);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        avgTick = int24(mean);
     }
 
     /// @dev The pool's running tick total at this block. Reading "now" never depends on how
@@ -299,14 +319,7 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         (int56 nowCumulative, bool readFailed) = _cumulativeNow(pool);
         if (readFailed) return (0, true);
         int56 delta = nowCumulative - startCumulative;
-        if (IUniswapV3PoolLike(pool).token0() != companyWrapper) delta = -delta;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        int56 divisor = int56(uint56(elapsed));
-        int56 mean = delta / divisor;
-        if (delta < 0 && delta % divisor != 0) mean--;
-        if (mean < type(int24).min || mean > type(int24).max) return (0, true);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        avgTick = int24(mean);
+        return _orientedMean(delta, elapsed, IUniswapV3PoolLike(pool).token0() == companyWrapper);
     }
 
     /// @dev Returns the (yesCompanyWrap, noCompanyWrap) for a proposal. Outcome indexing

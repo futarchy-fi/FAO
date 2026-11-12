@@ -9,6 +9,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 interface IShortVault {
     function phase() external view returns (uint8);
     function terminalPrice() external view returns (uint256);
+    function effectiveSupply() external view returns (uint256);
     function COMPANY_TOKEN() external view returns (address);
     function TREASURY_EXECUTOR() external view returns (address);
     function WETH() external view returns (address);
@@ -35,8 +36,9 @@ interface IShortBeacon {
 /// so a briefly pushed-down price cannot be used to mint cheaply.
 ///
 /// The minter sells the FAO. Returning the same amount before the term ends burns it and releases
-/// the lock, less a fee to the treasury that grows with time. There are no liquidations and no
-/// price is read after opening: the lock always covers the tokens it minted. A position left
+/// the lock, less a fee to the treasury that grows with time and is never below one 30-day period.
+/// There are no liquidations and no price is read after opening: the lock always covers the tokens
+/// it minted. A position left
 /// open past its term is forfeited by anyone; the whole lock goes to the treasury and the tokens
 /// stay in circulation, so the organization has sold them at the lock price.
 ///
@@ -74,7 +76,7 @@ contract FaoShortFacility is ReentrancyGuard {
     uint32 public immutable TERM;
     /// @notice Days of recorded highs included in the reference price.
     uint8 public immutable LOOKBACK_DAYS;
-    /// @notice Open short tokens may not exceed this share of all other tokens, in bps.
+    /// @notice Open short tokens may not exceed this share of the ragequit-entitled supply, in bps.
     uint32 public immutable MAX_OPEN_BPS;
     IShortBeacon public immutable BEACON;
     address public immutable BINDER;
@@ -117,6 +119,7 @@ contract FaoShortFacility is ReentrancyGuard {
         if (
             address(beacon) == address(0) || lockMultipleBps <= BPS || feeBpsPer30Days > 1000
                 || term < 1 days || lookbackDays == 0 || lookbackDays > 60 || maxOpenBps == 0
+                || maxOpenBps > BPS
         ) revert InvalidConfig();
         BEACON = beacon;
         LOCK_MULTIPLE_BPS = lockMultipleBps;
@@ -162,8 +165,16 @@ contract FaoShortFacility is ReentrancyGuard {
     /// @notice Lock per token for a given reference price.
     function lockPrice(uint256 referencePrice) public view returns (uint256 price) {
         price = Math.mulDiv(referencePrice, LOCK_MULTIPLE_BPS, BPS, Math.Rounding.Up);
-        uint256 base = vault.terminalPrice();
+        IShortVault vault_ = vault;
+        uint256 base = vault_.terminalPrice();
         if (price < base) price = base;
+        // Never mint for less than the WETH one token can redeem from the treasury. (Liquidity
+        // shares held by the treasury are not valued here.)
+        uint256 entitled = vault_.effectiveSupply();
+        if (entitled != 0) {
+            uint256 backing = Math.mulDiv(weth.balanceOf(treasury), WAD, entitled, Math.Rounding.Up);
+            if (price < backing) price = backing;
+        }
     }
 
     // ------------------------------------------------------------------ open
@@ -187,8 +198,7 @@ contract FaoShortFacility is ReentrancyGuard {
 
         IShortToken token_ = token;
         uint256 outstanding = token_.shortOutstanding();
-        uint256 others = token_.totalSupply() - outstanding;
-        if (outstanding + amount > Math.mulDiv(others, MAX_OPEN_BPS, BPS)) {
+        if (outstanding + amount > Math.mulDiv(vault_.effectiveSupply(), MAX_OPEN_BPS, BPS)) {
             revert OpenInterestCap();
         }
 
@@ -226,6 +236,8 @@ contract FaoShortFacility is ReentrancyGuard {
         fee = Math.mulDiv(
             share, uint256(FEE_BPS_PER_30_DAYS) * elapsed, BPS * 30 days, Math.Rounding.Up
         );
+        uint256 minimumFee = Math.mulDiv(share, FEE_BPS_PER_30_DAYS, BPS, Math.Rounding.Up);
+        if (fee < minimumFee) fee = minimumFee;
         if (fee > share) fee = share;
         released = share - fee;
 
