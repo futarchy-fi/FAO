@@ -12,7 +12,8 @@ interface IFaoTokenBurnAuthorizer {
 /// - `optionIssuer` mints when a team option is exercised (the strike is paid to the treasury);
 /// - `shortIssuer` mints against locked collateral and burns on close.
 /// Tokens minted by the short issuer and not yet closed or forfeited are tracked in
-/// `shortOutstanding`, which the vault excludes from the ragequit denominator.
+/// `shortOutstanding`. They are ordinary tokens: they count in the ragequit supply, and the
+/// short issuer's locked WETH is paid out pro rata on ragequit.
 contract FaoToken is ERC20 {
     error InvalidVault();
     error InvalidMaxSupply();

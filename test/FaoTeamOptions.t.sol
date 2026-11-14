@@ -48,6 +48,16 @@ contract FaoTeamOptionsTest is Base {
         }
     }
 
+    function test_milestonesAndStrikeUseTheInitialSalePriceNotTheClosingPrice() public {
+        terminalMultiple = 3; // the sale ran onto the curve and closed at 3x the fixed price
+        _deploy(10_000);
+        assertEq(vault.terminalPrice(), 3 * base);
+        assertEq(options.basePrice(), base);
+        assertEq(options.strike(), base);
+        assertEq(options.level(0), 2 * base);
+        assertEq(options.level(9), 1024 * base);
+    }
+
     function test_onlyOptionIssuerCanMint() public {
         vm.expectRevert(FaoToken.OnlyOptionIssuer.selector);
         token.issueOption(team, 1);

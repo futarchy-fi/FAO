@@ -5,6 +5,12 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {FaoToken} from "../../src/FaoToken.sol";
 
+interface IMockShortPool {
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        returns (uint256);
+}
+
 contract MockWETH is ERC20 {
     constructor() ERC20("Wrapped Ether", "WETH") {}
 
@@ -63,6 +69,8 @@ contract MockVault {
     uint8 public phase;
     uint256 public totalSold;
     uint256 public terminalPrice;
+    /// @dev The fixed sale price; this mock also stands in for the sale curve.
+    uint256 public INITIAL_PRICE;
     FaoToken public token;
     IERC20 public weth;
 
@@ -87,10 +95,19 @@ contract MockVault {
         return address(weth);
     }
 
+    function CURVE() external view returns (address) {
+        return address(this);
+    }
+
     function goLive(uint256 sold, uint256 price) external {
         totalSold = sold;
         terminalPrice = price;
+        INITIAL_PRICE = price;
         phase = 2;
+    }
+
+    function setTerminalPrice(uint256 price) external {
+        terminalPrice = price;
     }
 
     function mintTo(address to, uint256 amount) external {
@@ -98,11 +115,11 @@ contract MockVault {
     }
 
     function effectiveSupply() public view returns (uint256) {
-        uint256 supply = token.totalSupply();
-        uint256 shorts = token.shortOutstanding();
-        return shorts >= supply ? 0 : supply - shorts;
+        return token.totalSupply();
     }
 
+    /// @dev WETH-only ragequit: the caller's fraction of this treasury, then the same fraction
+    /// of the short facility's locked pool, as the real vault does.
     function ragequit(uint256 amount) external returns (uint256 payout) {
         uint256 supply = effectiveSupply();
         require(supply != 0 && amount <= supply, "effective supply");
@@ -111,6 +128,10 @@ contract MockVault {
         _burnAmount = amount;
         token.burnFromVault(msg.sender, amount);
         weth.transfer(msg.sender, payout);
+        address shortIssuer = token.shortIssuer();
+        if (shortIssuer != address(0)) {
+            payout += IMockShortPool(shortIssuer).onRagequit(msg.sender, amount, supply);
+        }
     }
 
     function consumeTokenBurnAuthorization(address account, uint256 amount) external {

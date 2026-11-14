@@ -58,6 +58,12 @@ interface IGenesisArbitration {
     function getProposal(uint256 proposalId) external view returns (Proposal memory);
 }
 
+interface IGenesisShortPool {
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        returns (uint256 paid);
+}
+
 interface IGenesisBootstrapHook {
     function prepareAndAssert(uint256 terminalPrice) external;
 }
@@ -514,8 +520,9 @@ contract GenesisVault is ReentrancyGuard {
         emit Claimed(account, amount);
     }
 
-    /// @notice Supply entitled to the treasury, excluding this vault, immutable unvested grants
-    /// and tokens minted against still-open short positions.
+    /// @notice Supply entitled to the treasury, excluding this vault and immutable unvested
+    /// grants. Tokens minted by the short facility count: its locked WETH is paid out pro rata
+    /// by `ragequit` alongside the treasury.
     function effectiveSupply() public view returns (uint256 supply) {
         uint256 vaultBalance = COMPANY_TOKEN.balanceOf(address(this));
         if (vaultBalance < totalUnclaimedSold) revert ClaimReserveUndercollateralized();
@@ -532,10 +539,6 @@ contract GenesisVault is ReentrancyGuard {
         }
         if (unvested > supply) revert InvalidEffectiveSupply();
         supply -= unvested;
-
-        // Open shorts are backed by their own lock, not by the treasury.
-        uint256 shorts = COMPANY_TOKEN.shortOutstanding();
-        supply = shorts > supply ? 0 : supply - shorts;
     }
 
     /// @notice Burns the caller's tokens for its exact pro-rata share of every selected vault
@@ -574,6 +577,11 @@ contract GenesisVault is ReentrancyGuard {
         for (uint256 i; i < sortedExtras.length; ++i) {
             uint256 payout = Math.mulDiv(extraBalances[i], amount, supply);
             _releaseExact(sortedExtras[i], recipient, payout);
+        }
+        // The short facility's locked WETH backs every token too: it pays the same fraction.
+        address shortIssuer = COMPANY_TOKEN.shortIssuer();
+        if (shortIssuer != address(0)) {
+            IGenesisShortPool(shortIssuer).onRagequit(recipient, amount, supply);
         }
         if (COMPANY_TOKEN.balanceOf(address(this)) < totalUnclaimedSold) {
             revert ClaimReserveUndercollateralized();

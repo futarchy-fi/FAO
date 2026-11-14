@@ -31,20 +31,26 @@ interface IShortBeacon {
 /// @notice Permanent, permissionless way to short FAO from the first day.
 ///
 /// Anyone may mint new FAO by locking WETH worth `LOCK_MULTIPLE` times the reference price per
-/// token (and never less than the sale's closing price). The reference price is the highest of the
-/// pool's current 30-minute average, its average since the beacon's latest checkpoint, and the
-/// highest day-long average of the last `LOOKBACK_DAYS`, so a briefly pushed-down price cannot
-/// be used to mint cheaply.
+/// token. The reference price is the highest of the pool's current 30-minute average, its average
+/// since the beacon's latest checkpoint, and the highest day-long average of the last
+/// `LOOKBACK_DAYS`, so a briefly pushed-down price cannot be used to mint cheaply. The lock per
+/// token is also never below the sale's closing price, nor below the WETH that one token can
+/// redeem by ragequit.
 ///
 /// The minter sells the FAO. Returning the same amount before the term ends burns it and releases
-/// the lock, less a fee to the treasury that grows with time and is never below one 30-day period.
-/// There are no liquidations and no price is read after opening: the lock always covers the tokens
-/// it minted. A position left
-/// open past its term is forfeited by anyone; the whole lock goes to the treasury and the tokens
-/// stay in circulation, so the organization has sold them at the lock price.
+/// the position's share of the locked pool, less a fee to the treasury that grows with time and is
+/// never below one 30-day period. There are no liquidations and no price is read after opening.
+/// A position left open past its term is forfeited by anyone: its share of the pool goes to the
+/// treasury and the tokens stay in circulation.
 ///
-/// Tokens minted here and not yet closed or forfeited are excluded from the ragequit denominator
-/// by the vault (FaoToken.shortOutstanding), so open shorts never dilute a ragequit.
+/// Locked WETH backs every token. Tokens minted here are ordinary tokens and count in the
+/// ragequit supply, and the locked pool counts in the ragequit assets: a ragequit of a fraction
+/// of the supply takes the same fraction of the treasury and of this pool. Opening a short
+/// therefore never lowers what a token can redeem, and nobody ever waits for a short to close.
+/// The cost falls on open positions: each ragequit shrinks the pool they share, so a short that
+/// stays open while holders are ragequitting gets back less than it locked. Shorting is safe
+/// while the market price is above the ragequit value; near or below that value a holder is
+/// better off ragequitting than a short is shorting.
 ///
 /// There is no owner, no admin and no changeable parameter. The token names this contract as its
 /// immutable short issuer, so no proposal can switch it off.
@@ -52,6 +58,7 @@ contract FaoShortFacility is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     error OnlyBinder();
+    error OnlyVault();
     error AlreadyBound();
     error InvalidConfig();
     error NotLive();
@@ -60,10 +67,11 @@ contract FaoShortFacility is ReentrancyGuard {
     error OpenInterestCap();
     error NotPositionOwner();
     error InvalidPosition();
+    error InvalidRecipient();
+    error PoolDrained();
     error TermEnded();
     error TermNotEnded();
     error ExceedsPosition();
-    error InvalidRecipient();
 
     uint256 public constant WAD = 1e18;
     uint256 public constant BPS = 10_000;
@@ -77,7 +85,8 @@ contract FaoShortFacility is ReentrancyGuard {
     uint32 public immutable TERM;
     /// @notice Days of recorded interval averages included in the reference price.
     uint8 public immutable LOOKBACK_DAYS;
-    /// @notice Open short tokens may not exceed this share of the ragequit-entitled supply, in bps.
+    /// @notice Open short tokens may not exceed this share of all other ragequit-entitled
+    /// tokens, in bps.
     uint32 public immutable MAX_OPEN_BPS;
     IShortBeacon public immutable BEACON;
     address public immutable BINDER;
@@ -90,12 +99,15 @@ contract FaoShortFacility is ReentrancyGuard {
     struct Position {
         address owner;
         uint64 openedAt;
-        uint256 amount;
-        uint256 lock;
+        uint256 amount; // FAO still owed
+        uint256 shares; // share of the locked pool
     }
 
     Position[] private _positions;
-    uint256 public totalLocked;
+    /// @notice WETH held for open positions. Ragequits draw on it pro rata.
+    uint256 public pooled;
+    /// @notice Sum of all open positions' shares of `pooled`.
+    uint256 public totalShares;
 
     event Bound(address indexed vault);
     event Opened(
@@ -107,6 +119,7 @@ contract FaoShortFacility is ReentrancyGuard {
     );
     event Closed(uint256 indexed id, uint256 amount, uint256 released, uint256 fee);
     event Forfeited(uint256 indexed id, uint256 amount, uint256 lock);
+    event RagequitPaid(address indexed recipient, uint256 amount);
     event PositionTransferred(uint256 indexed id, address indexed from, address indexed to);
 
     constructor(
@@ -153,6 +166,8 @@ contract FaoShortFacility is ReentrancyGuard {
         return _positions.length;
     }
 
+    /// @notice A position; `lock` is the WETH it would release now if closed in full, before the
+    /// fee.
     function position(uint256 id)
         external
         view
@@ -160,7 +175,7 @@ contract FaoShortFacility is ReentrancyGuard {
     {
         if (id >= _positions.length) revert InvalidPosition();
         Position storage p = _positions[id];
-        return (p.owner, p.openedAt, p.amount, p.lock);
+        return (p.owner, p.openedAt, p.amount, _value(p.shares));
     }
 
     /// @notice Lock per token for a given reference price.
@@ -169,11 +184,12 @@ contract FaoShortFacility is ReentrancyGuard {
         IShortVault vault_ = vault;
         uint256 base = vault_.terminalPrice();
         if (price < base) price = base;
-        // Never mint for less than the WETH one token can redeem from the treasury. (Liquidity
-        // shares held by the treasury are not valued here.)
+        // Never mint for less than the WETH one token can redeem, so opening a short cannot
+        // lower it. (Liquidity shares held by the treasury are not valued here.)
         uint256 entitled = vault_.effectiveSupply();
         if (entitled != 0) {
-            uint256 backing = Math.mulDiv(weth.balanceOf(treasury), WAD, entitled, Math.Rounding.Up);
+            uint256 backing =
+                Math.mulDiv(weth.balanceOf(treasury) + pooled, WAD, entitled, Math.Rounding.Up);
             if (price < backing) price = backing;
         }
     }
@@ -190,8 +206,8 @@ contract FaoShortFacility is ReentrancyGuard {
         IShortVault vault_ = vault;
         if (address(vault_) == address(0) || vault_.phase() != PHASE_LIVE) revert NotLive();
         if (amount == 0) revert ZeroAmount();
-        // Tokens held by the vault or the treasury are already left out of the ragequit count;
-        // minting short tokens there would leave them out twice.
+        // Tokens held by the vault or the treasury are left out of the ragequit supply; short
+        // tokens must not be minted there.
         if (
             recipient == address(0) || recipient == address(vault_) || recipient == treasury
                 || recipient == address(this)
@@ -199,7 +215,9 @@ contract FaoShortFacility is ReentrancyGuard {
 
         IShortToken token_ = token;
         uint256 outstanding = token_.shortOutstanding();
-        if (outstanding + amount > Math.mulDiv(vault_.effectiveSupply(), MAX_OPEN_BPS, BPS)) {
+        uint256 entitled = vault_.effectiveSupply();
+        uint256 others = entitled > outstanding ? entitled - outstanding : 0;
+        if (outstanding + amount > Math.mulDiv(others, MAX_OPEN_BPS, BPS)) {
             revert OpenInterestCap();
         }
 
@@ -208,9 +226,21 @@ contract FaoShortFacility is ReentrancyGuard {
         if (lock == 0) revert ZeroAmount();
         if (lock > maxLock) revert LockExceedsMax();
 
+        // New positions buy into the pool at its current value, so earlier ragequit draws are
+        // borne only by the positions that were open at the time.
+        uint256 shares;
+        if (totalShares == 0) {
+            shares = lock;
+        } else {
+            if (pooled == 0) revert PoolDrained();
+            shares = Math.mulDiv(lock, totalShares, pooled);
+        }
+        if (shares == 0) revert ZeroAmount();
+
         id = _positions.length;
-        _positions.push(Position(msg.sender, uint64(block.timestamp), amount, lock));
-        totalLocked += lock;
+        _positions.push(Position(msg.sender, uint64(block.timestamp), amount, shares));
+        totalShares += shares;
+        pooled += lock;
 
         weth.safeTransferFrom(msg.sender, address(this), lock);
         token_.issueShort(recipient, amount);
@@ -219,8 +249,8 @@ contract FaoShortFacility is ReentrancyGuard {
 
     // ------------------------------------------------------------------ close
 
-    /// @notice Returns `amount` FAO, burns it and releases the matching share of the lock to
-    /// `recipient`, less the time-based fee paid to the treasury.
+    /// @notice Returns `amount` FAO, burns it and releases the matching part of the position's
+    /// share of the pool to `recipient`, less the time-based fee paid to the treasury.
     function close(uint256 id, uint256 amount, address recipient)
         external
         nonReentrant
@@ -233,18 +263,20 @@ contract FaoShortFacility is ReentrancyGuard {
         uint256 elapsed = block.timestamp - p.openedAt;
         if (elapsed >= TERM) revert TermEnded();
 
-        uint256 share = amount == p.amount ? p.lock : Math.mulDiv(p.lock, amount, p.amount);
+        uint256 shares = amount == p.amount ? p.shares : Math.mulDiv(p.shares, amount, p.amount);
+        uint256 gross = _value(shares);
         fee = Math.mulDiv(
-            share, uint256(FEE_BPS_PER_30_DAYS) * elapsed, BPS * 30 days, Math.Rounding.Up
+            gross, uint256(FEE_BPS_PER_30_DAYS) * elapsed, BPS * 30 days, Math.Rounding.Up
         );
-        uint256 minimumFee = Math.mulDiv(share, FEE_BPS_PER_30_DAYS, BPS, Math.Rounding.Up);
+        uint256 minimumFee = Math.mulDiv(gross, FEE_BPS_PER_30_DAYS, BPS, Math.Rounding.Up);
         if (fee < minimumFee) fee = minimumFee;
-        if (fee > share) fee = share;
-        released = share - fee;
+        if (fee > gross) fee = gross;
+        released = gross - fee;
 
         p.amount -= amount;
-        p.lock -= share;
-        totalLocked -= share;
+        p.shares -= shares;
+        totalShares -= shares;
+        pooled -= gross;
 
         IShortToken token_ = token;
         IERC20(address(token_)).safeTransferFrom(msg.sender, address(this), amount);
@@ -255,7 +287,8 @@ contract FaoShortFacility is ReentrancyGuard {
         emit Closed(id, amount, released, fee);
     }
 
-    /// @notice After the term, anyone may send an unclosed position's whole lock to the treasury.
+    /// @notice After the term, anyone may send an unclosed position's share of the pool to the
+    /// treasury. Its tokens stay in circulation.
     function forfeit(uint256 id) external nonReentrant returns (uint256 lock) {
         if (id >= _positions.length) revert InvalidPosition();
         Position storage p = _positions[id];
@@ -263,14 +296,33 @@ contract FaoShortFacility is ReentrancyGuard {
         if (amount == 0) revert InvalidPosition();
         if (block.timestamp - p.openedAt < TERM) revert TermNotEnded();
 
-        lock = p.lock;
+        uint256 shares = p.shares;
+        lock = _value(shares);
         p.amount = 0;
-        p.lock = 0;
-        totalLocked -= lock;
+        p.shares = 0;
+        totalShares -= shares;
+        pooled -= lock;
 
         token.forfeitShort(amount);
-        weth.safeTransfer(treasury, lock);
+        if (lock != 0) weth.safeTransfer(treasury, lock);
         emit Forfeited(id, amount, lock);
+    }
+
+    // ------------------------------------------------------------------ ragequit
+
+    /// @notice Called by the vault during a ragequit of `amount` out of `supply` tokens: pays
+    /// the same fraction of the locked pool to `recipient`.
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        nonReentrant
+        returns (uint256 paid)
+    {
+        if (msg.sender != address(vault)) revert OnlyVault();
+        paid = Math.mulDiv(pooled, amount, supply);
+        if (paid == 0) return 0;
+        pooled -= paid;
+        weth.safeTransfer(recipient, paid);
+        emit RagequitPaid(recipient, paid);
     }
 
     function transferPosition(uint256 id, address to) external {
@@ -278,6 +330,11 @@ contract FaoShortFacility is ReentrancyGuard {
         if (to == address(0)) revert InvalidConfig();
         p.owner = to;
         emit PositionTransferred(id, msg.sender, to);
+    }
+
+    function _value(uint256 shares) private view returns (uint256) {
+        uint256 total = totalShares;
+        return total == 0 ? 0 : Math.mulDiv(pooled, shares, total);
     }
 
     function _ownedPosition(uint256 id) private view returns (Position storage p) {

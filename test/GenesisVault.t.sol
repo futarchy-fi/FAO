@@ -27,6 +27,33 @@ import {
     GenesisWethMock
 } from "./mocks/GenesisVaultMocks.sol";
 
+/// @dev Stand-in for the short facility: mints short tokens and pays its WETH pro rata.
+contract ShortPoolMock {
+    GenesisWethMock internal immutable weth;
+    address public lastRecipient;
+    uint256 public lastAmount;
+    uint256 public lastSupply;
+
+    constructor(GenesisWethMock weth_) {
+        weth = weth_;
+    }
+
+    function mint(FaoToken token, address to, uint256 amount) external {
+        token.issueShort(to, amount);
+    }
+
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        returns (uint256 paid)
+    {
+        lastRecipient = recipient;
+        lastAmount = amount;
+        lastSupply = supply;
+        paid = weth.balanceOf(address(this)) * amount / supply;
+        weth.transfer(recipient, paid);
+    }
+}
+
 contract GenesisVaultTest is SaleCurveFixture {
     uint256 internal constant SALE_CAP = 1000 ether;
     uint256 internal constant MINIMUM_RAISE = 0.1 ether;
@@ -618,6 +645,42 @@ contract GenesisVaultTest is SaleCurveFixture {
         arbitration.setOutcome(vault.criticalActionProposalId(action, 2), true, true, true);
         vault.queueCriticalAction(action);
         vm.warp(block.timestamp + vault.CRITICAL_GRACE());
+    }
+
+    function testRagequitCountsShortTokensAndDrawsOnTheShortPool() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        ShortPoolMock shortPool = new ShortPoolMock(weth);
+        config.shortIssuer = address(shortPool);
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
+        GenesisVault vault = new GenesisVault(config, grants);
+        _buy(vault, BUYER, 400 ether);
+        vm.warp(vault.SALE_END());
+        vault.seal();
+        _bindManager(vault);
+        vault.finalize();
+        vault.claim(BUYER);
+        FaoToken token = vault.COMPANY_TOKEN();
+        address treasury = address(vault.TREASURY_EXECUTOR());
+
+        uint256 supplyBefore = vault.effectiveSupply();
+        shortPool.mint(token, address(0x5407), 100 ether);
+        weth.mint(address(shortPool), 2 ether);
+        uint256 supply = vault.effectiveSupply();
+        assertEq(supply, supplyBefore + 100 ether); // short-minted tokens count
+
+        uint256 amount = 50 ether;
+        uint256 fromTreasury = weth.balanceOf(treasury) * amount / supply;
+        uint256 fromPool = 2 ether * amount / supply;
+        address[] memory extras = new address[](0);
+        vm.prank(BUYER);
+        vault.ragequit(amount, payable(RECIPIENT), extras);
+
+        assertEq(weth.balanceOf(RECIPIENT), fromTreasury + fromPool);
+        assertEq(shortPool.lastRecipient(), RECIPIENT);
+        assertEq(shortPool.lastAmount(), amount);
+        assertEq(shortPool.lastSupply(), supply);
     }
 
     // ─── sale through a fixed-price window into the doubling curve

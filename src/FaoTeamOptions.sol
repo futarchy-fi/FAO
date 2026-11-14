@@ -9,10 +9,14 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 interface IOptionsVault {
     function phase() external view returns (uint8);
     function totalSold() external view returns (uint256);
-    function terminalPrice() external view returns (uint256);
+    function CURVE() external view returns (address);
     function COMPANY_TOKEN() external view returns (address);
     function TREASURY_EXECUTOR() external view returns (address);
     function WETH() external view returns (address);
+}
+
+interface IOptionsCurve {
+    function INITIAL_PRICE() external view returns (uint256);
 }
 
 interface IOptionsToken {
@@ -29,7 +33,7 @@ interface IOptionsBeacon {
 ///
 /// The pool is `POOL_BPS` of the tokens sold in the genesis sale, split into ten equal tranches.
 /// Tranche k (k = 0..9) opens only after the market has held at least 2^(k+1) times the sale's
-/// closing price for `SUSTAIN_DAYS` days in a row, measured as the time-weighted average of
+/// initial (fixed) price for `SUSTAIN_DAYS` days in a row, measured as the time-weighted average of
 /// every interval of a day or more recorded by the price beacon.
 /// An opened tranche becomes exercisable linearly over `VESTING`, and nothing is exercisable
 /// before `CLIFF` after genesis. To exercise, the holder pays `strike` WETH per token to the
@@ -68,7 +72,7 @@ contract FaoTeamOptions is ReentrancyGuard {
 
     /// @notice Whole option pool as a share of tokens sold in the genesis sale.
     uint16 public immutable POOL_BPS;
-    /// @notice Strike as a share of the sale's closing price. 10_000 = the closing price.
+    /// @notice Strike as a share of the sale's initial price. 10_000 = the initial price.
     uint16 public immutable STRIKE_BPS;
     IOptionsBeacon public immutable BEACON;
     address public immutable BINDER;
@@ -133,7 +137,7 @@ contract FaoTeamOptions is ReentrancyGuard {
         IOptionsVault vault_ = vault;
         if (address(vault_) == address(0) || vault_.phase() != PHASE_LIVE) revert NotLive();
         if (genesisAt != 0) revert AlreadyActivated();
-        uint256 base = vault_.terminalPrice();
+        uint256 base = IOptionsCurve(vault_.CURVE()).INITIAL_PRICE();
         uint256 size = Math.mulDiv(vault_.totalSold(), POOL_BPS, BPS * TRANCHES);
         if (base == 0 || size == 0) revert InvalidConfig();
         genesisAt = uint64(block.timestamp);

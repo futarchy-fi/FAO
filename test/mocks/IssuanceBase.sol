@@ -31,6 +31,8 @@ abstract contract Base is Test {
     int24 internal baseTick;
     int24 internal up; // +1 if a higher tick means a higher FAO price, else -1
     uint256 internal base;
+    /// @dev Sale closing price as a multiple of the fixed initial price.
+    uint256 internal terminalMultiple = 1;
 
     function _deploy(uint16 strikeBps) internal {
         vm.warp(1_800_000_000);
@@ -58,6 +60,7 @@ abstract contract Base is Test {
         vault.mintTo(buyer, SOLD);
         weth.mint(address(vault), SOLD * base / WAD);
         vault.goLive(SOLD, base);
+        if (terminalMultiple != 1) vault.setTerminalPrice(base * terminalMultiple);
         options.activate();
     }
 
