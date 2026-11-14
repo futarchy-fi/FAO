@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
+import {newBoundCurve} from "./mocks/SaleCurveFixture.sol";
 
 contract FaoSaleCurveTest is Test {
     uint256 internal constant WAD = 1e18;
@@ -11,10 +12,30 @@ contract FaoSaleCurveTest is Test {
     uint64 internal end;
     FaoSaleCurve internal curve;
 
+    function test_bindIsOneShotByTheDeployerAndTheVaultAloneSyncs() public {
+        FaoSaleCurve fresh = new FaoSaleCurve(P0, 1e9, 0, 0);
+        assertEq(fresh.vault(), address(0));
+        vm.expectRevert(FaoSaleCurve.OnlyVault.selector);
+        fresh.sync(0); // nobody can drive an unbound curve
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(FaoSaleCurve.OnlyBinder.selector);
+        fresh.bind(address(0xBEEF));
+        vm.expectRevert(FaoSaleCurve.InvalidConfig.selector);
+        fresh.bind(address(0));
+
+        fresh.bind(address(0xA11CE));
+        assertEq(fresh.vault(), address(0xA11CE));
+        vm.expectRevert(FaoSaleCurve.AlreadyBound.selector);
+        fresh.bind(address(this));
+        vm.prank(address(0xA11CE));
+        fresh.sync(0);
+    }
+
     function setUp() public {
         vm.warp(1_800_000_000);
         end = uint64(block.timestamp + 14 days);
-        curve = new FaoSaleCurve(address(this), P0, 0, end, MINIMUM);
+        curve = newBoundCurve(address(this), P0, 0, end, MINIMUM);
     }
 
     // ---------------------------------------------------------------- fixed-price window
@@ -34,12 +55,11 @@ contract FaoSaleCurveTest is Test {
 
     function test_configMustBeOneOfTheTwoShapes() public {
         vm.expectRevert(FaoSaleCurve.InvalidConfig.selector);
-        new FaoSaleCurve(address(this), P0, 1, end, MINIMUM); // a window cannot carry an explicit
-        // slope
+        new FaoSaleCurve(P0, 1, end, MINIMUM); // a window cannot carry an explicit slope
         vm.expectRevert(FaoSaleCurve.InvalidConfig.selector);
-        new FaoSaleCurve(address(this), P0, 0, end, 0); // a window needs a minimum
+        new FaoSaleCurve(P0, 0, end, 0); // a window needs a minimum
         vm.expectRevert(FaoSaleCurve.InvalidConfig.selector);
-        new FaoSaleCurve(address(this), 0, 0, 0, 0);
+        new FaoSaleCurve(0, 0, 0, 0);
     }
 
     // ---------------------------------------------------------------- plain linear curve
@@ -52,7 +72,7 @@ contract FaoSaleCurveTest is Test {
         p0 = bound(p0, 1, 1e24);
         slope = bound(slope, 0, 1e18);
         supply = bound(supply, 0, 1e27);
-        FaoSaleCurve linear = new FaoSaleCurve(address(this), p0, slope, 0, 0);
+        FaoSaleCurve linear = newBoundCurve(address(this), p0, slope, 0, 0);
         linear.sync(0);
         uint256 linearTerm = 2 * p0 * WAD + slope * supply;
         uint256 expected = supply * linearTerm / (2 * WAD * WAD);
@@ -121,7 +141,7 @@ contract FaoSaleCurveTest is Test {
         curve.sync(3 * MINIMUM);
         assertLe(curve.priceAt(cap), curve.maxPrice(cap));
 
-        FaoSaleCurve linear = new FaoSaleCurve(address(this), P0, 1e9, 0, 0);
+        FaoSaleCurve linear = newBoundCurve(address(this), P0, 1e9, 0, 0);
         assertEq(linear.maxPrice(cap), linear.priceAt(cap));
     }
 

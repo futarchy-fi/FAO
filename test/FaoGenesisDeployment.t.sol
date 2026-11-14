@@ -37,6 +37,7 @@ import {GenesisTreasuryExecutor} from "../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {IUniswapV3FactoryLike} from "../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../src/interfaces/IUniswapV3PoolLike.sol";
+import {newBoundCurve} from "./mocks/SaleCurveFixture.sol";
 
 interface IFaoGenesisCallback {
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data)
@@ -547,7 +548,7 @@ contract FaoGenesisDeploymentTest is Test {
     function _prepareSaleCurve() private {
         address receipt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         saleCurve = address(
-            new FaoSaleCurve(vm.computeCreateAddress(receipt, 2), 0.01 ether, 0.001 ether, 0, 0)
+            newBoundCurve(vm.computeCreateAddress(receipt, 2), 0.01 ether, 0.001 ether, 0, 0)
         );
     }
 

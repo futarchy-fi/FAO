@@ -26,6 +26,7 @@ import {
     GenesisTreasuryTargetMock,
     GenesisWethMock
 } from "./mocks/GenesisVaultMocks.sol";
+import {newBoundCurve} from "./mocks/SaleCurveFixture.sol";
 
 /// @dev Stand-in for the short facility: mints short tokens and pays its WETH pro rata.
 contract ShortPoolMock {
@@ -717,11 +718,21 @@ contract GenesisVaultTest is SaleCurveFixture {
         assertEq(vault.terminalPrice(), 2 * INITIAL_PRICE);
     }
 
+    function testRejectsACurveThatWasNeverBound() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.saleCurve = address(new FaoSaleCurve(INITIAL_PRICE, SLOPE, 0, 0));
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
     function testRejectsACurveBuiltForAnotherVault() public {
         GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
         GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
         GenesisVault.Config memory config = _config(hook);
-        config.saleCurve = address(new FaoSaleCurve(address(this), INITIAL_PRICE, SLOPE, 0, 0));
+        config.saleCurve = address(newBoundCurve(address(this), INITIAL_PRICE, SLOPE, 0, 0));
 
         vm.expectRevert(GenesisVault.InvalidConfig.selector);
         new GenesisVault(config, grants);
@@ -738,7 +749,7 @@ contract GenesisVaultTest is SaleCurveFixture {
         config.saleEnd = uint64(block.timestamp + 30 days);
         config.bootstrapDeadline = uint64(block.timestamp + 40 days);
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        curve = new FaoSaleCurve(
+        curve = newBoundCurve(
             predicted, INITIAL_PRICE, 0, uint64(block.timestamp + 14 days), fixedMinimum
         );
         config.saleCurve = address(curve);

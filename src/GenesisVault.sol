@@ -318,7 +318,7 @@ contract GenesisVault is ReentrancyGuard {
         MINIMUM_RAISE = config.minimumRaise;
         FaoSaleCurve curve = FaoSaleCurve(config.saleCurve);
         if (
-            address(curve).code.length == 0 || curve.VAULT() != address(this)
+            address(curve).code.length == 0 || curve.vault() != address(this)
                 || curve.INITIAL_PRICE() != config.initialPrice || curve.SLOPE() != config.slope
         ) revert InvalidConfig();
         CURVE = curve;

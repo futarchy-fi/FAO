@@ -108,7 +108,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant ARBITRATION_CODE_HASH =
         0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d;
     bytes32 public constant VAULT_CODE_HASH =
-        0x8af8034092ef4e983aa36da9c5125670d22f1a4a9d01d8361d15574b03e70b68;
+        0xc2e21a37da3826323c7108ea500d06d878d4bef4b6decba1284bf379551b6615;
     bytes32 public constant RELEASE_STRATEGY_CODE_HASH =
         0x522d5fde9e454fb06cb61d574a409589d73833694d16401293ac1dc9d10c347b;
     bytes32 public constant ZERO_VOTING_CODE_HASH =

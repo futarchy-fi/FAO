@@ -27,6 +27,7 @@ import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionSt
 import {EconomicDeploymentCodeHashes} from "../../src/generated/EconomicDeploymentCodeHashes.sol";
 import {IUniswapV3FactoryLike} from "../../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../../src/interfaces/IUniswapV3PoolLike.sol";
+import {newBoundCurve} from "../mocks/SaleCurveFixture.sol";
 
 interface IFaoGenesisForkWeth {
     function deposit() external payable;
@@ -243,6 +244,10 @@ contract FaoGenesisDeploymentForkTest is Test {
 
         FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
         FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
+        // The curve exists before the configuration that names it; it is bound once the
+        // receipt's address, and so its vault's, is known.
+        FaoSaleCurve curve = new FaoSaleCurve(0.01 ether, 0.001 ether, 0, 0);
+        saleCurve = address(curve);
         FaoGenesisDeployment.CoreConfig memory coreConfig =
             _coreConfig(stackDeployer, proposalImplementation);
         FaoGenesisDeployment.FlmConfig memory flmConfig = _flmConfig();
@@ -255,6 +260,7 @@ contract FaoGenesisDeploymentForkTest is Test {
         FaoGenesisRegistrar registrar =
             new FaoGenesisRegistrar(EconomicDeploymentCodeHashes.RECEIPT);
         address predicted = registrar.predict(coreHash, flmHash, receiptCode);
+        curve.bind(vm.computeCreateAddress(predicted, 2));
         address stager = makeAddr("registrar-stager");
         vm.prank(stager);
         FaoGenesisDeployment receipt =
@@ -396,7 +402,7 @@ contract FaoGenesisDeploymentForkTest is Test {
         address predictedReceipt =
             vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         saleCurve = address(
-            new FaoSaleCurve(
+            newBoundCurve(
                 vm.computeCreateAddress(predictedReceipt, 2), 0.01 ether, 0.001 ether, 0, 0
             )
         );
