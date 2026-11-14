@@ -20,6 +20,7 @@ interface IOptionsCurve {
 }
 
 interface IOptionsToken {
+    function vault() external view returns (address);
     function optionIssuer() external view returns (address);
     function issueOption(address to, uint256 amount) external;
 }
@@ -122,9 +123,12 @@ contract FaoTeamOptions is ReentrancyGuard {
         if (msg.sender != BINDER) revert OnlyBinder();
         if (address(vault) != address(0)) revert AlreadyBound();
         IOptionsToken token_ = IOptionsToken(vault_.COMPANY_TOKEN());
-        if (token_.optionIssuer() != address(this) || BEACON.token() != address(token_)) {
-            revert InvalidConfig();
-        }
+        // The token must name both this contract as its option issuer and this vault as its
+        // vault; a look-alike vault pointing at the real token is refused.
+        if (
+            token_.optionIssuer() != address(this) || token_.vault() != address(vault_)
+                || BEACON.token() != address(token_)
+        ) revert InvalidConfig();
         vault = vault_;
         token = token_;
         weth = IERC20(vault_.WETH());

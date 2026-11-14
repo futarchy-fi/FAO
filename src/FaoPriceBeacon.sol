@@ -12,6 +12,10 @@ interface IBeaconVault {
     function COMPANY_TOKEN() external view returns (address);
 }
 
+interface IBeaconToken {
+    function vault() external view returns (address);
+}
+
 interface IBeaconPool {
     function observe(uint32[] calldata secondsAgos)
         external
@@ -88,12 +92,16 @@ contract FaoPriceBeacon {
         BINDER = msg.sender;
     }
 
-    /// @notice One-time wiring by the deployer. The binder has no other power.
+    /// @notice One-time wiring by the deployer. The binder has no other power: the vault must
+    /// be the one its token names, so a look-alike vault pointing at the token is refused.
     function bind(IBeaconVault vault_) external {
         if (msg.sender != BINDER) revert OnlyBinder();
         if (token != address(0)) revert AlreadyBound();
         address token_ = vault_.COMPANY_TOKEN();
-        if (token_ == address(0) || token_ == WETH) revert InvalidToken();
+        if (
+            token_ == address(0) || token_ == WETH
+                || IBeaconToken(token_).vault() != address(vault_)
+        ) revert InvalidToken();
         vault = vault_;
         token = token_;
         emit Bound(token_);

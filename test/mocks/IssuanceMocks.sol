@@ -143,3 +143,19 @@ contract MockVault {
         _burnAmount = 0;
     }
 }
+
+/// @dev Looks like a live vault and points at a real token, but the token does not name it.
+contract ImpostorVault {
+    address public immutable COMPANY_TOKEN;
+    address public immutable WETH;
+    uint8 public constant phase = 2;
+
+    constructor(address token_, address weth_) {
+        COMPANY_TOKEN = token_;
+        WETH = weth_;
+    }
+
+    function TREASURY_EXECUTOR() external view returns (address) {
+        return address(this);
+    }
+}

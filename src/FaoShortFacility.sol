@@ -16,6 +16,7 @@ interface IShortVault {
 }
 
 interface IShortToken is IERC20 {
+    function vault() external view returns (address);
     function shortIssuer() external view returns (address);
     function shortOutstanding() external view returns (uint256);
     function issueShort(address to, uint256 amount) external;
@@ -154,9 +155,12 @@ contract FaoShortFacility is ReentrancyGuard {
         if (msg.sender != BINDER) revert OnlyBinder();
         if (address(vault) != address(0)) revert AlreadyBound();
         IShortToken token_ = IShortToken(vault_.COMPANY_TOKEN());
-        if (token_.shortIssuer() != address(this) || BEACON.token() != address(token_)) {
-            revert InvalidConfig();
-        }
+        // The token must name both this contract as its short issuer and this vault as its
+        // vault; a look-alike vault pointing at the real token is refused.
+        if (
+            token_.shortIssuer() != address(this) || token_.vault() != address(vault_)
+                || BEACON.token() != address(token_)
+        ) revert InvalidConfig();
         vault = vault_;
         token = token_;
         weth = IERC20(vault_.WETH());

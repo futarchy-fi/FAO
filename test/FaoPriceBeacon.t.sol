@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {FaoPriceBeacon, IBeaconPoolFactory, IBeaconVault} from "../src/FaoPriceBeacon.sol";
 import {FaoTeamOptions, IOptionsBeacon, IOptionsVault} from "../src/FaoTeamOptions.sol";
-import {FaoShortFacility, IShortBeacon} from "../src/FaoShortFacility.sol";
-import {MockWETH, MockPool, MockFactory, MockVault} from "./mocks/IssuanceMocks.sol";
+import {FaoShortFacility, IShortBeacon, IShortVault} from "../src/FaoShortFacility.sol";
+import {MockWETH, MockPool, MockFactory, MockVault, ImpostorVault} from "./mocks/IssuanceMocks.sol";
 
 contract FaoPriceBeaconTest is Test {
     int24 internal constant DOUBLING = 6940;
@@ -63,6 +63,30 @@ contract FaoPriceBeaconTest is Test {
         vm.prank(address(0xBEEF));
         vm.expectRevert(FaoPriceBeacon.OnlyBinder.selector);
         fresh.bind(IBeaconVault(address(vault)));
+    }
+
+    function test_modulesRefuseAVaultThatTheTokenDoesNotName() public {
+        FaoPriceBeacon beacon2 =
+            new FaoPriceBeacon(IBeaconPoolFactory(address(factory)), address(weth), 500);
+        FaoTeamOptions options2 =
+            new FaoTeamOptions(IOptionsBeacon(address(beacon2)), address(0x7EA11), 3000, 10_000);
+        FaoShortFacility shorts2 =
+            new FaoShortFacility(IShortBeacon(address(beacon2)), 20_000, 100, 180 days, 7, 5000);
+        MockVault real = new MockVault(IERC20(address(weth)), address(options2), address(shorts2));
+        // Points at the real token, whose issuers are the modules above, but is not its vault.
+        ImpostorVault impostor = new ImpostorVault(real.COMPANY_TOKEN(), address(weth));
+
+        vm.expectRevert(FaoPriceBeacon.InvalidToken.selector);
+        beacon2.bind(IBeaconVault(address(impostor)));
+        beacon2.bind(IBeaconVault(address(real)));
+
+        vm.expectRevert(FaoTeamOptions.InvalidConfig.selector);
+        options2.bind(IOptionsVault(address(impostor)));
+        vm.expectRevert(FaoShortFacility.InvalidConfig.selector);
+        shorts2.bind(IShortVault(address(impostor)));
+
+        options2.bind(IOptionsVault(address(real)));
+        shorts2.bind(IShortVault(address(real)));
     }
 
     // ---------------------------------------------------------------- before the sale is live
