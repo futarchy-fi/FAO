@@ -134,6 +134,10 @@ contract FaoShortFacility is ReentrancyGuard {
             address(beacon) == address(0) || lockMultipleBps <= BPS || feeBpsPer30Days > 1000
                 || term < 1 days || lookbackDays == 0 || lookbackDays > 60 || maxOpenBps == 0
                 || maxOpenBps > BPS
+                // With open shorts at f of the other supply and a lock of m times the price, a
+                // short is safe only above backing / (1 - f * (m - 1)). Require that level to
+                // exist.
+                || uint256(lockMultipleBps - BPS) * maxOpenBps >= uint256(BPS) * BPS
         ) revert InvalidConfig();
         BEACON = beacon;
         LOCK_MULTIPLE_BPS = lockMultipleBps;

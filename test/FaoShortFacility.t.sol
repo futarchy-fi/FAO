@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Base} from "./mocks/IssuanceBase.sol";
-import {FaoShortFacility} from "../src/FaoShortFacility.sol";
+import {FaoShortFacility, IShortBeacon} from "../src/FaoShortFacility.sol";
 import {FaoToken} from "../src/FaoToken.sol";
 
 contract FaoShortFacilityTest is Base {
@@ -112,6 +112,18 @@ contract FaoShortFacilityTest is Base {
         vm.expectRevert(FaoShortFacility.InvalidRecipient.selector);
         shorts.open(N, type(uint256).max, address(0));
         vm.stopPrank();
+    }
+
+    function test_configMustLeaveAPriceAtWhichShortingIsSafe() public {
+        IShortBeacon beacon_ = FaoShortFacility(address(shorts)).BEACON();
+        // Shorts up to 100% of the other supply at a 2x lock: redemption always exceeds price.
+        vm.expectRevert(FaoShortFacility.InvalidConfig.selector);
+        new FaoShortFacility(beacon_, 20_000, 100, 180 days, 7, 10_000);
+        // 3x lock with shorts up to 50%: the same.
+        vm.expectRevert(FaoShortFacility.InvalidConfig.selector);
+        new FaoShortFacility(beacon_, 30_000, 100, 180 days, 7, 5000);
+        // Just inside the bound.
+        new FaoShortFacility(beacon_, 20_000, 100, 180 days, 7, 9999);
     }
 
     function test_notOpenBeforeTheSaleIsLive() public {

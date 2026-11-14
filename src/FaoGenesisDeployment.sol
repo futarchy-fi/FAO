@@ -116,7 +116,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant ECON_GATEWAY_CODE_HASH =
         0xa15bd8851d728593851fc6fd2a3bb8c1a430484ca6a2b3667dda848b528e8f22;
     bytes32 public constant ECON_EVALUATOR_CODE_HASH =
-        0xe8dcbc46700bb5551979f163af9e91876651726e60d46d185ae3d57c278db0a5;
+        0xb01afbcc584c490dc3cc1dac407b28da7ba1eb91e295bc7fbf0d332283666b39;
     uint160 private constant MIN_SQRT_RATIO = 4_295_128_739;
     uint160 private constant MAX_SQRT_RATIO =
         1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;

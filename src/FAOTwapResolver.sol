@@ -18,7 +18,7 @@ import {FAOFutarchyProposal} from "./FAOFutarchyProposal.sol";
 ///   2. Anyone calls resolve(proposal) once block.timestamp >= anchor + TIMEOUT.
 ///   3. resolve() reads tick cumulatives over [windowEnd - TWAP_WINDOW, windowEnd]
 ///      from both pools, normalizes ticks to "currency per company" orientation,
-///      decides accepted = (yesAvgTick > noAvgTick), and reports payouts to CTF.
+///      decides accepted = (yesAvgTick - noAvgTick > margin), and reports payouts to CTF.
 ///
 /// All timing parameters are constructor immutables — testnet branch sets
 /// TIMEOUT=2h, TWAP_WINDOW=1h; mainnet sets 72h/24h.
@@ -48,6 +48,14 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
     mapping(address => Binding) public bindings;
 
+    /// @notice How far the YES average tick must exceed the NO average tick for a proposal to
+    /// pass. One tick is 0.01% in price. Set once at bind time by the orchestrator; 0 means YES
+    /// only has to be above NO.
+    mapping(address => int24) public decisionMarginTicks;
+
+    /// @notice Largest margin the orchestrator may set: about 10.5% in price.
+    int24 public constant MAX_DECISION_MARGIN_TICKS = 1000;
+
     /// @notice Running tick totals of both pools, recorded once at or after the start of the
     /// averaging window. With a checkpoint the decision reads only the pools' current totals, so
     /// it does not depend on how much history the pools still hold.
@@ -73,6 +81,7 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     error TooEarly(address proposal, uint256 windowEnd);
     error InvalidPair(address pool, address token);
     error InvalidConfig(uint32 timeout, uint32 window);
+    error InvalidMargin(int24 marginTicks);
     error InsufficientGas();
 
     event OrchestratorSet(address indexed orchestrator);
@@ -81,7 +90,8 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         address yesPool,
         address noPool,
         uint48 anchorTimestamp,
-        bytes32 questionId
+        bytes32 questionId,
+        int24 marginTicks
     );
     event WindowStartCheckpointed(address indexed proposal, uint48 timestamp);
     event ProposalResolved(
@@ -115,10 +125,14 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         address noPool,
         address companyToken,
         address currencyToken,
-        uint48 anchorTimestamp
+        uint48 anchorTimestamp,
+        int24 marginTicks
     ) external {
         if (msg.sender != orchestrator) revert NotOrchestrator();
         if (bindings[proposal].anchorTimestamp != 0) revert AlreadyBound(proposal);
+        if (marginTicks < 0 || marginTicks > MAX_DECISION_MARGIN_TICKS) {
+            revert InvalidMargin(marginTicks);
+        }
 
         bytes32 qId = FAOFutarchyProposal(proposal).questionId();
         bindings[proposal] = Binding({
@@ -132,7 +146,9 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
             accepted: false
         });
 
-        emit ProposalBound(proposal, yesPool, noPool, anchorTimestamp, qId);
+        if (marginTicks != 0) decisionMarginTicks[proposal] = marginTicks;
+
+        emit ProposalBound(proposal, yesPool, noPool, anchorTimestamp, qId, marginTicks);
     }
 
     /// @notice Record both pools' running tick totals as the start of the averaging window.
@@ -196,7 +212,10 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
         // A genuinely unreadable market cannot be allowed to wedge the arbitration queue.
         // Safe-bias it to NO; low-gas grief attempts revert inside _arithmeticMeanTick instead.
-        bool accepted = !yesFailed && !noFailed && yesAvgTick > noAvgTick;
+        // YES must beat NO by more than the proposal's margin; a tie or a near-tie keeps the
+        // status quo.
+        bool accepted = !yesFailed && !noFailed
+            && int256(yesAvgTick) - int256(noAvgTick) > int256(decisionMarginTicks[proposal]);
 
         b.resolved = true;
         b.accepted = accepted;

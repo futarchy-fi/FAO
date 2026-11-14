@@ -57,6 +57,11 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     bytes32 public constant KIND_PARAM = keccak256("FAO_ECON_TREASURY_PARAM_V1");
     bytes32 public constant KIND_CRITICAL = keccak256("FAO_ECON_TREASURY_CRITICAL_V2");
 
+    /// @notice A treasury decision (transfer, parameter, critical) passes only if the YES
+    /// average beats the NO average by more than this many ticks: 100 ticks is 1.005% in price.
+    /// Site releases need only YES above NO.
+    int24 public constant TREASURY_DECISION_MARGIN_TICKS = 100;
+
     address public immutable arbitrationContract;
     address public immutable vault;
     IFAOSiteEvaluationOrchestrator public immutable orchestrator;
@@ -163,8 +168,12 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
             kind = KIND_SITE_RELEASE;
         }
 
-        (uint256 futarchyProposalId, address futarchyProposal) =
-            orchestrator.createOfficialProposalAndMigrate(marketName, description, 0);
+        (uint256 futarchyProposalId, address futarchyProposal) = orchestrator.createOfficialProposalAndMigrate(
+            marketName,
+            description,
+            0,
+            kind == KIND_SITE_RELEASE ? int24(0) : TREASURY_DECISION_MARGIN_TICKS
+        );
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
         futarchyProposalOf[proposalId] = futarchyProposal;

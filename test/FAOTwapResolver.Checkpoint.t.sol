@@ -82,7 +82,8 @@ contract FAOTwapResolverCheckpointTest is Test {
             address(noPool),
             address(0xFA0),
             address(0xE7),
-            uint48(anchor)
+            uint48(anchor),
+            0
         );
     }
 
@@ -181,7 +182,8 @@ contract FAOTwapResolverCheckpointTest is Test {
             address(noPool),
             address(0xFA0),
             address(0xE7),
-            uint48(block.timestamp)
+            uint48(block.timestamp),
+            0
         );
         vm.warp(block.timestamp + 48 hours);
         resolver.checkpointWindowStart(address(other));

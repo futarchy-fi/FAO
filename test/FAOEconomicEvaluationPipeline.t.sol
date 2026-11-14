@@ -101,6 +101,7 @@ contract EconomicEvaluationOrchestratorMock {
     uint256 public createCalls;
     string public lastMarketName;
     string public lastDescription;
+    int24 public lastMarginTicks = type(int24).min;
 
     constructor(address admin_, address resolver_, address proposal_) {
         ADMIN = admin_;
@@ -111,8 +112,10 @@ contract EconomicEvaluationOrchestratorMock {
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
-        uint256
+        uint256,
+        int24 marginTicks
     ) external payable returns (uint256 proposalId, address proposal_) {
+        lastMarginTicks = marginTicks;
         lastMarketName = marketName;
         lastDescription = description;
         proposalId = createCalls++;
@@ -218,6 +221,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             string.concat("FAO treasury transfer to ", Strings.toHexString(action.recipient))
         );
         assertEq(orchestrator.lastDescription(), _transferDescription(action));
+        assertEq(orchestrator.lastMarginTicks(), 100); // treasury decisions need a 1% lead
     }
 
     function testParamUsesExactTextAndFullPayloadCommitment() public {
@@ -239,6 +243,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             string.concat("FAO treasury parameter ", Strings.toHexString(uint256(action.key), 32))
         );
         assertEq(orchestrator.lastDescription(), _paramDescription(action));
+        assertEq(orchestrator.lastMarginTicks(), 100);
     }
 
     function testCriticalRoundsCommitToSameBaseAndRenderRound() public {
@@ -262,6 +267,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
                 string.concat("FAO critical action round ", round.toString(), "/2")
             );
             assertEq(orchestrator.lastDescription(), _criticalDescription(action, baseHash, round));
+            assertEq(orchestrator.lastMarginTicks(), 100);
         }
     }
 
