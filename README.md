@@ -141,6 +141,26 @@ Override `ECONOMIC_METADATA_BUNDLE`, `EXPECTED_DEPLOYER`, and `EXPECTED_DEPLOYER
 for a different deployment. The bundle must describe the release strategy derived from that
 deployer and nonce.
 
+The genesis names three contracts it does not create: the sale curve (`SALE_CURVE`, required), the
+team options (`OPTION_ISSUER`) and the short facility (`SHORT_ISSUER`). Deploy them first with the
+same key, then run the genesis as that key's next transactions, then bind the rest:
+
+```bash
+# 1. curve, price record, options, short facility; binds the curve to the vault step 2 creates
+OPTIONS_HOLDER=0x... forge script script/DeployFaoIssuanceModules.s.sol:DeployFaoIssuanceModules \
+  --rpc-url "$SEPOLIA_RPC_URL" --broadcast
+# 2. genesis, with SALE_CURVE, OPTION_ISSUER and SHORT_ISSUER from step 1's output
+#    (EXPECTED_DEPLOYER_NONCE is step 1's GENESIS_START_NONCE)
+# 3. price record, options and short facility, bound to the new vault
+GENESIS_RECEIPT=0x... PRICE_BEACON=0x... OPTION_ISSUER=0x... SHORT_ISSUER=0x... \
+  forge script script/DeployFaoIssuanceModules.s.sol:DeployFaoIssuanceModules \
+  --sig 'bindModules()' --rpc-url "$SEPOLIA_RPC_URL" --broadcast
+```
+
+The genesis script refuses to start unless the curve is bound to the vault it is about to create.
+Each of these contracts can be bound once, by its deployer, and only to the vault its token names.
+`test/fork/FaoIssuanceModulesScriptFork.t.sol` runs the three steps on a Sepolia fork.
+
 Economic deployment manifests use schema v4. Both broadcast and finalized-chain reconstruction
 pin the exact live runtime hashes of the vault, proposal gateway, arbitration, and treasury
 executor; RPC verification rejects any substituted authority contract before trusting its views.
