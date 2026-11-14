@@ -47,7 +47,8 @@ interface IShortBeacon {
 /// Locked WETH backs every token. Tokens minted here are ordinary tokens and count in the
 /// ragequit supply, and the locked pool counts in the ragequit assets: a ragequit of a fraction
 /// of the supply takes the same fraction of the treasury and of this pool. Opening a short
-/// therefore never lowers what a token can redeem, and nobody ever waits for a short to close.
+/// therefore never lowers the WETH a token can redeem (the treasury's other assets are spread
+/// over more tokens), and nobody ever waits for a short to close.
 /// The cost falls on open positions: each ragequit shrinks the pool they share, so a short that
 /// stays open while holders are ragequitting gets back less than it locked. Shorting is safe
 /// while the market price is above the ragequit value; near or below that value a holder is

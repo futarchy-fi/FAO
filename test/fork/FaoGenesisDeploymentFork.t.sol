@@ -18,6 +18,10 @@ import {FAOEconomicEvaluationPipeline} from "../../src/FAOEconomicEvaluationPipe
 import {FAOFutarchyProposal} from "../../src/FAOFutarchyProposal.sol";
 import {FAOTreasuryActions} from "../../src/FAOTreasuryActions.sol";
 import {FaoGenesisDeployment} from "../../src/FaoGenesisDeployment.sol";
+import {FaoPriceBeacon, IBeaconPoolFactory, IBeaconVault} from "../../src/FaoPriceBeacon.sol";
+import {FaoShortFacility, IShortBeacon, IShortVault} from "../../src/FaoShortFacility.sol";
+import {FaoTeamOptions, IOptionsBeacon, IOptionsVault} from "../../src/FaoTeamOptions.sol";
+import {FaoToken} from "../../src/FaoToken.sol";
 import {FaoGenesisRegistrar} from "../../src/FaoGenesisRegistrar.sol";
 import {FAOSiteStackDeployer} from "../../src/FAOSiteStackDeployer.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
@@ -48,6 +52,8 @@ contract Lane4ForkTarget {
 
 contract FaoGenesisDeploymentForkTest is Test {
     address internal saleCurve;
+    address internal optionIssuer;
+    address internal shortIssuer;
 
     address private constant SX_PROXY_FACTORY = 0x4B4F7f64Be813Ccc66AEFC3bFCe2baA01188631c;
     address private constant SX_SPACE_IMPLEMENTATION = 0xC3031A7d3326E47D49BfF9D374d74f364B29CE4D;
@@ -283,6 +289,166 @@ contract FaoGenesisDeploymentForkTest is Test {
         assertEq(vault.TREASURY_EXECUTOR().VAULT(), address(vault));
     }
 
+    /// @dev Genesis with the price record, team options and short facility attached, against
+    /// the real Uniswap v3 factory, pool and router on a Sepolia fork: a short is opened, a
+    /// holder ragequits and draws on the short's collateral, the short closes, the price is
+    /// bought up to about 4x and held for a month, the first option tranche opens and is
+    /// exercised after the cliff.
+    function testFork_issuanceModulesShortRagequitAndExerciseOnRealUniswap() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        address team = makeAddr("issuance-team");
+        FaoPriceBeacon beacon = new FaoPriceBeacon(IBeaconPoolFactory(UNIV3_FACTORY), WETH, 500);
+        FaoTeamOptions options =
+            new FaoTeamOptions(IOptionsBeacon(address(beacon)), team, 3000, 10_000);
+        FaoShortFacility shorts =
+            new FaoShortFacility(IShortBeacon(address(beacon)), 20_000, 100, 180 days, 7, 5000);
+        optionIssuer = address(options);
+        shortIssuer = address(shorts);
+
+        (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
+            _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        FaoToken token = FaoToken(receipt.companyToken());
+        assertEq(token.optionIssuer(), address(options));
+        assertEq(token.shortIssuer(), address(shorts));
+        beacon.bind(IBeaconVault(address(vault)));
+        options.bind(IOptionsVault(address(vault)));
+        shorts.bind(IShortVault(address(vault)));
+
+        address buyer = makeAddr("issuance-buyer");
+        uint256 sold = 0.5 ether;
+        {
+            uint256 cost = vault.reserveAt(sold);
+            vm.deal(buyer, 1 ether);
+            vm.startPrank(buyer);
+            IFaoGenesisForkWeth(WETH).deposit{value: 1 ether}();
+            IERC20(WETH).approve(address(vault), cost);
+            vault.buy(sold, cost, vm.getBlockTimestamp());
+            vm.stopPrank();
+        }
+        vm.warp(coreConfig.saleEnd);
+        vault.seal();
+        vault.finalize();
+        vault.claim(buyer);
+
+        options.activate();
+        assertEq(options.basePrice(), 0.01 ether);
+        assertEq(options.strike(), 0.01 ether);
+        assertEq(options.trancheSize(), sold * 3000 / 100_000);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+
+        _shortRagequitAndClose(vault, token, shorts, buyer);
+        _buyUpHoldAndExercise(receipt, token, beacon, options, buyer, team);
+    }
+
+    function _shortRagequitAndClose(
+        GenesisVault vault,
+        FaoToken token,
+        FaoShortFacility shorts,
+        address buyer
+    ) private {
+        address treasury = address(vault.TREASURY_EXECUTOR());
+        address shorter = makeAddr("issuance-shorter");
+        uint256 shortAmount = 0.1 ether;
+        vm.deal(shorter, 1 ether);
+        vm.startPrank(shorter);
+        IFaoGenesisForkWeth(WETH).deposit{value: 1 ether}();
+        IERC20(WETH).approve(address(shorts), type(uint256).max);
+        (uint256 id, uint256 lock) = shorts.open(shortAmount, type(uint256).max, shorter);
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(shorter), shortAmount);
+        assertEq(token.shortOutstanding(), shortAmount);
+        assertEq(shorts.pooled(), lock);
+        assertEq(IERC20(WETH).balanceOf(address(shorts)), lock);
+        // Twice the pool's price, which the sale left at its closing price.
+        assertApproxEqRel(lock, 2 * shortAmount * vault.terminalPrice() / 1e18, 0.01e18);
+
+        // A holder ragequits: the same fraction of the treasury and of the short's collateral.
+        uint256 supply = vault.effectiveSupply();
+        uint256 quit = 0.1 ether;
+        uint256 fromPool = lock * quit / supply;
+        uint256 expected = IERC20(WETH).balanceOf(treasury) * quit / supply + fromPool;
+        address payable exit = payable(makeAddr("issuance-exit"));
+        vm.prank(buyer);
+        vault.ragequit(quit, exit, new address[](0));
+        assertEq(IERC20(WETH).balanceOf(exit), expected);
+        assertEq(shorts.pooled(), lock - fromPool);
+
+        // The short closes and gets back what is left of its collateral, less the fee.
+        vm.startPrank(shorter);
+        token.approve(address(shorts), shortAmount);
+        (uint256 released, uint256 fee) = shorts.close(id, shortAmount, shorter);
+        vm.stopPrank();
+        assertEq(released + fee, lock - fromPool);
+        assertGt(fee, 0);
+        assertEq(token.shortOutstanding(), 0);
+        assertEq(shorts.pooled(), 0);
+        assertEq(token.balanceOf(shorter), 0);
+    }
+
+    function _buyUpHoldAndExercise(
+        FaoGenesisDeployment receipt,
+        FaoToken token,
+        FaoPriceBeacon beacon,
+        FaoTeamOptions options,
+        address buyer,
+        address team
+    ) private {
+        // Buy on the real pool until the price is about 4x.
+        {
+            (uint160 sqrtPriceX96,,,,,,) = IUniswapV3PoolLike(receipt.spotPool()).slot0();
+            bool companyIsToken0 = address(token) < WETH;
+            vm.startPrank(buyer);
+            IERC20(WETH).approve(SWAP_ROUTER, type(uint256).max);
+            IOperatorSwapRouter(SWAP_ROUTER)
+                .exactInputSingle(
+                    IOperatorSwapRouter.ExactInputSingleParams({
+                        tokenIn: WETH,
+                        tokenOut: address(token),
+                        fee: 500,
+                        recipient: buyer,
+                        amountIn: 0.5 ether,
+                        amountOutMinimum: 0,
+                        sqrtPriceLimitX96: companyIsToken0 ? sqrtPriceX96 * 2 : sqrtPriceX96 / 2
+                    })
+                );
+            vm.stopPrank();
+        }
+
+        // One recorded average a day, each at least 2x the fixed sale price, for a month.
+        uint256 t = vm.getBlockTimestamp();
+        vm.expectRevert(FaoTeamOptions.NotHeld.selector);
+        options.open(0);
+        for (uint256 d; d < 32; ++d) {
+            t += 1 days;
+            vm.warp(t);
+            beacon.poke();
+        }
+        assertTrue(beacon.heldAbove(options.level(0), 30));
+        options.open(0);
+        vm.expectRevert(FaoTeamOptions.NotHeld.selector);
+        options.open(2); // 8x was never reached
+
+        // Halfway through vesting, the holder pays the strike to the treasury for half a tranche.
+        vm.warp(uint256(options.genesisAt()) + options.CLIFF() + options.VESTING() / 2);
+        uint256 amount = options.exercisable(0);
+        assertEq(amount, options.trancheSize() / 2);
+        uint256 cost = amount * options.strike() / 1e18;
+        address treasury = options.treasury();
+        uint256 treasuryBefore = IERC20(WETH).balanceOf(treasury);
+        vm.deal(team, 1 ether);
+        vm.startPrank(team);
+        IFaoGenesisForkWeth(WETH).deposit{value: 1 ether}();
+        IERC20(WETH).approve(address(options), cost);
+        options.exercise(0, amount, team, cost);
+        vm.stopPrank();
+        assertEq(token.balanceOf(team), amount);
+        assertEq(IERC20(WETH).balanceOf(treasury) - treasuryBefore, cost);
+    }
+
     function testFork_lane4CompressedTreasuryLifecycle() public {
         if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
         vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
@@ -458,8 +624,8 @@ contract FaoGenesisDeploymentForkTest is Test {
             slope: 0.001 ether,
             bootstrapBps: 5000,
             saleCurve: saleCurve,
-            optionIssuer: address(0),
-            shortIssuer: address(0)
+            optionIssuer: optionIssuer,
+            shortIssuer: shortIssuer
         });
     }
 
