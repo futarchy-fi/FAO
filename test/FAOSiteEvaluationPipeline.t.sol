@@ -130,14 +130,14 @@ contract SiteEvaluationBindingOrchestratorMock {
         ADMIN = admin_;
     }
 
-    function createOfficialProposalAndMigrate(string calldata, string calldata, uint256)
+    function createOfficialProposalAndMigrate(string calldata, string calldata, uint256, int24)
         external
         payable
         returns (uint256, address)
     {
         FAOTwapResolver(RESOLVER)
             .bindProposal(
-                proposal, yesPool, noPool, address(0xFA0), address(0xE7), uint48(block.timestamp)
+                proposal, yesPool, noPool, address(0xFA0), address(0xE7), uint48(block.timestamp), 0
             );
         return (0, proposal);
     }
@@ -190,7 +190,8 @@ contract SiteEvaluationOrchestratorMock {
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
-        uint256 builderTip
+        uint256 builderTip,
+        int24
     ) external payable returns (uint256 proposalId, address proposal_) {
         createCalls++;
         lastMarketName = marketName;

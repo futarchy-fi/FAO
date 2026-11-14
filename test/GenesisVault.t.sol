@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
+import {SaleCurveFixture} from "./mocks/SaleCurveFixture.sol";
 import {Test} from "forge-std/Test.sol";
 import {VestingWallet} from "@openzeppelin/contracts/finance/VestingWallet.sol";
 
@@ -24,8 +26,36 @@ import {
     GenesisTreasuryTargetMock,
     GenesisWethMock
 } from "./mocks/GenesisVaultMocks.sol";
+import {newBoundCurve} from "./mocks/SaleCurveFixture.sol";
 
-contract GenesisVaultTest is Test {
+/// @dev Stand-in for the short facility: mints short tokens and pays its WETH pro rata.
+contract ShortPoolMock {
+    GenesisWethMock internal immutable weth;
+    address public lastRecipient;
+    uint256 public lastAmount;
+    uint256 public lastSupply;
+
+    constructor(GenesisWethMock weth_) {
+        weth = weth_;
+    }
+
+    function mint(FaoToken token, address to, uint256 amount) external {
+        token.issueShort(to, amount);
+    }
+
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        returns (uint256 paid)
+    {
+        lastRecipient = recipient;
+        lastAmount = amount;
+        lastSupply = supply;
+        paid = weth.balanceOf(address(this)) * amount / supply;
+        weth.transfer(recipient, paid);
+    }
+}
+
+contract GenesisVaultTest is SaleCurveFixture {
     uint256 internal constant SALE_CAP = 1000 ether;
     uint256 internal constant MINIMUM_RAISE = 0.1 ether;
     uint256 internal constant GRANT_AMOUNT = 200 ether;
@@ -105,8 +135,9 @@ contract GenesisVaultTest is Test {
         GenesisVault.GrantConfig[] memory grants =
             new GenesisVault.GrantConfig[](GENESIS_MAX_VESTING_GRANTS + 1);
 
+        GenesisVault.Config memory config = _config(hook);
         vm.expectRevert(GenesisVault.InvalidConfig.selector);
-        new GenesisVault(_config(hook), grants);
+        new GenesisVault(config, grants);
     }
 
     function testRejectsDuplicateAssetPoliciesAndAcceptsEightUniquePolicies() public {
@@ -125,6 +156,8 @@ contract GenesisVaultTest is Test {
                 asset: address(asset), c1: 1, c2: 2, tapBudget: 3, tapBudgetMax: 4
             });
         }
+        // The reverted creation above used up the address the first curve was built for.
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
         GenesisVault vault = new GenesisVault(config, grants);
         assertEq(vault.assetPolicyCount(), 8);
 
@@ -615,6 +648,121 @@ contract GenesisVaultTest is Test {
         vm.warp(block.timestamp + vault.CRITICAL_GRACE());
     }
 
+    function testRagequitCountsShortTokensAndDrawsOnTheShortPool() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        ShortPoolMock shortPool = new ShortPoolMock(weth);
+        config.shortIssuer = address(shortPool);
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
+        GenesisVault vault = new GenesisVault(config, grants);
+        _buy(vault, BUYER, 400 ether);
+        vm.warp(vault.SALE_END());
+        vault.seal();
+        _bindManager(vault);
+        vault.finalize();
+        vault.claim(BUYER);
+        FaoToken token = vault.COMPANY_TOKEN();
+        address treasury = address(vault.TREASURY_EXECUTOR());
+
+        uint256 supplyBefore = vault.effectiveSupply();
+        shortPool.mint(token, address(0x5407), 100 ether);
+        weth.mint(address(shortPool), 2 ether);
+        uint256 supply = vault.effectiveSupply();
+        assertEq(supply, supplyBefore + 100 ether); // short-minted tokens count
+
+        uint256 amount = 50 ether;
+        uint256 fromTreasury = weth.balanceOf(treasury) * amount / supply;
+        uint256 fromPool = 2 ether * amount / supply;
+        address[] memory extras = new address[](0);
+        vm.prank(BUYER);
+        vault.ragequit(amount, payable(RECIPIENT), extras);
+
+        assertEq(weth.balanceOf(RECIPIENT), fromTreasury + fromPool);
+        assertEq(shortPool.lastRecipient(), RECIPIENT);
+        assertEq(shortPool.lastAmount(), amount);
+        assertEq(shortPool.lastSupply(), supply);
+    }
+
+    // ─── sale through a fixed-price window into the doubling curve
+    // ─────────────────────────────
+
+    function testFixedWindowSellsEveryTokenAtTheSamePrice() public {
+        (GenesisVault vault,) = _deployWindowVault(100 ether);
+        assertEq(_buyFor(vault, 100 ether), 0.1 ether);
+        assertEq(_buyFor(vault, 300 ether), 0.3 ether);
+        assertEq(vault.terminalPrice(), INITIAL_PRICE);
+    }
+
+    function testAfterTheWindowPriceDoublesWhenSupplyDoubles() public {
+        (GenesisVault vault, FaoSaleCurve curve) = _deployWindowVault(100 ether);
+        assertEq(_buyFor(vault, 200 ether), 0.2 ether);
+
+        vm.warp(block.timestamp + 14 days);
+        assertEq(_buyFor(vault, 200 ether), 0.3 ether); // 1.5x the fixed raise to double the supply
+        assertTrue(curve.started());
+        assertEq(curve.base(), 200 ether);
+        assertEq(vault.terminalPrice(), 2 * INITIAL_PRICE);
+        assertEq(vault.totalRaised(), 0.5 ether);
+    }
+
+    function testBelowTheMinimumTheFixedPriceContinuesAfterTheWindow() public {
+        (GenesisVault vault, FaoSaleCurve curve) = _deployWindowVault(500 ether);
+        assertEq(_buyFor(vault, 100 ether), 0.1 ether);
+
+        vm.warp(block.timestamp + 14 days);
+        assertEq(_buyFor(vault, 400 ether), 0.4 ether);
+        assertEq(curve.base(), 500 ether);
+        assertEq(vault.terminalPrice(), INITIAL_PRICE);
+        assertEq(_buyFor(vault, 500 ether), 0.75 ether);
+        assertEq(vault.terminalPrice(), 2 * INITIAL_PRICE);
+    }
+
+    function testRejectsACurveThatWasNeverBound() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.saleCurve = address(new FaoSaleCurve(INITIAL_PRICE, SLOPE, 0, 0));
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
+    function testRejectsACurveBuiltForAnotherVault() public {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.saleCurve = address(newBoundCurve(address(this), INITIAL_PRICE, SLOPE, 0, 0));
+
+        vm.expectRevert(GenesisVault.InvalidConfig.selector);
+        new GenesisVault(config, grants);
+    }
+
+    function _deployWindowVault(uint256 fixedMinimum)
+        internal
+        returns (GenesisVault vault, FaoSaleCurve curve)
+    {
+        GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
+        GenesisVault.GrantConfig[] memory grants = new GenesisVault.GrantConfig[](0);
+        GenesisVault.Config memory config = _config(hook);
+        config.slope = 0;
+        config.saleEnd = uint64(block.timestamp + 30 days);
+        config.bootstrapDeadline = uint64(block.timestamp + 40 days);
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        curve = newBoundCurve(
+            predicted, INITIAL_PRICE, 0, uint64(block.timestamp + 14 days), fixedMinimum
+        );
+        config.saleCurve = address(curve);
+        vault = new GenesisVault(config, grants);
+    }
+
+    function _buyFor(GenesisVault vault, uint256 amount) internal returns (uint256 cost) {
+        _fundAndApprove(BUYER, address(vault), 10 ether);
+        uint256 deadline = vault.SALE_END();
+        vm.prank(BUYER);
+        cost = vault.buy(amount, type(uint256).max, deadline);
+    }
+
     function _deployVault() internal returns (GenesisVault vault) {
         GenesisBootstrapHookMock hook = new GenesisBootstrapHookMock();
         vault = _deployVaultWithHook(hook);
@@ -636,7 +784,6 @@ contract GenesisVaultTest is Test {
 
     function _config(GenesisBootstrapHookMock hook)
         internal
-        view
         returns (GenesisVault.Config memory config)
     {
         GenesisVault.AssetPolicyConfig[] memory policies = new GenesisVault.AssetPolicyConfig[](2);
@@ -669,8 +816,12 @@ contract GenesisVaultTest is Test {
             initialPrice: INITIAL_PRICE,
             slope: SLOPE,
             bootstrapBps: BOOTSTRAP_BPS,
-            assetPolicies: policies
+            assetPolicies: policies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: address(0)
         });
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
     }
 
     function _bindManager(GenesisVault vault) internal returns (GenesisManagerMock manager) {

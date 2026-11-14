@@ -8,10 +8,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {FaoToken} from "./FaoToken.sol";
+import {FaoSaleCurve} from "./FaoSaleCurve.sol";
 import {FAOTreasuryActions} from "./FAOTreasuryActions.sol";
 import {GenesisTreasuryExecutor} from "./GenesisTreasuryExecutor.sol";
 
-uint256 constant GENESIS_MAX_VESTING_GRANTS = 16;
+// Kept small: each grant adds 128 bytes of constructor arguments, and the vault's creation code
+// is close to the 49,152-byte initcode limit. Team allocation is handled by FaoTeamOptions.
+uint256 constant GENESIS_MAX_VESTING_GRANTS = 4;
 
 interface IGenesisFlm is IERC20 {
     function BOOTSTRAP_RECIPIENT() external view returns (address);
@@ -53,6 +56,12 @@ interface IGenesisArbitration {
     }
 
     function getProposal(uint256 proposalId) external view returns (Proposal memory);
+}
+
+interface IGenesisShortPool {
+    function onRagequit(address recipient, uint256 amount, uint256 supply)
+        external
+        returns (uint256 paid);
 }
 
 interface IGenesisBootstrapHook {
@@ -99,6 +108,11 @@ contract GenesisVault is ReentrancyGuard {
         uint256 slope;
         uint16 bootstrapBps;
         AssetPolicyConfig[] assetPolicies;
+        address optionIssuer;
+        address shortIssuer;
+        // Pricing rule of the sale (FaoSaleCurve), deployed beforehand for this vault's address.
+        // `initialPrice` and `slope` above must repeat the curve's own values.
+        address saleCurve;
     }
 
     struct GrantConfig {
@@ -257,8 +271,8 @@ contract GenesisVault is ReentrancyGuard {
     uint64 public immutable BOOTSTRAP_DEADLINE;
     uint256 public immutable SALE_CAP;
     uint256 public immutable MINIMUM_RAISE;
-    uint256 public immutable INITIAL_PRICE;
-    uint256 public immutable SLOPE;
+    /// @notice Pricing rule of the sale. Holds no funds.
+    FaoSaleCurve public immutable CURVE;
     uint16 public immutable BOOTSTRAP_BPS;
 
     Phase public phase;
@@ -302,8 +316,12 @@ contract GenesisVault is ReentrancyGuard {
         BOOTSTRAP_DEADLINE = config.bootstrapDeadline;
         SALE_CAP = config.saleCap;
         MINIMUM_RAISE = config.minimumRaise;
-        INITIAL_PRICE = config.initialPrice;
-        SLOPE = config.slope;
+        FaoSaleCurve curve = FaoSaleCurve(config.saleCurve);
+        if (
+            address(curve).code.length == 0 || curve.vault() != address(this)
+                || curve.INITIAL_PRICE() != config.initialPrice || curve.SLOPE() != config.slope
+        ) revert InvalidConfig();
+        CURVE = curve;
         BOOTSTRAP_BPS = config.bootstrapBps;
 
         for (uint256 i; i < config.assetPolicies.length; ++i) {
@@ -338,7 +356,12 @@ contract GenesisVault is ReentrancyGuard {
             revert InvalidConfig();
         }
         COMPANY_TOKEN = new FaoToken(
-            config.tokenName, config.tokenSymbol, address(this), config.tokenMaxSupply
+            config.tokenName,
+            config.tokenSymbol,
+            address(this),
+            config.tokenMaxSupply,
+            config.optionIssuer,
+            config.shortIssuer
         );
     }
 
@@ -352,12 +375,11 @@ contract GenesisVault is ReentrancyGuard {
     /// @dev A single endpoint rounding makes reserve differences exactly path-independent.
     function reserveAt(uint256 supply) public view returns (uint256) {
         if (supply > SALE_CAP) revert SaleCapExceeded();
-        uint256 linearTerm = 2 * INITIAL_PRICE * WAD + SLOPE * supply;
-        return Math.mulDiv(supply, linearTerm, 2 * WAD * WAD, Math.Rounding.Up);
+        return CURVE.reserveAt(supply, totalSold);
     }
 
     function terminalPrice() public view returns (uint256) {
-        return INITIAL_PRICE + Math.mulDiv(SLOPE, totalSold, WAD);
+        return CURVE.priceAt(totalSold);
     }
 
     function buy(uint256 tokenOut, uint256 maxCost, uint256 deadline)
@@ -372,6 +394,7 @@ contract GenesisVault is ReentrancyGuard {
 
         uint256 soldAfter = totalSold + tokenOut;
         if (soldAfter > SALE_CAP) revert SaleCapExceeded();
+        CURVE.sync(totalSold);
         cost = reserveAt(soldAfter) - reserveAt(totalSold);
         if (cost == 0) revert ZeroCost();
         if (cost > maxCost) revert MaxCostExceeded();
@@ -497,7 +520,9 @@ contract GenesisVault is ReentrancyGuard {
         emit Claimed(account, amount);
     }
 
-    /// @notice Supply entitled to the treasury, excluding this vault and immutable unvested grants.
+    /// @notice Supply entitled to the treasury, excluding this vault and immutable unvested
+    /// grants. Tokens minted by the short facility count: its locked WETH is paid out pro rata
+    /// by `ragequit` alongside the treasury.
     function effectiveSupply() public view returns (uint256 supply) {
         uint256 vaultBalance = COMPANY_TOKEN.balanceOf(address(this));
         if (vaultBalance < totalUnclaimedSold) revert ClaimReserveUndercollateralized();
@@ -552,6 +577,11 @@ contract GenesisVault is ReentrancyGuard {
         for (uint256 i; i < sortedExtras.length; ++i) {
             uint256 payout = Math.mulDiv(extraBalances[i], amount, supply);
             _releaseExact(sortedExtras[i], recipient, payout);
+        }
+        // The short facility's locked WETH backs every token too: it pays the same fraction.
+        address shortIssuer = COMPANY_TOKEN.shortIssuer();
+        if (shortIssuer != address(0)) {
+            IGenesisShortPool(shortIssuer).onRagequit(recipient, amount, supply);
         }
         if (COMPANY_TOKEN.balanceOf(address(this)) < totalUnclaimedSold) {
             revert ClaimReserveUndercollateralized();

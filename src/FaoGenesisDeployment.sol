@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {FaoSaleCurve} from "./FaoSaleCurve.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Space} from "lib/sx-evm/src/Space.sol";
@@ -84,6 +85,11 @@ contract FaoGenesisDeployment {
         uint256 initialPrice;
         uint256 slope;
         uint16 bootstrapBps;
+        // Deployed before the receipt: the sale's pricing rule (built for this receipt's vault
+        // address) and the token's two permanent extra issuers (zero disables one).
+        address saleCurve;
+        address optionIssuer;
+        address shortIssuer;
     }
 
     struct FlmConfig {
@@ -100,9 +106,9 @@ contract FaoGenesisDeployment {
     bytes32 public constant UNIV3_POOL_INIT_CODE_HASH =
         0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
     bytes32 public constant ARBITRATION_CODE_HASH =
-        0xa013f13694e439351383e11933ba6fd9f7471c7f6e71b61bd916e4c5a3e6eb6e;
+        0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d;
     bytes32 public constant VAULT_CODE_HASH =
-        0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f;
+        0xc2e21a37da3826323c7108ea500d06d878d4bef4b6decba1284bf379551b6615;
     bytes32 public constant RELEASE_STRATEGY_CODE_HASH =
         0x522d5fde9e454fb06cb61d574a409589d73833694d16401293ac1dc9d10c347b;
     bytes32 public constant ZERO_VOTING_CODE_HASH =
@@ -110,7 +116,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant ECON_GATEWAY_CODE_HASH =
         0xa15bd8851d728593851fc6fd2a3bb8c1a430484ca6a2b3667dda848b528e8f22;
     bytes32 public constant ECON_EVALUATOR_CODE_HASH =
-        0x434e6a8a8e7441c08008f063f77521d6f22ac311c3c70b34eedfdce59e852955;
+        0xb01afbcc584c490dc3cc1dac407b28da7ba1eb91e295bc7fbf0d332283666b39;
     uint160 private constant MIN_SQRT_RATIO = 4_295_128_739;
     uint160 private constant MAX_SQRT_RATIO =
         1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;
@@ -212,9 +218,11 @@ contract FaoGenesisDeployment {
         address predictedPool =
             _poolAddress(config.uniswapV3Factory.target, predictedToken, config.weth.target);
         _sqrtPriceX96For(predictedToken, config.weth.target, config.initialPrice);
-        uint256 terminalIncrease = Math.mulDiv(config.slope, config.saleCap, 1e18);
-        if (terminalIncrease > type(uint256).max - config.initialPrice) revert InvalidPrice();
-        _sqrtPriceX96For(predictedToken, config.weth.target, config.initialPrice + terminalIncrease);
+        _sqrtPriceX96For(
+            predictedToken,
+            config.weth.target,
+            FaoSaleCurve(config.saleCurve).maxPrice(config.saleCap)
+        );
         bytes32 proxySalt = keccak256(abi.encodePacked(address(this), config.spaceSaltNonce));
         address predictedSpace = IProxyFactory(config.proxyFactory.target)
             .predictProxyAddress(config.spaceImplementation.target, proxySalt);
@@ -253,7 +261,10 @@ contract FaoGenesisDeployment {
             initialPrice: config.initialPrice,
             slope: config.slope,
             bootstrapBps: config.bootstrapBps,
-            assetPolicies: config.assetPolicies
+            assetPolicies: config.assetPolicies,
+            optionIssuer: config.optionIssuer,
+            shortIssuer: config.shortIssuer,
+            saleCurve: config.saleCurve
         });
         GenesisVault vault_ = GenesisVault(
             payable(_deploy(abi.encodePacked(baseCodes[1], abi.encode(vaultConfig, grants)), 1, 2))

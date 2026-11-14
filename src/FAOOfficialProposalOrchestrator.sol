@@ -125,17 +125,19 @@ contract FAOOfficialProposalOrchestrator {
     /// @param marketName Human-readable proposal name.
     /// @param description Free-form proposal body.
     /// @param builderTip Wei to forward to block.coinbase on success (0 to skip).
+    /// @param marginTicks Ticks by which the YES average must exceed the NO average to pass.
     /// @return proposalId Index assigned by FAOFutarchyFactory.
     /// @return proposal Address of the cloned FAOFutarchyProposal contract.
     /// @custom:spec INV-ORCH-001 — atomic 8-phase create+migrate. See audit/specs/INVARIANTS.md.
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
-        uint256 builderTip
+        uint256 builderTip,
+        int24 marginTicks
     ) external payable onlyAdmin returns (uint256 proposalId, address proposal) {
         if (msg.value < builderTip) revert InsufficientValueForTip();
 
-        (proposalId, proposal) = _createAndBindMarket(marketName, description);
+        (proposalId, proposal) = _createAndBindMarket(marketName, description, marginTicks);
 
         // Phase 8: pay builder tip only after the market is fully created and bound.
         if (builderTip > 0) {
@@ -151,10 +153,11 @@ contract FAOOfficialProposalOrchestrator {
         );
     }
 
-    function _createAndBindMarket(string calldata marketName, string calldata description)
-        private
-        returns (uint256 proposalId, address proposal)
-    {
+    function _createAndBindMarket(
+        string calldata marketName,
+        string calldata description,
+        int24 marginTicks
+    ) private returns (uint256 proposalId, address proposal) {
         // Phase 1: read spot price + record anchor.
         (uint160 sqrtPriceX96, int24 spotTick) = _spotPriceAndTick();
         uint48 anchorTimestamp = uint48(block.timestamp);
@@ -184,7 +187,7 @@ contract FAOOfficialProposalOrchestrator {
 
         // Phase 6: bind resolver (sets anchor for TWAP window).
         RESOLVER.bindProposal(
-            proposal, yesPool, noPool, COMPANY_TOKEN, CURRENCY_TOKEN, anchorTimestamp
+            proposal, yesPool, noPool, COMPANY_TOKEN, CURRENCY_TOKEN, anchorTimestamp, marginTicks
         );
 
         // Phase 7: optional liquidity migration via adapter.

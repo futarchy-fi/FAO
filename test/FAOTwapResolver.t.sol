@@ -205,8 +205,70 @@ contract FAOTwapResolverTest is Test {
             noPool_,
             address(0xFA0),
             address(0xE7),
-            uint48(block.timestamp)
+            uint48(block.timestamp),
+            0
         );
+    }
+
+    // ─── decision margin
+    // ────────────────────────────────────────────────────
+
+    function _resolveWithMargin(int24 yesTick, int24 noTick, int24 marginTicks)
+        internal
+        returns (bool accepted)
+    {
+        yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, yesTick);
+        noPool = new MockUniV3PoolWithTwap(noCo, noCur, noTick);
+        vm.prank(ORCH);
+        resolver.bindProposal(
+            address(proposal),
+            address(yesPool),
+            address(noPool),
+            address(0xFA0),
+            address(0xE7),
+            uint48(block.timestamp),
+            marginTicks
+        );
+        assertEq(resolver.decisionMarginTicks(address(proposal)), marginTicks);
+        vm.warp(block.timestamp + 2 hours);
+        resolver.resolve(address(proposal));
+        (,,,,,,, accepted) = resolver.bindings(address(proposal));
+        uint256[] memory payouts = ctf.reportedFor(QID);
+        assertEq(payouts[0], accepted ? 1 : 0, "YES payout slot");
+        assertEq(payouts[1], accepted ? 0 : 1, "NO payout slot");
+    }
+
+    function test_margin_aLeadEqualToTheMarginIsRejected() public {
+        assertFalse(_resolveWithMargin(150, 50, 100));
+    }
+
+    function test_margin_oneTickPastTheMarginPasses() public {
+        assertTrue(_resolveWithMargin(151, 50, 100));
+    }
+
+    function test_margin_aSmallLeadThatWouldPassWithoutAMarginIsRejected() public {
+        assertFalse(_resolveWithMargin(60, 50, 100));
+    }
+
+    function test_margin_zeroKeepsThePlainRule() public {
+        assertTrue(_resolveWithMargin(51, 50, 0));
+    }
+
+    function test_margin_appliesWithNegativeTicks() public {
+        assertFalse(_resolveWithMargin(-50, -150, 100));
+    }
+
+    function test_margin_mustBeWithinBounds() public {
+        vm.startPrank(ORCH);
+        vm.expectRevert(abi.encodeWithSelector(FAOTwapResolver.InvalidMargin.selector, int24(-1)));
+        resolver.bindProposal(
+            address(proposal), address(1), address(2), address(0xFA0), address(0xE7), 1, -1
+        );
+        vm.expectRevert(abi.encodeWithSelector(FAOTwapResolver.InvalidMargin.selector, int24(1001)));
+        resolver.bindProposal(
+            address(proposal), address(1), address(2), address(0xFA0), address(0xE7), 1, 1001
+        );
+        vm.stopPrank();
     }
 
     // ─── access control
@@ -230,7 +292,8 @@ contract FAOTwapResolverTest is Test {
             address(noPool),
             address(0xFA0),
             address(0xE7),
-            uint48(block.timestamp)
+            uint48(block.timestamp),
+            0
         );
     }
 
@@ -248,7 +311,8 @@ contract FAOTwapResolverTest is Test {
             address(noPool),
             address(0xFA0),
             address(0xE7),
-            uint48(block.timestamp)
+            uint48(block.timestamp),
+            0
         );
     }
 
@@ -385,7 +449,8 @@ contract FAOTwapResolverTest is Test {
             address(noPool),
             address(0xFA0),
             address(0xE7),
-            anchor
+            anchor,
+            0
         );
         assertEq(resolver.windowEndOf(address(proposal)), uint256(anchor) + 2 hours);
     }

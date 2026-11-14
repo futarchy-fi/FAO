@@ -21,12 +21,15 @@ interface IFAOFutarchyTwapResolver is IFAOFutarchyOracle {
     /// @param companyToken Address of the company-side base token (FAO).
     /// @param currencyToken Address of the currency-side quote token (WETH).
     /// @param anchorTimestamp t_promote; the TWAP window is anchored relative to this.
+    /// @param marginTicks The proposal passes only if the YES average tick exceeds the NO average
+    /// tick by more than this. One tick is 0.01% in price; 0 means YES only has to be above NO.
     function bindProposal(
         address proposal,
         address yesPool,
         address noPool,
         address companyToken,
         address currencyToken,
-        uint48 anchorTimestamp
+        uint48 anchorTimestamp,
+        int24 marginTicks
     ) external;
 }

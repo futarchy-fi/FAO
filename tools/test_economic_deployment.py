@@ -188,6 +188,9 @@ class EconomicDeploymentTest(unittest.TestCase):
             "initialPrice": 10**16,
             "slope": 10**12,
             "bootstrapBps": 5000,
+            "saleCurve": address(0x401),
+            "optionIssuer": address(0x402),
+            "shortIssuer": address(0x403),
         }
         self.grants = [
             {"beneficiary": address(0x301), "start": 1, "duration": 100, "amount": 10},
@@ -1416,19 +1419,19 @@ class EconomicDeploymentTest(unittest.TestCase):
 
     def test_core_config_round_trips_nested_asset_policies(self) -> None:
         encoded = economic_deployment._encode_core_config(self.core_config)
-        self.assertEqual(economic_deployment.DEPLOY_CORE_SELECTOR, "c9b544c1")
+        self.assertEqual(economic_deployment.DEPLOY_CORE_SELECTOR, "dec17f9f")
         self.assertEqual(economic_deployment._decode_core_config(encoded), self.core_config)
         deploy_core = economic_deployment._encode_deploy_core(
             self.core_config, self.grants, self.core_codes
         )
         self.assertEqual(
             deploy_core[:4],
-            bytes.fromhex("c9b544c1"),
+            bytes.fromhex("dec17f9f"),
         )
         # Golden digest from `cast calldata` with the Solidity deployCore ABI.
         self.assertEqual(
             hashlib.sha256(deploy_core).hexdigest(),
-            "8a838654fa54c36287228928cbc552e37b0521f8f51f524ec062eb7e639610dd",
+            "a94578cee8f66c86fd39cef24bd6d80a840938331e101706f75d8cfd35590f2e",
         )
         changed = copy.deepcopy(self.core_config)
         changed["assetPolicies"][0]["tapBudget"] += 1

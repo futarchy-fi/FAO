@@ -57,6 +57,11 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     bytes32 public constant KIND_PARAM = keccak256("FAO_ECON_TREASURY_PARAM_V1");
     bytes32 public constant KIND_CRITICAL = keccak256("FAO_ECON_TREASURY_CRITICAL_V2");
 
+    /// @notice A treasury decision (transfer, parameter, critical) passes only if the YES
+    /// average beats the NO average by more than this many ticks: 100 ticks is 1.005% in price.
+    /// Site releases need only YES above NO.
+    int24 public constant TREASURY_DECISION_MARGIN_TICKS = 100;
+
     address public immutable arbitrationContract;
     address public immutable vault;
     IFAOSiteEvaluationOrchestrator public immutable orchestrator;
@@ -122,7 +127,13 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         return arbitrationContract;
     }
 
+    /// @dev When no evaluation is active this also moves the head of the queue into evaluation,
+    ///      so starting and creating the market happen in one transaction. If the payload is not
+    ///      the head's, the whole call reverts and the queue is untouched.
     function startEvaluation(uint256 proposalId, bytes calldata evaluationPayload) external {
+        IFAOSiteEvaluationArbitration arbitration_ =
+            IFAOSiteEvaluationArbitration(arbitrationContract);
+        if (arbitration_.activeEvaluationProposalId() == 0) arbitration_.startNextEvaluation();
         _assertActive(proposalId);
         if (futarchyProposalOf[proposalId] != address(0)) {
             revert EvaluationAlreadyStarted(proposalId);
@@ -157,8 +168,12 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
             kind = KIND_SITE_RELEASE;
         }
 
-        (uint256 futarchyProposalId, address futarchyProposal) =
-            orchestrator.createOfficialProposalAndMigrate(marketName, description, 0);
+        (uint256 futarchyProposalId, address futarchyProposal) = orchestrator.createOfficialProposalAndMigrate(
+            marketName,
+            description,
+            0,
+            kind == KIND_SITE_RELEASE ? int24(0) : TREASURY_DECISION_MARGIN_TICKS
+        );
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
         futarchyProposalOf[proposalId] = futarchyProposal;

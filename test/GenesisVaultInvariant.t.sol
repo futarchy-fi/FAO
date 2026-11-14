@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {SaleCurveFixture} from "./mocks/SaleCurveFixture.sol";
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -73,7 +74,7 @@ contract GenesisRedeemableManagerMock is ERC20 {
     }
 }
 
-abstract contract GenesisVaultInvariantHarness is Test {
+abstract contract GenesisVaultInvariantHarness is SaleCurveFixture {
     uint256 internal constant SALE_CAP = 1000 ether;
     uint256 internal constant INITIAL_PRICE = 0.001 ether;
     uint256 internal constant SLOPE = 0.000_001 ether;
@@ -114,8 +115,12 @@ abstract contract GenesisVaultInvariantHarness is Test {
             initialPrice: INITIAL_PRICE,
             slope: SLOPE,
             bootstrapBps: BOOTSTRAP_BPS,
-            assetPolicies: policies
+            assetPolicies: policies,
+            optionIssuer: address(0),
+            shortIssuer: address(0),
+            saleCurve: address(0)
         });
+        config.saleCurve = _newSaleCurve(config.initialPrice, config.slope);
         vault = new GenesisVault(config, grants);
     }
 

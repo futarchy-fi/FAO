@@ -13,7 +13,8 @@ contract FaoTokenVaultMock {
     uint256 private authorizedAmount;
 
     constructor() {
-        token = new FaoToken("Example FAO", "EFAO", address(this), 100 ether);
+        token =
+            new FaoToken("Example FAO", "EFAO", address(this), 100 ether, address(0), address(0));
     }
 
     function mint(address account, uint256 amount) external {
@@ -66,10 +67,10 @@ contract FaoTokenTest is Test {
 
     function testRejectsInvalidConfiguration() public {
         vm.expectRevert(FaoToken.InvalidVault.selector);
-        new FaoToken("Example FAO", "EFAO", address(0), 100 ether);
+        new FaoToken("Example FAO", "EFAO", address(0), 100 ether, address(0), address(0));
 
         vm.expectRevert(FaoToken.InvalidMaxSupply.selector);
-        new FaoToken("Example FAO", "EFAO", address(vault), 0);
+        new FaoToken("Example FAO", "EFAO", address(vault), 0, address(0), address(0));
     }
 
     function testOnlyVaultCanMintAndBurn() public {

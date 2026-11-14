@@ -148,7 +148,10 @@ contract DeployFaoEconomicGenesis is Script {
             tokenMaxSupply: vm.envOr("TOKEN_MAX_SUPPLY", saleCap * 2 + 1 ether),
             initialPrice: vm.envOr("INITIAL_PRICE", uint256(0.000_01 ether)),
             slope: vm.envOr("SLOPE", uint256(0)),
-            bootstrapBps: uint16(bootstrapBps)
+            bootstrapBps: uint16(bootstrapBps),
+            saleCurve: vm.envAddress("SALE_CURVE"),
+            optionIssuer: vm.envOr("OPTION_ISSUER", address(0)),
+            shortIssuer: vm.envOr("SHORT_ISSUER", address(0))
         });
         FaoGenesisDeployment.FlmConfig memory flm = FaoGenesisDeployment.FlmConfig({
             positionManager: _pinned(

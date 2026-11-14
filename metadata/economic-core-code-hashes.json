@@ -8,14 +8,14 @@
     "ARBITRATION": {
       "source": "src/FutarchyArbitration.sol",
       "contract": "FutarchyArbitration",
-      "baseCreationCodeBytes": 7381,
-      "baseCreationCodeKeccak256": "0xa013f13694e439351383e11933ba6fd9f7471c7f6e71b61bd916e4c5a3e6eb6e"
+      "baseCreationCodeBytes": 7950,
+      "baseCreationCodeKeccak256": "0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d"
     },
     "VAULT": {
       "source": "src/GenesisVault.sol",
       "contract": "GenesisVault",
-      "baseCreationCodeBytes": 45872,
-      "baseCreationCodeKeccak256": "0x2e13cc44369f3005e5025679083aa2041319e4dd0db4bb83f280ae0f58329a0f"
+      "baseCreationCodeBytes": 47091,
+      "baseCreationCodeKeccak256": "0xc2e21a37da3826323c7108ea500d06d878d4bef4b6decba1284bf379551b6615"
     },
     "RELEASE_STRATEGY": {
       "source": "src/SXArbitrationExecutionStrategy.sol",
@@ -38,14 +38,14 @@
     "ECON_EVALUATOR": {
       "source": "src/FAOEconomicEvaluationPipeline.sol",
       "contract": "FAOEconomicEvaluationPipeline",
-      "baseCreationCodeBytes": 7968,
-      "baseCreationCodeKeccak256": "0x434e6a8a8e7441c08008f063f77521d6f22ac311c3c70b34eedfdce59e852955"
+      "baseCreationCodeBytes": 7928,
+      "baseCreationCodeKeccak256": "0xb01afbcc584c490dc3cc1dac407b28da7ba1eb91e295bc7fbf0d332283666b39"
     },
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24539,
-      "baseCreationCodeKeccak256": "0xc7e7db5f71088324ddab12d5267bef8cfd9cd70bbcfbf53e35ca80bddea60ab3"
+      "baseCreationCodeBytes": 24724,
+      "baseCreationCodeKeccak256": "0xdfd045a46e07e82d9699bdc6177971fdbbfd658d8e62a69b6607eca8ee4fd143"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",
@@ -57,13 +57,13 @@
       "source": "src/FAOFutarchyProposal.sol",
       "contract": "FAOFutarchyProposal",
       "baseCreationCodeBytes": 4818,
-      "baseCreationCodeKeccak256": "0x5de9951ca5cc20a586a6c27254bcab9c770c499b25fe1fb989d96b1271942070"
+      "baseCreationCodeKeccak256": "0x2467ad9e8e6979ed8f5f1fc9c2a220c4c10c0dab9d08d3361a78242c602c7b45"
     },
     "STACK_DEPLOYER": {
       "source": "src/FAOSiteStackDeployer.sol",
       "contract": "FAOSiteStackDeployer",
-      "baseCreationCodeBytes": 16530,
-      "baseCreationCodeKeccak256": "0x0170f0b0d3dcca4fcf66ee642a5e6e09cbf6c670c1057283b46c87f0a647fef8"
+      "baseCreationCodeBytes": 18741,
+      "baseCreationCodeKeccak256": "0x9e26a0c32b4a7f8ec58ec476ea5b1b27773dce12e47b118daf1db6e1140627cd"
     }
   }
 }
