@@ -38,14 +38,14 @@
     "ECON_EVALUATOR": {
       "source": "src/FAOEconomicEvaluationPipeline.sol",
       "contract": "FAOEconomicEvaluationPipeline",
-      "baseCreationCodeBytes": 7928,
-      "baseCreationCodeKeccak256": "0xb01afbcc584c490dc3cc1dac407b28da7ba1eb91e295bc7fbf0d332283666b39"
+      "baseCreationCodeBytes": 8287,
+      "baseCreationCodeKeccak256": "0x043f6c134231a99b3222f366518cbd8996517dcef13b00c4973161d0fbabfee0"
     },
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24724,
-      "baseCreationCodeKeccak256": "0xdfd045a46e07e82d9699bdc6177971fdbbfd658d8e62a69b6607eca8ee4fd143"
+      "baseCreationCodeBytes": 24726,
+      "baseCreationCodeKeccak256": "0x5f35edaab397bcec1738151f5683eaceae5154d0de9495255cc8ba5db083fc8a"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",

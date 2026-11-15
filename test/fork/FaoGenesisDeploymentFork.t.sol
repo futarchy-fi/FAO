@@ -17,6 +17,7 @@ import {EconGateway} from "../../src/EconGateway.sol";
 import {FAOEconomicEvaluationPipeline} from "../../src/FAOEconomicEvaluationPipeline.sol";
 import {FAOFutarchyProposal} from "../../src/FAOFutarchyProposal.sol";
 import {FAOTreasuryActions} from "../../src/FAOTreasuryActions.sol";
+import {FAOTwapResolver} from "../../src/FAOTwapResolver.sol";
 import {FaoGenesisDeployment} from "../../src/FaoGenesisDeployment.sol";
 import {FaoPriceBeacon, IBeaconPoolFactory, IBeaconVault} from "../../src/FaoPriceBeacon.sol";
 import {FaoShortFacility, IShortBeacon, IShortVault} from "../../src/FaoShortFacility.sol";
@@ -35,6 +36,31 @@ import {newBoundCurve} from "../mocks/SaleCurveFixture.sol";
 
 interface IFaoGenesisForkWeth {
     function deposit() external payable;
+}
+
+interface IEmptyPoolSwap {
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        bytes calldata data
+    ) external returns (int256 amount0, int256 amount1);
+}
+
+/// @dev Moves the price of a pool that holds no liquidity. It owns no tokens and pays nothing.
+contract EmptyPoolMover {
+    int256 public paid0;
+    int256 public paid1;
+
+    function move(address pool, bool zeroForOne, uint160 sqrtPriceLimitX96) external {
+        IEmptyPoolSwap(pool).swap(address(this), zeroForOne, 1, sqrtPriceLimitX96, "");
+    }
+
+    function uniswapV3SwapCallback(int256 amount0, int256 amount1, bytes calldata) external {
+        paid0 += amount0;
+        paid1 += amount1;
+    }
 }
 
 contract Lane4ForkTarget {
@@ -447,6 +473,79 @@ contract FaoGenesisDeploymentForkTest is Test {
         vm.stopPrank();
         assertEq(token.balanceOf(team), amount);
         assertEq(IERC20(WETH).balanceOf(treasury) - treasuryBefore, cost);
+    }
+
+    /// @dev The decision pools are created empty, and the price of an empty pool can be moved
+    /// for free. Before the pipeline filled them in the same transaction, a free 5% move of the
+    /// YES pool made the liquidity manager's `sync()` revert and passed the proposal.
+    function testFork_decisionPoolsAreFilledWhenTheMarketIsCreated() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
+            _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        FutarchyArbitration arbitration = FutarchyArbitration(receipt.arbitration());
+        EconGateway gateway = EconGateway(receipt.proposalGateway());
+        FAOEconomicEvaluationPipeline evaluator = FAOEconomicEvaluationPipeline(receipt.evaluator());
+
+        address buyer = makeAddr("empty-pool-buyer");
+        uint256 cost = vault.reserveAt(BUY_AMOUNT);
+        vm.deal(buyer, 1 ether);
+        vm.startPrank(buyer);
+        IFaoGenesisForkWeth(WETH).deposit{value: cost}();
+        IERC20(WETH).approve(address(vault), type(uint256).max);
+        vault.buy(BUY_AMOUNT, cost, vm.getBlockTimestamp());
+        vm.stopPrank();
+        vm.warp(coreConfig.saleEnd);
+        vault.seal();
+        vault.finalize();
+        vault.claim(buyer);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+
+        vm.deal(address(this), 1 ether);
+        IFaoGenesisForkWeth(WETH).deposit{value: 0.2 ether}();
+        IERC20(WETH).approve(address(arbitration), type(uint256).max);
+        FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+            asset: WETH,
+            recipient: makeAddr("empty-pool-recipient"),
+            amount: 0.02 ether,
+            salt: bytes32("empty-pool")
+        });
+        uint256 id = gateway.proposeTransfer(action);
+        arbitration.placeYesBond(id, 0.0001 ether);
+        arbitration.placeNoBond(id);
+        arbitration.placeYesBond(id, 0.01 ether);
+        evaluator.startEvaluation(id, gateway.transferEvaluationPayload(action));
+
+        address market = evaluator.futarchyProposalOf(id);
+        FAOTwapResolver resolver = FAOTwapResolver(address(evaluator.resolver()));
+        (address yesPool, address noPool,,,,,,) = resolver.bindings(market);
+        // Liquidity arrived with the market: 80% of the spot pool's, in each decision pool.
+        uint128 spotLiquidity = IOperatorPoolLiquidity(receipt.spotPool()).liquidity();
+        assertGt(IOperatorPoolLiquidity(yesPool).liquidity(), 3 * uint256(spotLiquidity));
+        assertEq(
+            IOperatorPoolLiquidity(yesPool).liquidity(), IOperatorPoolLiquidity(noPool).liquidity()
+        );
+
+        // A third party with no tokens can no longer move the YES price: the swap must be paid.
+        (address yesCompany,) = FAOFutarchyProposal(market).wrappedOutcome(0);
+        bool companyIsToken0 = IUniswapV3PoolLike(yesPool).token0() == yesCompany;
+        (uint160 sqrtBefore, int24 tickBefore,,,,,) = IUniswapV3PoolLike(yesPool).slot0();
+        EmptyPoolMover mover = new EmptyPoolMover();
+        uint160 limit = companyIsToken0
+            ? uint160(uint256(sqrtBefore) * 10_247 / 10_000)
+            : uint160(uint256(sqrtBefore) * 10_000 / 10_247);
+        vm.expectRevert();
+        mover.move(yesPool, !companyIsToken0, limit);
+        (, int24 tickAfter,,,,,) = IUniswapV3PoolLike(yesPool).slot0();
+        assertEq(tickAfter, tickBefore);
+
+        // With no trade the two markets agree and the proposal is rejected.
+        vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
+        resolver.checkpointWindowStart(market);
+        vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
+        assertFalse(evaluator.resolve(id));
     }
 
     function testFork_lane4CompressedTreasuryLifecycle() public {

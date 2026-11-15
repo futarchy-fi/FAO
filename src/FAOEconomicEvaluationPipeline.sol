@@ -13,6 +13,15 @@ import {
 } from "./FAOSiteEvaluationPipeline.sol";
 import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.sol";
 
+interface IEvaluationLiquidityManager {
+    /// @return action 1 when liquidity was moved into the decision pools.
+    function sync() external returns (uint8 action);
+}
+
+interface IEvaluationVault {
+    function manager() external view returns (IEvaluationLiquidityManager);
+}
+
 /// @notice Immutable bridge from either EconGateway route to the Sepolia UniV3 futarchy stack.
 contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     using Strings for uint256;
@@ -62,6 +71,9 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     /// Site releases need only YES above NO.
     int24 public constant TREASURY_DECISION_MARGIN_TICKS = 100;
 
+    /// @dev `FutarchyLiquidityManager.SyncAction.MigratedToConditional`.
+    uint8 internal constant SYNC_MIGRATED_TO_CONDITIONAL = 1;
+
     address public immutable arbitrationContract;
     address public immutable vault;
     IFAOSiteEvaluationOrchestrator public immutable orchestrator;
@@ -75,6 +87,7 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     error FutarchyNotResolved(bytes32 conditionId);
     error InvalidConfig();
     error InvalidFutarchyProposal();
+    error LiquidityNotMigrated(uint256 proposalId);
     error InvalidPayout(uint256 yesNumerator, uint256 noNumerator, uint256 denominator);
     error InvalidReleasePayload();
     error InvalidTreasuryPayload();
@@ -177,6 +190,14 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
         futarchyProposalOf[proposalId] = futarchyProposal;
+
+        // The decision pools are created empty, and the price of an empty pool can be moved by
+        // anyone at no cost. The liquidity manager must fill them in this same transaction, so
+        // no one ever sees them empty.
+        if (IEvaluationVault(vault).manager().sync() != SYNC_MIGRATED_TO_CONDITIONAL) {
+            revert LiquidityNotMigrated(proposalId);
+        }
+
         emit EvaluationMarketCreated(
             proposalId, futarchyProposalId, futarchyProposal, kind, commitment
         );
