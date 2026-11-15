@@ -454,7 +454,7 @@ contract FutarchyArbitrationTest is Test {
         assertTrue(arb.isAccepted(proposalId));
     }
 
-    function testGraduationRevertsIfQueueFull() public {
+    function testFullQueueDefersGraduation() public {
         uint256 maxQ = arb.MAX_QUEUE();
 
         // Fill the queue to MAX_QUEUE with graduated proposals.
@@ -478,8 +478,17 @@ contract FutarchyArbitrationTest is Test {
         arb.placeYesBond(pid2, 25e18);
         arb.placeNoBond(pid2);
 
-        vm.expectRevert(FutarchyArbitration.QueueFull.selector);
+        // A full queue defers graduation: the bond is accepted and the proposal stays in YES.
         arb.placeYesBond(pid2, reqFull);
+        FutarchyArbitration.Proposal memory deferred = arb.getProposal(pid2);
+        assertEq(uint256(deferred.state), uint256(FutarchyArbitration.ProposalState.YES));
+        assertEq(deferred.yesBond.amount, reqFull);
+        assertEq(deferred.queuePosition, 0);
+
+        arb.tryGraduate(pid2);
+        assertEq(
+            uint256(arb.getProposal(pid2).state), uint256(FutarchyArbitration.ProposalState.YES)
+        );
     }
 
     function testQueuedAndEvaluatingProposalsCannotBeBidOn() public {

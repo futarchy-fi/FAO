@@ -9,6 +9,7 @@ import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.s
 interface IFAOSiteEvaluationArbitration {
     function activeEvaluationProposalId() external view returns (uint256);
     function resolveActiveEvaluation(bool accepted) external;
+    function startNextEvaluation() external;
 }
 
 interface IFAOSiteEvaluationOrchestrator {
@@ -18,7 +19,8 @@ interface IFAOSiteEvaluationOrchestrator {
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
-        uint256 builderTip
+        uint256 builderTip,
+        int24 marginTicks
     ) external payable returns (uint256 proposalId, address proposal);
 }
 
@@ -128,7 +130,7 @@ contract FAOSiteEvaluationPipeline is IFutarchyArbitrationEvaluator {
         );
 
         (uint256 futarchyProposalId, address futarchyProposal) =
-            orchestrator.createOfficialProposalAndMigrate(marketName, description, 0);
+            orchestrator.createOfficialProposalAndMigrate(marketName, description, 0, 0);
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
         futarchyProposalOf[proposalId] = futarchyProposal;

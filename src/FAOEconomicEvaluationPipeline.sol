@@ -13,6 +13,15 @@ import {
 } from "./FAOSiteEvaluationPipeline.sol";
 import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.sol";
 
+interface IEvaluationLiquidityManager {
+    /// @return action 1 when liquidity was moved into the decision pools.
+    function sync() external returns (uint8 action);
+}
+
+interface IEvaluationVault {
+    function manager() external view returns (IEvaluationLiquidityManager);
+}
+
 /// @notice Immutable bridge from either EconGateway route to the Sepolia UniV3 futarchy stack.
 contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     using Strings for uint256;
@@ -57,6 +66,14 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     bytes32 public constant KIND_PARAM = keccak256("FAO_ECON_TREASURY_PARAM_V1");
     bytes32 public constant KIND_CRITICAL = keccak256("FAO_ECON_TREASURY_CRITICAL_V2");
 
+    /// @notice A treasury decision (transfer, parameter, critical) passes only if the YES
+    /// average beats the NO average by more than this many ticks: 100 ticks is 1.005% in price.
+    /// Site releases need only YES above NO.
+    int24 public constant TREASURY_DECISION_MARGIN_TICKS = 100;
+
+    /// @dev `FutarchyLiquidityManager.SyncAction.MigratedToConditional`.
+    uint8 internal constant SYNC_MIGRATED_TO_CONDITIONAL = 1;
+
     address public immutable arbitrationContract;
     address public immutable vault;
     IFAOSiteEvaluationOrchestrator public immutable orchestrator;
@@ -70,6 +87,7 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     error FutarchyNotResolved(bytes32 conditionId);
     error InvalidConfig();
     error InvalidFutarchyProposal();
+    error LiquidityNotMigrated(uint256 proposalId);
     error InvalidPayout(uint256 yesNumerator, uint256 noNumerator, uint256 denominator);
     error InvalidReleasePayload();
     error InvalidTreasuryPayload();
@@ -122,7 +140,13 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         return arbitrationContract;
     }
 
+    /// @dev When no evaluation is active this also moves the head of the queue into evaluation,
+    ///      so starting and creating the market happen in one transaction. If the payload is not
+    ///      the head's, the whole call reverts and the queue is untouched.
     function startEvaluation(uint256 proposalId, bytes calldata evaluationPayload) external {
+        IFAOSiteEvaluationArbitration arbitration_ =
+            IFAOSiteEvaluationArbitration(arbitrationContract);
+        if (arbitration_.activeEvaluationProposalId() == 0) arbitration_.startNextEvaluation();
         _assertActive(proposalId);
         if (futarchyProposalOf[proposalId] != address(0)) {
             revert EvaluationAlreadyStarted(proposalId);
@@ -157,11 +181,23 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
             kind = KIND_SITE_RELEASE;
         }
 
-        (uint256 futarchyProposalId, address futarchyProposal) =
-            orchestrator.createOfficialProposalAndMigrate(marketName, description, 0);
+        (uint256 futarchyProposalId, address futarchyProposal) = orchestrator.createOfficialProposalAndMigrate(
+            marketName,
+            description,
+            0,
+            kind == KIND_SITE_RELEASE ? int24(0) : TREASURY_DECISION_MARGIN_TICKS
+        );
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
         futarchyProposalOf[proposalId] = futarchyProposal;
+
+        // The decision pools are created empty, and the price of an empty pool can be moved by
+        // anyone at no cost. The liquidity manager must fill them in this same transaction, so
+        // no one ever sees them empty.
+        if (IEvaluationVault(vault).manager().sync() != SYNC_MIGRATED_TO_CONDITIONAL) {
+            revert LiquidityNotMigrated(proposalId);
+        }
+
         emit EvaluationMarketCreated(
             proposalId, futarchyProposalId, futarchyProposal, kind, commitment
         );

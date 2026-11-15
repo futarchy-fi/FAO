@@ -22,13 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CHAIN_ID = flm_deployment.CHAIN_ID
 FEE_TIER = flm_deployment.FEE_TIER
 OBSERVATION_CARDINALITY = flm_deployment.MIN_CARDINALITY_NEXT
-MAX_VESTING_GRANTS = 16
+MAX_VESTING_GRANTS = 4
 DEAD = flm_deployment.DEAD
 ZERO = "0x" + "00" * 20
 POOL_INIT_CODE_HASH = (
     "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54"
 )
-DEPLOY_CORE_SELECTOR = "c9b544c1"
+DEPLOY_CORE_SELECTOR = "dec17f9f"
 DEPLOY_FLM_SELECTOR = "88b5e784"
 FINALIZE_SELECTOR = "4bb278f3"
 STAGE_SIGNATURE = "stage(bytes32,bytes32,bytes)"
@@ -132,7 +132,11 @@ CORE_CONFIG_KEYS = (
     "initialPrice",
     "slope",
     "bootstrapBps",
+    "saleCurve",
+    "optionIssuer",
+    "shortIssuer",
 )
+CORE_MODULE_KEYS = ("saleCurve", "optionIssuer", "shortIssuer")
 ASSET_POLICY_KEYS = ("asset", "c1", "c2", "tapBudget", "tapBudgetMax")
 GRANT_KEYS = ("beneficiary", "start", "duration", "amount")
 FLM_CONFIG_KEYS = ("positionManager",)
@@ -421,6 +425,8 @@ def _encode_core_config(config: dict[str, Any]) -> bytes:
         "bootstrapBps",
     ):
         head.append(_word(config[key]))
+    for key in CORE_MODULE_KEYS:
+        head.append(_address_word(config[key]))
 
     head_bytes = len(head) * 32
     tail = bytearray()
@@ -571,7 +577,7 @@ def _decode_asset_policies(value: bytes, head_offset: int) -> list[dict[str, Any
 
 
 def _decode_core_config(value: bytes) -> dict[str, Any]:
-    if len(value) < 40 * 32 or len(value) % 32:
+    if len(value) < 43 * 32 or len(value) % 32:
         raise ManifestError("encoded CoreConfig is malformed")
     config: dict[str, Any] = {}
     word = 0
@@ -617,6 +623,9 @@ def _decode_core_config(value: bytes) -> dict[str, Any]:
         "bootstrapBps",
     ):
         config[key] = _word_uint(value, word * 32, f"CoreConfig.{key}")
+        word += 1
+    for key in CORE_MODULE_KEYS:
+        config[key] = _decode_address_word(value, word * 32, f"CoreConfig.{key}")
         word += 1
     if _encode_core_config(config) != value:
         raise ManifestError("CoreConfig ABI encoding is not canonical")
@@ -728,6 +737,8 @@ def _validate_config_preimages(manifest: dict[str, Any]) -> tuple[dict[str, Any]
     for key in ("saleEnd", "bootstrapDeadline"):
         _uint(core[key], 64, f"coreConfig.{key}")
     _uint(core["bootstrapBps"], 16, "coreConfig.bootstrapBps")
+    for key in CORE_MODULE_KEYS:
+        _canonical_address(core[key], f"coreConfig.{key}")
     for key in (
         "daoURI",
         "metadataURI",

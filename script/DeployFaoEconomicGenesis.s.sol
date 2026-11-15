@@ -10,6 +10,7 @@ import {FAOEconomicEvaluationPipeline} from "../src/FAOEconomicEvaluationPipelin
 import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {FAOSiteStackDeployer} from "../src/FAOSiteStackDeployer.sol";
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
+import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
 import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../src/GenesisVault.sol";
 import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
@@ -51,6 +52,7 @@ contract DeployFaoEconomicGenesis is Script {
     error InvalidConfig();
     error DeploymentFailed();
     error InvalidPinnedCode(address target, bytes32 expected, bytes32 actual);
+    error CurveNotBoundToVault(address expectedVault, address boundVault);
 
     function run() external {
         if (block.chainid != SEPOLIA_CHAIN_ID) revert InvalidChain(block.chainid);
@@ -81,6 +83,17 @@ contract DeployFaoEconomicGenesis is Script {
                 || keccak256(receiptCode) != EconomicDeploymentCodeHashes.RECEIPT
         ) revert InvalidConfig();
         uint256 startNonce = vm.getNonce(deployer);
+        {
+            // The receipt is this run's third transaction and creates the vault with its nonce
+            // 2. The sale curve must already be bound to that vault
+            // (script/DeployFaoIssuanceModules.s.sol).
+            address predictedVault =
+                vm.computeCreateAddress(vm.computeCreateAddress(deployer, startNonce + 2), 2);
+            address boundVault = FaoSaleCurve(vm.envAddress("SALE_CURVE")).vault();
+            if (boundVault != predictedVault) {
+                revert CurveNotBoundToVault(predictedVault, boundVault);
+            }
+        }
 
         vm.broadcast(privateKey);
         FAOFutarchyProposal proposalImplementation = FAOFutarchyProposal(_deploy(proposalCode));
@@ -148,7 +161,10 @@ contract DeployFaoEconomicGenesis is Script {
             tokenMaxSupply: vm.envOr("TOKEN_MAX_SUPPLY", saleCap * 2 + 1 ether),
             initialPrice: vm.envOr("INITIAL_PRICE", uint256(0.000_01 ether)),
             slope: vm.envOr("SLOPE", uint256(0)),
-            bootstrapBps: uint16(bootstrapBps)
+            bootstrapBps: uint16(bootstrapBps),
+            saleCurve: vm.envAddress("SALE_CURVE"),
+            optionIssuer: vm.envOr("OPTION_ISSUER", address(0)),
+            shortIssuer: vm.envOr("SHORT_ISSUER", address(0))
         });
         FaoGenesisDeployment.FlmConfig memory flm = FaoGenesisDeployment.FlmConfig({
             positionManager: _pinned(

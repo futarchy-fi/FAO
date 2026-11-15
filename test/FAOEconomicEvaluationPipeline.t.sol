@@ -93,6 +93,25 @@ contract EconomicEvaluationResolverMock {
     }
 }
 
+/// @dev Stands in for the vault and its liquidity manager: `sync()` reports what it is told.
+contract EconomicEvaluationVaultMock {
+    uint8 public syncResult = 1;
+    uint256 public syncCalls;
+
+    function manager() external view returns (address) {
+        return address(this);
+    }
+
+    function setSyncResult(uint8 result) external {
+        syncResult = result;
+    }
+
+    function sync() external returns (uint8) {
+        syncCalls++;
+        return syncResult;
+    }
+}
+
 contract EconomicEvaluationOrchestratorMock {
     address public immutable ADMIN;
     address public immutable RESOLVER;
@@ -101,6 +120,7 @@ contract EconomicEvaluationOrchestratorMock {
     uint256 public createCalls;
     string public lastMarketName;
     string public lastDescription;
+    int24 public lastMarginTicks = type(int24).min;
 
     constructor(address admin_, address resolver_, address proposal_) {
         ADMIN = admin_;
@@ -111,8 +131,10 @@ contract EconomicEvaluationOrchestratorMock {
     function createOfficialProposalAndMigrate(
         string calldata marketName,
         string calldata description,
-        uint256
+        uint256,
+        int24 marginTicks
     ) external payable returns (uint256 proposalId, address proposal_) {
+        lastMarginTicks = marginTicks;
         lastMarketName = marketName;
         lastDescription = description;
         proposalId = createCalls++;
@@ -146,6 +168,8 @@ contract FAOEconomicEvaluationPipelineTest is Test {
     EconGateway internal gateway;
 
     function setUp() public {
+        vm.etch(VAULT, address(new EconomicEvaluationVaultMock()).code);
+        EconomicEvaluationVaultMock(VAULT).setSyncResult(1);
         arbitration = new EconomicEvaluationArbitrationMock();
         space = new EconomicEvaluationSpaceMock();
         ctf = new EconomicEvaluationConditionalTokensMock();
@@ -218,6 +242,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             string.concat("FAO treasury transfer to ", Strings.toHexString(action.recipient))
         );
         assertEq(orchestrator.lastDescription(), _transferDescription(action));
+        assertEq(orchestrator.lastMarginTicks(), 100); // treasury decisions need a 1% lead
     }
 
     function testParamUsesExactTextAndFullPayloadCommitment() public {
@@ -239,6 +264,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             string.concat("FAO treasury parameter ", Strings.toHexString(uint256(action.key), 32))
         );
         assertEq(orchestrator.lastDescription(), _paramDescription(action));
+        assertEq(orchestrator.lastMarginTicks(), 100);
     }
 
     function testCriticalRoundsCommitToSameBaseAndRenderRound() public {
@@ -262,6 +288,7 @@ contract FAOEconomicEvaluationPipelineTest is Test {
                 string.concat("FAO critical action round ", round.toString(), "/2")
             );
             assertEq(orchestrator.lastDescription(), _criticalDescription(action, baseHash, round));
+            assertEq(orchestrator.lastMarginTicks(), 100);
         }
     }
 
@@ -330,6 +357,27 @@ contract FAOEconomicEvaluationPipelineTest is Test {
         critical = _critical(bytes32(0));
         _expectInvalidTreasury(_criticalPayload(critical, 0));
         _expectInvalidTreasury(_criticalPayload(critical, 3));
+    }
+
+    function testMarketCreationFillsThePoolsInTheSameTransaction() public {
+        bytes memory payload = _sitePayload(1, bytes32(0), keccak256("one"), "ipfs://one");
+        uint256 proposalId = uint256(keccak256(payload));
+        arbitration.setActive(proposalId);
+
+        // If the liquidity manager does not move liquidity in, no market is left behind.
+        EconomicEvaluationVaultMock(VAULT).setSyncResult(0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FAOEconomicEvaluationPipeline.LiquidityNotMigrated.selector, proposalId
+            )
+        );
+        pipeline.startEvaluation(proposalId, payload);
+        assertEq(pipeline.futarchyProposalOf(proposalId), address(0));
+
+        EconomicEvaluationVaultMock(VAULT).setSyncResult(1);
+        pipeline.startEvaluation(proposalId, payload);
+        assertEq(EconomicEvaluationVaultMock(VAULT).syncCalls(), 1);
+        assertEq(pipeline.futarchyProposalOf(proposalId), address(proposal));
     }
 
     function testPayloadMustMatchActiveIdAndEvaluationIsOneShot() public {

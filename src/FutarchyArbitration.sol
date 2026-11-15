@@ -80,6 +80,9 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice Maximum proposals in queue + evaluation combined.
     uint256 public immutable MAX_QUEUE;
 
+    /// @notice Longest an evaluation may stay unresolved before anyone can abort it.
+    uint256 public constant MAX_EVALUATION = 21 days;
+
     // ═══════════════════════════════════════════════════════
     //  State
     // ═══════════════════════════════════════════════════════
@@ -135,6 +138,8 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     );
 
     event EvaluationStarted(uint256 indexed proposalId);
+    event GraduationDeferred(uint256 indexed proposalId, uint256 yesBondAmount);
+    event EvaluationAborted(uint256 indexed proposalId, uint256 yesRefund, uint256 noRefund);
 
     event EvaluationResolved(
         uint256 indexed proposalId, bool accepted, address indexed winner, uint256 payout
@@ -159,7 +164,7 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     error InvalidState();
     error BondTooSmall();
     error TimeoutNotReached();
-    error QueueFull();
+    error MustBeEvaluated();
     error NotEvaluator();
     error NotProposalGateway();
     error InvalidEvaluator();
@@ -329,6 +334,13 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         ProposalState s = p.state;
         if (s != ProposalState.YES && s != ProposalState.NO) revert InvalidState();
 
+        // A contested YES whose bond has reached the graduation threshold must be decided by a
+        // market. It may be waiting for a queue slot; anyone can move it on with tryGraduate.
+        if (
+            s == ProposalState.YES && p.noBond.amount != 0
+                && p.yesBond.amount >= requiredYes(_queuedCount())
+        ) revert MustBeEvaluated();
+
         if (block.timestamp < uint256(p.lastStateChangeAt) + timeout) {
             revert TimeoutNotReached();
         }
@@ -423,6 +435,35 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         emit EvaluationResolved(proposalId, accepted, winner, payout);
     }
 
+    /// @notice Abort an evaluation that was never resolved, so the queue cannot stay blocked.
+    /// @dev Anyone can call once the active proposal has been EVALUATING for MAX_EVALUATION.
+    ///      The proposal settles as not accepted and each side gets its own bond back, because
+    ///      no market ruled between them.
+    function abortStaleEvaluation() external {
+        uint256 proposalId = activeEvaluationProposalId;
+        if (proposalId == 0) revert InvalidState();
+
+        Proposal storage p = proposals[proposalId];
+        if (p.state != ProposalState.EVALUATING || p.settled) revert InvalidState();
+        if (block.timestamp < uint256(p.lastStateChangeAt) + MAX_EVALUATION) {
+            revert TimeoutNotReached();
+        }
+
+        p.settled = true;
+        p.accepted = false;
+        p.state = ProposalState.SETTLED;
+        p.lastStateChangeAt = uint64(block.timestamp);
+
+        uint256 yesRefund = p.yesBond.amount;
+        uint256 noRefund = p.noBond.amount;
+        if (yesRefund != 0) withdrawable[p.yesBond.bidder] += yesRefund;
+        if (noRefund != 0) withdrawable[p.noBond.bidder] += noRefund;
+
+        activeEvaluationProposalId = 0;
+
+        emit EvaluationAborted(proposalId, yesRefund, noRefund);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Admin
     // ═══════════════════════════════════════════════════════
@@ -501,7 +542,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         if (yesBondAmount < req) return;
 
         uint256 totalInQueue = queuedLen + (activeEvaluationProposalId == 0 ? 0 : 1);
-        if (totalInQueue >= MAX_QUEUE) revert QueueFull();
+        // A full queue defers graduation instead of reverting the bond: the proposal stays in
+        // YES and can graduate through a later flip or tryGraduate once a slot frees.
+        if (totalInQueue >= MAX_QUEUE) {
+            emit GraduationDeferred(proposalId, yesBondAmount);
+            return;
+        }
 
         queue.push(proposalId);
         p.queuePosition = uint32(queuedLen + 1);
