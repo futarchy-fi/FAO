@@ -38,6 +38,34 @@ interface IFaoGenesisForkWeth {
     function deposit() external payable;
 }
 
+interface IForkConditionalTokens {
+    function getCollectionId(bytes32 parentCollectionId, bytes32 conditionId, uint256 indexSet)
+        external
+        view
+        returns (bytes32);
+
+    function getPositionId(address collateralToken, bytes32 collectionId)
+        external
+        pure
+        returns (uint256);
+
+    function splitPosition(
+        address collateralToken,
+        bytes32 parentCollectionId,
+        bytes32 conditionId,
+        uint256[] calldata partition,
+        uint256 amount
+    ) external;
+
+    function safeTransferFrom(
+        address from,
+        address to,
+        uint256 id,
+        uint256 value,
+        bytes calldata data
+    ) external;
+}
+
 interface IEmptyPoolSwap {
     function swap(
         address recipient,
@@ -546,6 +574,167 @@ contract FaoGenesisDeploymentForkTest is Test {
         resolver.checkpointWindowStart(market);
         vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
         assertFalse(evaluator.resolve(id));
+    }
+
+    /// @dev Exercises the full two-step Floor + 1/spread treasury resolution on a live Sepolia
+    /// fork: a real UniV3 swap moves YES > NO + 100 ticks (~2.1% lead, p(NOOP) ~= 48%), and from
+    /// the pre-seal snapshot we verify both outcomes of the blockhash draw:
+    ///   1. When NOOP is drawn, `accepted == false` (GenesisVault refuses execution and FLM
+    ///      restores spot liquidity), while `bondWonByYes == true` pays YES both escalation bonds.
+    ///   2. When execution is drawn, `accepted == true`, YES wins both bonds, and GenesisVault
+    ///      queues and executes the treasury transfer.
+    function testFork_decoupledBondsPaidToYesWhenTwapPassesAndRandomDrawResolves() public {
+        if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
+        vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
+
+        (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
+            _deployReceipt();
+        GenesisVault vault = GenesisVault(payable(receipt.vault()));
+        GenesisTreasuryExecutor treasury = vault.TREASURY_EXECUTOR();
+        FutarchyArbitration arbitration = FutarchyArbitration(receipt.arbitration());
+        EconGateway gateway = EconGateway(receipt.proposalGateway());
+        FAOEconomicEvaluationPipeline evaluator = FAOEconomicEvaluationPipeline(receipt.evaluator());
+        FutarchyLiquidityManager manager = FutarchyLiquidityManager(payable(receipt.manager()));
+
+        {
+            address buyer = makeAddr("decoupled-fork-buyer");
+            uint256 cost = vault.reserveAt(BUY_AMOUNT);
+            vm.deal(buyer, 1 ether);
+            vm.startPrank(buyer);
+            IFaoGenesisForkWeth(WETH).deposit{value: cost}();
+            IERC20(WETH).approve(address(vault), type(uint256).max);
+            vault.buy(BUY_AMOUNT, cost, vm.getBlockTimestamp());
+            vm.stopPrank();
+            vm.warp(coreConfig.saleEnd);
+            vault.seal();
+            vault.finalize();
+            vault.claim(buyer);
+            vm.warp(vm.getBlockTimestamp() + 1 hours);
+        }
+
+        vm.deal(address(this), 1 ether);
+        IFaoGenesisForkWeth(WETH).deposit{value: 0.2 ether}();
+        IERC20(WETH).transfer(address(treasury), 0.05 ether);
+
+        address yesSponsor = makeAddr("decoupled-yes-sponsor");
+        address noChallenger = makeAddr("decoupled-no-challenger");
+        IERC20(WETH).transfer(yesSponsor, 0.05 ether);
+        IERC20(WETH).transfer(noChallenger, 0.05 ether);
+
+        FAOTreasuryActions.TransferAction memory action = FAOTreasuryActions.TransferAction({
+            asset: WETH,
+            recipient: makeAddr("decoupled-recipient"),
+            amount: 0.02 ether,
+            salt: bytes32("fork-decoupled-noop")
+        });
+        uint256 id = gateway.proposeTransfer(action);
+
+        vm.startPrank(yesSponsor);
+        IERC20(WETH).approve(address(arbitration), type(uint256).max);
+        arbitration.placeYesBond(id, 0.0001 ether);
+        vm.stopPrank();
+
+        vm.startPrank(noChallenger);
+        IERC20(WETH).approve(address(arbitration), type(uint256).max);
+        arbitration.placeNoBond(id);
+        vm.stopPrank();
+
+        vm.prank(yesSponsor);
+        arbitration.placeYesBond(id, 0.01 ether);
+
+        evaluator.startEvaluation(id, gateway.transferEvaluationPayload(action));
+        address market = evaluator.futarchyProposalOf(id);
+        FAOTwapResolver resolver = FAOTwapResolver(address(evaluator.resolver()));
+        assertEq(resolver.decisionMarginTicks(market), 100);
+        assertTrue(resolver.isRandomized(market));
+
+        _pushForkYesPoolAboveMargin(market, resolver);
+
+        vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
+        resolver.checkpointWindowStart(market);
+        vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
+
+        uint256 drawBlock = vm.getBlockNumber() + 2;
+        evaluator.seal(id);
+        assertTrue(resolver.twapPassed(market));
+        vm.roll(drawBlock + 1);
+
+        uint256 postSealSnap = vm.snapshotState();
+        bool sawNoopDraw;
+        bool sawPassDraw;
+
+        for (uint256 i = 0; i < 16 && (!sawNoopDraw || !sawPassDraw); ++i) {
+            vm.revertToState(postSealSnap);
+            vm.setBlockhash(drawBlock, keccak256(abi.encode("sepolia-fork-draw", i)));
+            bool accepted = evaluator.resolve(id);
+
+            if (!accepted && !sawNoopDraw) {
+                sawNoopDraw = true;
+                assertFalse(arbitration.isAccepted(id));
+                assertTrue(arbitration.bondWonByYes(id));
+                assertEq(arbitration.withdrawable(yesSponsor), 0.0001 ether + 0.0101 ether);
+                assertEq(arbitration.withdrawable(noChallenger), 0);
+                vm.expectRevert(GenesisVault.ArbitrationNotAccepted.selector);
+                vault.queueTreasuryTransfer(action);
+                manager.sync();
+                assertGt(IOperatorPoolLiquidity(receipt.spotPool()).liquidity(), 0);
+            } else if (accepted && !sawPassDraw) {
+                sawPassDraw = true;
+                assertTrue(arbitration.isAccepted(id));
+                assertTrue(arbitration.bondWonByYes(id));
+                assertEq(arbitration.withdrawable(yesSponsor), 0.0001 ether + 0.0101 ether);
+                assertEq(arbitration.withdrawable(noChallenger), 0);
+                vault.queueTreasuryTransfer(action);
+                vm.warp(vm.getBlockTimestamp() + vault.TREASURY_GRACE());
+                vault.executeTreasuryTransfer(action);
+                assertEq(IERC20(WETH).balanceOf(action.recipient), action.amount);
+            }
+        }
+
+        assertTrue(sawNoopDraw, "must observe NOOP draw with YES bond payout");
+        assertTrue(sawPassDraw, "must observe PASS draw with treasury execution");
+    }
+
+    function _pushForkYesPoolAboveMargin(address market, FAOTwapResolver resolver) private {
+        (address yesPool,,,,,,,) = resolver.bindings(market);
+        (address yesCompany,) = FAOFutarchyProposal(market).wrappedOutcome(0);
+        (address yesCurrency, bytes memory yesCurrencyData) =
+            FAOFutarchyProposal(market).wrappedOutcome(2);
+        bytes32 condId = FAOFutarchyProposal(market).conditionId();
+
+        address trader = makeAddr("decoupled-fork-trader");
+        vm.deal(trader, 0.2 ether);
+        vm.startPrank(trader);
+        IFaoGenesisForkWeth(WETH).deposit{value: 0.05 ether}();
+        IERC20(WETH).approve(CTF, 0.05 ether);
+        uint256[] memory partition = new uint256[](2);
+        partition[0] = 1;
+        partition[1] = 2;
+        IForkConditionalTokens(CTF).splitPosition(WETH, bytes32(0), condId, partition, 0.05 ether);
+        bytes32 collId = IForkConditionalTokens(CTF).getCollectionId(bytes32(0), condId, 1);
+        uint256 posId = IForkConditionalTokens(CTF).getPositionId(WETH, collId);
+        IForkConditionalTokens(CTF)
+            .safeTransferFrom(trader, WRAPPED_1155, posId, 0.05 ether, yesCurrencyData);
+
+        (uint160 sqrtBefore,,,,,,) = IUniswapV3PoolLike(yesPool).slot0();
+        bool companyIsToken0 = IUniswapV3PoolLike(yesPool).token0() == yesCompany;
+        uint160 limit = companyIsToken0
+            ? uint160(uint256(sqrtBefore) * 10_105 / 10_000)
+            : uint160(uint256(sqrtBefore) * 10_000 / 10_105);
+        IERC20(yesCurrency).approve(SWAP_ROUTER, 0.05 ether);
+        IOperatorSwapRouter(SWAP_ROUTER)
+            .exactInputSingle(
+                IOperatorSwapRouter.ExactInputSingleParams({
+                    tokenIn: yesCurrency,
+                    tokenOut: yesCompany,
+                    fee: 500,
+                    recipient: trader,
+                    amountIn: 0.05 ether,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: limit
+                })
+            );
+        vm.stopPrank();
     }
 
     function testFork_lane4CompressedTreasuryLifecycle() public {

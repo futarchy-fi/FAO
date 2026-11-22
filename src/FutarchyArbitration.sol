@@ -93,6 +93,11 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
     /// @notice All proposals by id.
     mapping(uint256 => Proposal) internal proposals;
 
+    /// @notice Whether YES won the escalation-bond payout on settlement (decoupled from `accepted`
+    ///         when an evaluated proposal passes the deterministic TWAP check `s_bar > mu` while
+    ///         the randomized execution draw selects NOOP).
+    mapping(uint256 => bool) public bondWonByYes;
+
     /// @notice Pull-payment ledger for bond-token payouts.
     mapping(address => uint256) public withdrawable;
 
@@ -348,10 +353,12 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         address winner = (s == ProposalState.YES) ? p.yesBond.bidder : p.noBond.bidder;
         uint256 payout = p.yesBond.amount + p.noBond.amount;
 
+        bool yesWon = (s == ProposalState.YES);
         p.settled = true;
-        p.accepted = (s == ProposalState.YES);
+        p.accepted = yesWon;
         p.state = ProposalState.SETTLED;
         p.lastStateChangeAt = uint64(block.timestamp);
+        bondWonByYes[proposalId] = yesWon;
 
         if (payout != 0) {
             withdrawable[winner] += payout;
@@ -406,9 +413,20 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         emit EvaluationStarted(proposalId);
     }
 
-    /// @notice Resolve the active evaluation.
+    /// @notice Resolve the active evaluation with coupled execution and bond settlement.
     /// @dev Only callable by the configured evaluator module.
     function resolveActiveEvaluation(bool accepted) external {
+        _resolveActiveEvaluation(accepted, accepted);
+    }
+
+    /// @notice Resolve the active evaluation, decoupling governance execution (`accepted`, from the
+    ///         VRF execution draw) from escalation-bond payout (`yesWonBonds`, from `s_bar > mu`).
+    /// @dev Only callable by the configured evaluator module.
+    function resolveActiveEvaluation(bool accepted, bool yesWonBonds) external {
+        _resolveActiveEvaluation(accepted, yesWonBonds);
+    }
+
+    function _resolveActiveEvaluation(bool accepted, bool yesWonBonds) internal {
         if (msg.sender != address(evaluator)) revert NotEvaluator();
 
         uint256 proposalId = activeEvaluationProposalId;
@@ -423,8 +441,9 @@ contract FutarchyArbitration is Ownable2Step, ReentrancyGuard {
         p.accepted = accepted;
         p.state = ProposalState.SETTLED;
         p.lastStateChangeAt = uint64(block.timestamp);
+        bondWonByYes[proposalId] = yesWonBonds;
 
-        address winner = accepted ? p.yesBond.bidder : p.noBond.bidder;
+        address winner = yesWonBonds ? p.yesBond.bidder : p.noBond.bidder;
         uint256 payout = p.yesBond.amount + p.noBond.amount;
         if (payout != 0) {
             withdrawable[winner] += payout;

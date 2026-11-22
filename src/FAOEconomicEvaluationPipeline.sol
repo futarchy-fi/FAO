@@ -71,6 +71,13 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
     /// Site releases need only YES above NO.
     int24 public constant TREASURY_DECISION_MARGIN_TICKS = 100;
 
+    /// @notice Top NOOP floor `eps` (10% = 1,000 bps) for treasury decisions under the unified
+    ///         Floor + 1/spread execution rule `p(NOOP)(s) = max(eps, sigma / (sigma + s - mu))`.
+    uint16 public constant TREASURY_NOOP_FLOOR_BPS = 1000;
+
+    /// @notice Excess-spread scale `sigma` (100 ticks ~ 1.005%) for the `1/spread` NOOP ramp.
+    int24 public constant TREASURY_NOOP_SCALE_TICKS = 100;
+
     /// @dev `FutarchyLiquidityManager.SyncAction.MigratedToConditional`.
     uint8 internal constant SYNC_MIGRATED_TO_CONDITIONAL = 1;
 
@@ -189,6 +196,12 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         );
         if (futarchyProposal == address(0)) revert InvalidFutarchyProposal();
 
+        if (kind != KIND_SITE_RELEASE) {
+            orchestrator.setNoopPolicy(
+                futarchyProposal, TREASURY_NOOP_FLOOR_BPS, TREASURY_NOOP_SCALE_TICKS
+            );
+        }
+
         futarchyProposalOf[proposalId] = futarchyProposal;
 
         // The decision pools are created empty, and the price of an empty pool can be moved by
@@ -201,6 +214,17 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         emit EvaluationMarketCreated(
             proposalId, futarchyProposalId, futarchyProposal, kind, commitment
         );
+    }
+
+    /// @notice Step 1 convenience entrypoint: seal the active proposal's TWAP window on the
+    ///         resolver and request randomness when `s_bar > mu` on a randomized treasury market.
+    function seal(uint256 proposalId) external {
+        _assertActive(proposalId);
+
+        address futarchyProposal = futarchyProposalOf[proposalId];
+        if (futarchyProposal == address(0)) revert EvaluationNotStarted(proposalId);
+
+        resolver.seal(futarchyProposal);
     }
 
     function resolve(uint256 proposalId) external returns (bool accepted) {
@@ -224,7 +248,9 @@ contract FAOEconomicEvaluationPipeline is IFutarchyArbitrationEvaluator {
         }
 
         accepted = yesNumerator > noNumerator;
-        IFAOSiteEvaluationArbitration(arbitrationContract).resolveActiveEvaluation(accepted);
+        bool yesWonBonds = resolver.twapPassed(futarchyProposal);
+        IFAOSiteEvaluationArbitration(arbitrationContract)
+            .resolveActiveEvaluation(accepted, yesWonBonds);
         emit EvaluationResolved(proposalId, futarchyProposal, conditionId, accepted);
     }
 

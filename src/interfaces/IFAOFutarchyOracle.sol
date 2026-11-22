@@ -1,28 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/// @notice Optional verifiable randomness source (e.g. VRF v2.5 or threshold beacon adapter).
+/// @dev When unset (`address(0)`), `FAOTwapResolver` uses a two-step future-blockhash draw
+///      (with EIP-2935 historical blockhash fallback).
+interface IFutarchyRandomnessSource {
+    function requestRandomness(bytes32 context) external returns (bytes32 requestId);
+    function readRandomness(bytes32 requestId)
+        external
+        view
+        returns (bool fulfilled, bytes32 randomWord);
+}
+
 /// @notice Oracle interface used by FAOFutarchyProposal.resolve().
-/// @dev The concrete oracle in v0 is FutarchyTwapResolver, which reads UniV3 TWAP and
-/// reports payouts to the Conditional Tokens Framework.
 interface IFAOFutarchyOracle {
-    /// @notice Resolve a proposal by computing the futarchy signal and reporting payouts to CTF.
-    /// @param proposal The address of the FAOFutarchyProposal to resolve.
     function resolve(address proposal) external;
 }
 
 /// @notice Extension of IFAOFutarchyOracle for resolvers that need pool/anchor binding
 /// at proposal promotion time (e.g. UniV3 TWAP resolver).
 interface IFAOFutarchyTwapResolver is IFAOFutarchyOracle {
-    /// @notice Bind a proposal to its conditional pools and anchor timestamp.
-    /// Called by the orchestrator atomically inside createOfficialProposalAndMigrate.
-    /// @param proposal Address of the FAOFutarchyProposal.
-    /// @param yesPool YES_company / YES_currency UniV3 pool.
-    /// @param noPool NO_company / NO_currency UniV3 pool.
-    /// @param companyToken Address of the company-side base token (FAO).
-    /// @param currencyToken Address of the currency-side quote token (WETH).
-    /// @param anchorTimestamp t_promote; the TWAP window is anchored relative to this.
-    /// @param marginTicks The proposal passes only if the YES average tick exceeds the NO average
-    /// tick by more than this. One tick is 0.01% in price; 0 means YES only has to be above NO.
     function bindProposal(
         address proposal,
         address yesPool,
@@ -32,4 +29,6 @@ interface IFAOFutarchyTwapResolver is IFAOFutarchyOracle {
         uint48 anchorTimestamp,
         int24 marginTicks
     ) external;
+
+    function setNoopPolicy(address proposal, uint16 noopFloorBps, int24 noopScaleTicks) external;
 }

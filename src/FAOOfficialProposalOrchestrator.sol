@@ -153,6 +153,14 @@ contract FAOOfficialProposalOrchestrator {
         );
     }
 
+    /// @notice Configure the Floor + 1/spread NOOP policy for an already-bound official proposal.
+    function setNoopPolicy(address proposal, uint16 noopFloorBps, int24 noopScaleTicks)
+        external
+        onlyAdmin
+    {
+        RESOLVER.setNoopPolicy(proposal, noopFloorBps, noopScaleTicks);
+    }
+
     function _createAndBindMarket(
         string calldata marketName,
         string calldata description,

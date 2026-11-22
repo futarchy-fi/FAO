@@ -1,64 +1,40 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IFAOFutarchyOracle, IFAOFutarchyTwapResolver} from "./interfaces/IFAOFutarchyOracle.sol";
+import {
+    IFAOFutarchyOracle,
+    IFAOFutarchyTwapResolver,
+    IFutarchyRandomnessSource
+} from "./interfaces/IFAOFutarchyOracle.sol";
 import {IUniswapV3PoolLike} from "./interfaces/IUniswapV3PoolLike.sol";
 import {IConditionalTokensLike} from "./interfaces/IConditionalTokensLike.sol";
 import {FAOFutarchyProposal} from "./FAOFutarchyProposal.sol";
 
 /// @title FAOTwapResolver
-/// @notice Reads UniV3 TWAP of YES vs NO conditional pools and reports the futarchy
-/// decision to the Conditional Tokens Framework as the oracle for the condition.
-///
-/// Replaces FutarchyRealityProxy (Reality.eth) as the CTF reporter.
-///
-/// Lifecycle:
-///   1. Orchestrator calls bindProposal(...) at promote time, registering the two
-///      pools, the company/currency token pair, and the anchor timestamp.
-///   2. Anyone calls resolve(proposal) once block.timestamp >= anchor + TIMEOUT.
-///   3. resolve() reads tick cumulatives over [windowEnd - TWAP_WINDOW, windowEnd]
-///      from both pools, normalizes ticks to "currency per company" orientation,
-///      decides accepted = (yesAvgTick - noAvgTick > margin), and reports payouts to CTF.
-///
-/// All timing parameters are constructor immutables — testnet branch sets
-/// TIMEOUT=2h, TWAP_WINDOW=1h; mainnet sets 72h/24h.
-///
-/// See docs/onchain-futarchy-design.md §3.3 for the full resolution flow.
+/// @notice Reads UniV3 TWAP of YES vs NO conditional pools, freezes `s_bar > margin`, and resolves
+///         execution + CTF payouts either deterministically or via a two-step verifiable random
+///         draw under `p(NOOP)(s) = max(eps, sigma / (sigma + s - margin))` for `s > margin`.
 contract FAOTwapResolver is IFAOFutarchyTwapResolver {
-    /// @notice Total time from anchor to resolution (windowEnd = anchor + TIMEOUT).
     uint32 public immutable TIMEOUT;
-    /// @notice TWAP window length, ending at windowEnd.
     uint32 public immutable TWAP_WINDOW;
-    /// @notice ConditionalTokens deployment we report to.
     IConditionalTokensLike public immutable CTF;
-    /// @notice The orchestrator address authorized to call bindProposal.
     address public orchestrator;
+    IFutarchyRandomnessSource public randomnessSource;
 
-    /// @notice Per-proposal binding written by the orchestrator at promote time.
     struct Binding {
         address yesPool;
         address noPool;
         address companyToken;
         address currencyToken;
-        bytes32 questionId; // captured at bind time so CTF can be reported later
+        bytes32 questionId;
         uint48 anchorTimestamp;
         bool resolved;
         bool accepted;
     }
 
     mapping(address => Binding) public bindings;
-
-    /// @notice How far the YES average tick must exceed the NO average tick for a proposal to
-    /// pass. One tick is 0.01% in price. Set once at bind time by the orchestrator; 0 means YES
-    /// only has to be above NO.
     mapping(address => int24) public decisionMarginTicks;
 
-    /// @notice Largest margin the orchestrator may set: about 10.5% in price.
-    int24 public constant MAX_DECISION_MARGIN_TICKS = 1000;
-
-    /// @notice Running tick totals of both pools, recorded once at or after the start of the
-    /// averaging window. With a checkpoint the decision reads only the pools' current totals, so
-    /// it does not depend on how much history the pools still hold.
     struct Checkpoint {
         int56 yesCumulative;
         int56 noCumulative;
@@ -67,14 +43,44 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
     mapping(address => Checkpoint) public windowStart;
 
-    /// @notice The checkpoint must be taken within TWAP_WINDOW / 4 of the scheduled start.
+    /// @dev Packed into 2 storage slots (21 bytes + bytes32).
+    struct SealedDecision {
+        bool committed;
+        bool twapPassed;
+        uint16 noopFloorBps;
+        int24 noopScaleTicks;
+        int24 yesAvgTick;
+        int24 noAvgTick;
+        uint64 drawBlock;
+        bytes32 vrfRequestId;
+    }
+
+    mapping(address => SealedDecision) public sealedDecisions;
+
+    int24 public constant MAX_DECISION_MARGIN_TICKS = 1000;
+    uint16 public constant BPS_DENOMINATOR = 10_000;
+    int24 public constant MAX_NOOP_SCALE_TICKS = 10_000;
+    uint64 public constant DRAW_DELAY_BLOCKS = 2;
     uint256 public constant CHECKPOINT_GRACE_DIVISOR = 4;
+
+    address internal constant HISTORY_STORAGE_ADDRESS = 0x0000F90827F1C53a10cb7A02335B175320002935;
+    uint256 internal constant HISTORY_SERVE_WINDOW = 8191;
+    uint256 internal constant BLOCKHASH_SERVE_WINDOW = 256;
 
     error NotOrchestrator();
     error OrchestratorAlreadySet();
     error AlreadyBound(address proposal);
     error NotBound(address proposal);
+    error AlreadySealed(address proposal);
     error AlreadyResolved(address proposal);
+    error NotSealed(address proposal);
+    error DrawNotSealed(address proposal);
+    error RandomnessNotReady(address proposal);
+    error DrawExpired(address proposal, uint64 drawBlock);
+    error DrawNotExpired(address proposal, uint64 drawBlock);
+    error InvalidRandomnessSource();
+    error InvalidRandomnessRequest();
+    error PolicyAlreadySet(address proposal);
     error AlreadyCheckpointed(address proposal);
     error CheckpointTooLate(address proposal, uint256 latest);
     error CheckpointUnavailable(address proposal);
@@ -82,9 +88,11 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     error InvalidPair(address pool, address token);
     error InvalidConfig(uint32 timeout, uint32 window);
     error InvalidMargin(int24 marginTicks);
+    error InvalidNoopConfig(uint16 floorBps, int24 scaleTicks);
     error InsufficientGas();
 
     event OrchestratorSet(address indexed orchestrator);
+    event RandomnessSourceSet(address indexed randomnessSource);
     event ProposalBound(
         address indexed proposal,
         address yesPool,
@@ -93,7 +101,22 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         bytes32 questionId,
         int24 marginTicks
     );
+    event ProposalNoopPolicySet(
+        address indexed proposal, uint16 noopFloorBps, int24 noopScaleTicks
+    );
     event WindowStartCheckpointed(address indexed proposal, uint48 timestamp);
+    event ProposalSealed(
+        address indexed proposal,
+        int24 yesAvgTick,
+        int24 noAvgTick,
+        bool twapPassed,
+        uint64 drawBlock,
+        bytes32 vrfRequestId
+    );
+    event DrawRearmed(address indexed proposal, uint64 newDrawBlock);
+    event RandomDrawResolved(
+        address indexed proposal, bytes32 randomWord, bool noopDrawn, bool accepted
+    );
     event ProposalResolved(
         address indexed proposal,
         bool accepted,
@@ -109,16 +132,38 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         CTF = ctf;
     }
 
-    /// @notice One-shot wiring: set the orchestrator that can call bindProposal.
     function setOrchestrator(address newOrchestrator) external {
-        if (orchestrator != address(0)) revert OrchestratorAlreadySet();
+        _setOrchestrator(newOrchestrator, IFutarchyRandomnessSource(address(0)));
+    }
+
+    function setOrchestratorWithRandomness(
+        address newOrchestrator,
+        IFutarchyRandomnessSource newRandomnessSource
+    ) external {
+        if (
+            address(newRandomnessSource) != address(0)
+                && address(newRandomnessSource).code.length == 0
+        ) revert InvalidRandomnessSource();
+        _setOrchestrator(newOrchestrator, newRandomnessSource);
+    }
+
+    function _setOrchestrator(
+        address newOrchestrator,
+        IFutarchyRandomnessSource newRandomnessSource
+    ) internal {
+        if (orchestrator != address(0)) {
+            revert OrchestratorAlreadySet();
+        }
+        if (newOrchestrator == address(0)) revert NotOrchestrator();
         orchestrator = newOrchestrator;
         emit OrchestratorSet(newOrchestrator);
+        if (address(newRandomnessSource) != address(0)) {
+            randomnessSource = newRandomnessSource;
+            emit RandomnessSourceSet(address(newRandomnessSource));
+        }
     }
 
     /// @inheritdoc IFAOFutarchyTwapResolver
-    /// @custom:spec INV-TWAP-001 — anchor set exactly once; window fixity. See
-    /// audit/specs/INVARIANTS.md.
     function bindProposal(
         address proposal,
         address yesPool,
@@ -147,14 +192,30 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         });
 
         if (marginTicks != 0) decisionMarginTicks[proposal] = marginTicks;
-
         emit ProposalBound(proposal, yesPool, noPool, anchorTimestamp, qId, marginTicks);
     }
 
-    /// @notice Record both pools' running tick totals as the start of the averaging window.
-    /// @dev Anyone may call once, at or after `anchor + TIMEOUT - TWAP_WINDOW`. Whoever has a
-    ///      bond on the proposal has the incentive to. If it is called late the window simply
-    ///      starts late: `resolve` then waits until a full TWAP_WINDOW has passed since it.
+    /// @inheritdoc IFAOFutarchyTwapResolver
+    function setNoopPolicy(address proposal, uint16 floorBps, int24 scaleTicks) external {
+        if (msg.sender != orchestrator) revert NotOrchestrator();
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed || sd.noopFloorBps != 0 || sd.noopScaleTicks != 0) {
+            revert PolicyAlreadySet(proposal);
+        }
+        if (
+            floorBps >= BPS_DENOMINATOR || scaleTicks < 0 || scaleTicks > MAX_NOOP_SCALE_TICKS
+                || (floorBps == 0 && scaleTicks == 0)
+        ) {
+            revert InvalidNoopConfig(floorBps, scaleTicks);
+        }
+        sd.noopFloorBps = floorBps;
+        sd.noopScaleTicks = scaleTicks;
+        emit ProposalNoopPolicySet(proposal, floorBps, scaleTicks);
+    }
+
     function checkpointWindowStart(address proposal) external {
         Binding storage b = bindings[proposal];
         if (b.anchorTimestamp == 0) revert NotBound(proposal);
@@ -163,8 +224,6 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
         uint256 earliest = uint256(b.anchorTimestamp) + TIMEOUT - TWAP_WINDOW;
         if (block.timestamp < earliest) revert TooEarly(proposal, earliest);
-        // A late checkpoint would let its caller choose the window. Past the grace period the
-        // decision falls back to the pools' stored history.
         uint256 latest = earliest + TWAP_WINDOW / CHECKPOINT_GRACE_DIVISOR;
         if (block.timestamp > latest) revert CheckpointTooLate(proposal, latest);
 
@@ -176,24 +235,160 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         emit WindowStartCheckpointed(proposal, uint48(block.timestamp));
     }
 
+    function seal(address proposal) external {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed) revert AlreadySealed(proposal);
+
+        (int24 yesAvgTick, int24 noAvgTick, bool twapOk) = _evaluateWindow(proposal, b);
+        sd.committed = true;
+        sd.twapPassed = twapOk;
+        sd.yesAvgTick = yesAvgTick;
+        sd.noAvgTick = noAvgTick;
+
+        if (!twapOk || (sd.noopFloorBps == 0 && sd.noopScaleTicks == 0)) {
+            emit ProposalSealed(proposal, yesAvgTick, noAvgTick, twapOk, 0, bytes32(0));
+            _finalize(proposal, b, twapOk, yesAvgTick, noAvgTick);
+            return;
+        }
+
+        uint64 targetBlock;
+        bytes32 reqId;
+        if (address(randomnessSource) != address(0)) {
+            reqId = randomnessSource.requestRandomness(
+                keccak256(abi.encode(address(this), proposal, b.questionId))
+            );
+            if (reqId == bytes32(0)) revert InvalidRandomnessRequest();
+            sd.vrfRequestId = reqId;
+        } else {
+            targetBlock = uint64(block.number) + DRAW_DELAY_BLOCKS;
+            sd.drawBlock = targetBlock;
+        }
+
+        emit ProposalSealed(proposal, yesAvgTick, noAvgTick, true, targetBlock, reqId);
+    }
+
     /// @inheritdoc IFAOFutarchyOracle
-    /// @custom:spec INV-TWAP-002 — resolution determinism. See audit/specs/INVARIANTS.md.
     function resolve(address proposal) external {
         Binding storage b = bindings[proposal];
         if (b.anchorTimestamp == 0) revert NotBound(proposal);
         if (b.resolved) revert AlreadyResolved(proposal);
 
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (!sd.committed) {
+            (int24 yesAvgTick, int24 noAvgTick, bool twapOk) = _evaluateWindow(proposal, b);
+            if (twapOk && (sd.noopFloorBps != 0 || sd.noopScaleTicks != 0)) {
+                revert DrawNotSealed(proposal);
+            }
+            sd.committed = true;
+            sd.twapPassed = twapOk;
+            sd.yesAvgTick = yesAvgTick;
+            sd.noAvgTick = noAvgTick;
+            _finalize(proposal, b, twapOk, yesAvgTick, noAvgTick);
+            return;
+        }
+
+        bytes32 word;
+        if (address(randomnessSource) != address(0)) {
+            (bool fulfilled, bytes32 vrfWord) = randomnessSource.readRandomness(sd.vrfRequestId);
+            if (!fulfilled) revert RandomnessNotReady(proposal);
+            word = keccak256(abi.encode(vrfWord, address(this), proposal, b.questionId));
+        } else {
+            if (block.number <= sd.drawBlock) revert RandomnessNotReady(proposal);
+            bytes32 bh = _historicalBlockHash(sd.drawBlock);
+            if (bh == bytes32(0)) revert DrawExpired(proposal, sd.drawBlock);
+            word = keccak256(abi.encode(bh, address(this), proposal, b.questionId));
+        }
+
+        uint256 excessSpread = uint256(
+            int256(sd.yesAvgTick) - int256(sd.noAvgTick) - int256(decisionMarginTicks[proposal])
+        );
+        uint256 epsBps = sd.noopFloorBps;
+        uint256 sigma = uint256(uint24(sd.noopScaleTicks));
+        uint256 r = uint256(uint128(uint256(word)));
+        uint256 scale128 = uint256(1) << 128;
+
+        bool noopDrawn = (r * BPS_DENOMINATOR < epsBps * scale128)
+            || (sigma > 0 && r * (sigma + excessSpread) < sigma * scale128);
+        bool accepted = !noopDrawn;
+
+        emit RandomDrawResolved(proposal, word, noopDrawn, accepted);
+        _finalize(proposal, b, accepted, sd.yesAvgTick, sd.noAvgTick);
+    }
+
+    function rearmExpiredDraw(address proposal) external {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        if (address(randomnessSource) != address(0)) revert InvalidRandomnessSource();
+
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (!sd.committed) revert NotSealed(proposal);
+
+        uint256 serveWindow = HISTORY_STORAGE_ADDRESS.code.length != 0
+            ? HISTORY_SERVE_WINDOW
+            : BLOCKHASH_SERVE_WINDOW;
+        if (
+            block.number <= uint256(sd.drawBlock) + serveWindow
+                || _historicalBlockHash(sd.drawBlock) != bytes32(0)
+        ) {
+            revert DrawNotExpired(proposal, sd.drawBlock);
+        }
+
+        uint64 newTarget = uint64(block.number) + DRAW_DELAY_BLOCKS;
+        sd.drawBlock = newTarget;
+        emit DrawRearmed(proposal, newTarget);
+    }
+
+    function isRandomized(address proposal) public view returns (bool) {
+        SealedDecision storage sd = sealedDecisions[proposal];
+        return sd.noopFloorBps != 0 || sd.noopScaleTicks != 0;
+    }
+
+    function twapPassed(address proposal) external view returns (bool) {
+        if (bindings[proposal].anchorTimestamp == 0) revert NotBound(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (!sd.committed) revert NotSealed(proposal);
+        return sd.twapPassed;
+    }
+
+    function windowEndOf(address proposal) external view returns (uint256) {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) return 0;
+        return uint256(b.anchorTimestamp) + TIMEOUT;
+    }
+
+    function isReadyToResolve(address proposal) external view returns (bool) {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0 || b.resolved) return false;
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed) {
+            if (address(randomnessSource) != address(0)) {
+                (bool fulfilled,) = randomnessSource.readRandomness(sd.vrfRequestId);
+                return fulfilled;
+            }
+            return block.number > sd.drawBlock && _historicalBlockHash(sd.drawBlock) != bytes32(0);
+        }
+        if (block.timestamp < uint256(b.anchorTimestamp) + TIMEOUT) return false;
+        uint256 checkpointed = windowStart[proposal].timestamp;
+        return checkpointed == 0 || block.timestamp >= checkpointed + TWAP_WINDOW;
+    }
+
+    function _evaluateWindow(address proposal, Binding storage b)
+        internal
+        view
+        returns (int24 yesAvgTick, int24 noAvgTick, bool twapOk)
+    {
         uint256 windowEnd = uint256(b.anchorTimestamp) + TIMEOUT;
         if (block.timestamp < windowEnd) revert TooEarly(proposal, windowEnd);
 
         (address yesCo, address noCo) = _companyWrappers(proposal);
-        int24 yesAvgTick;
-        int24 noAvgTick;
         bool yesFailed;
         bool noFailed;
         Checkpoint memory start = windowStart[proposal];
         if (start.timestamp != 0) {
-            // Checkpointed window: [checkpoint, now], at least TWAP_WINDOW long.
             uint256 earliest = uint256(start.timestamp) + TWAP_WINDOW;
             if (block.timestamp < earliest) revert TooEarly(proposal, earliest);
             uint256 elapsed = block.timestamp - start.timestamp;
@@ -202,21 +397,23 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
                 (noAvgTick, noFailed) = _meanTickSince(b.noPool, noCo, start.noCumulative, elapsed);
             }
         } else {
-            // No checkpoint was taken: read the window from the pools' stored history. This
-            // fails, and resolves NO, if the pools no longer hold that history.
             (yesAvgTick, yesFailed) = _arithmeticMeanTick(b.yesPool, yesCo, windowEnd);
             if (!yesFailed) {
                 (noAvgTick, noFailed) = _arithmeticMeanTick(b.noPool, noCo, windowEnd);
             }
         }
 
-        // A genuinely unreadable market cannot be allowed to wedge the arbitration queue.
-        // Safe-bias it to NO; low-gas grief attempts revert inside _arithmeticMeanTick instead.
-        // YES must beat NO by more than the proposal's margin; a tie or a near-tie keeps the
-        // status quo.
-        bool accepted = !yesFailed && !noFailed
+        twapOk = !yesFailed && !noFailed
             && int256(yesAvgTick) - int256(noAvgTick) > int256(decisionMarginTicks[proposal]);
+    }
 
+    function _finalize(
+        address proposal,
+        Binding storage b,
+        bool accepted,
+        int24 yesAvgTick,
+        int24 noAvgTick
+    ) internal {
         b.resolved = true;
         b.accepted = accepted;
 
@@ -231,35 +428,19 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         emit ProposalResolved(proposal, accepted, yesAvgTick, noAvgTick, b.questionId);
     }
 
-    // ─── views
-    // ─────────────────────────────────────────────────────────────
-
-    function windowEndOf(address proposal) external view returns (uint256) {
-        Binding storage b = bindings[proposal];
-        if (b.anchorTimestamp == 0) return 0;
-        return uint256(b.anchorTimestamp) + TIMEOUT;
+    function _historicalBlockHash(uint64 targetBlock) internal view returns (bytes32 bh) {
+        bh = blockhash(targetBlock);
+        if (bh != bytes32(0)) return bh;
+        if (HISTORY_STORAGE_ADDRESS.code.length == 0) return bytes32(0);
+        uint256 gasBefore = gasleft();
+        (bool ok, bytes memory ret) =
+            HISTORY_STORAGE_ADDRESS.staticcall(abi.encode(uint256(targetBlock)));
+        if (!ok && gasleft() < gasBefore / 64) revert InsufficientGas();
+        if (ok && ret.length == 32) {
+            bh = abi.decode(ret, (bytes32));
+        }
     }
 
-    function isReadyToResolve(address proposal) external view returns (bool) {
-        Binding storage b = bindings[proposal];
-        if (b.anchorTimestamp == 0 || b.resolved) return false;
-        if (block.timestamp < uint256(b.anchorTimestamp) + TIMEOUT) return false;
-        uint256 checkpointed = windowStart[proposal].timestamp;
-        return checkpointed == 0 || block.timestamp >= checkpointed + TWAP_WINDOW;
-    }
-
-    // ─── internals
-    // ─────────────────────────────────────────────────────────
-
-    /// @dev Reads tick cumulatives over [windowEnd - TWAP_WINDOW, windowEnd] from `pool`
-    /// and returns the arithmetic mean tick, normalized so that "currency per company"
-    /// (i.e. company more expensive in currency) maps to a HIGHER tick.
-    ///
-    /// The `companyWrapper` is the wrapper address of the side-of-proposal that wraps
-    /// the company token (FAO). It is identified by reading the FAOFutarchyProposal:
-    /// outcomes 0 / 1 are YES_company / NO_company wrappers; outcomes 2 / 3 are
-    /// YES_currency / NO_currency wrappers. We pass the company wrapper for the
-    /// branch (YES or NO) of the pool being measured.
     function _arithmeticMeanTick(address pool, address companyWrapper, uint256 windowEnd)
         internal
         view
@@ -281,21 +462,14 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         try p.observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
             cums = tickCumulatives;
         } catch {
-            // EIP-150 leaves the caller about 1/64th when the callee exhausts its gas. Do not let
-            // a deliberately underfunded call turn an otherwise healthy market into a NO result.
             if (gasleft() < gasBefore / 64) revert InsufficientGas();
             return (0, true);
         }
         if (cums.length != 2) return (0, true);
 
-        // Normalize: pool tick = log(token1/token0). We want log(currency/company)
-        // — i.e. company-as-token0 orientation. If token0 is the company wrapper,
-        // tick is already in that orientation; else negate.
         return _orientedMean(cums[1] - cums[0], TWAP_WINDOW, p.token0() == companyWrapper);
     }
 
-    /// @dev Mean tick over `elapsed` seconds, oriented so a dearer company token is a higher
-    /// tick and rounded down in that orientation. Shared by both resolve paths.
     function _orientedMean(int56 delta, uint256 elapsed, bool companyIsToken0)
         internal
         pure
@@ -311,8 +485,6 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         avgTick = int24(mean);
     }
 
-    /// @dev The pool's running tick total at this block. Reading "now" never depends on how
-    /// many observations the pool keeps.
     function _cumulativeNow(address pool) internal view returns (int56 cumulative, bool failed) {
         uint32[] memory secondsAgos = new uint32[](1);
         uint256 gasBefore = gasleft();
@@ -327,8 +499,6 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         }
     }
 
-    /// @dev Mean tick of `pool` since a checkpoint, oriented so a dearer company token is a
-    /// higher tick, and rounded down in that orientation for both pools alike.
     function _meanTickSince(
         address pool,
         address companyWrapper,
@@ -341,8 +511,6 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         return _orientedMean(delta, elapsed, IUniswapV3PoolLike(pool).token0() == companyWrapper);
     }
 
-    /// @dev Returns the (yesCompanyWrap, noCompanyWrap) for a proposal. Outcome indexing
-    /// matches FAOFutarchyFactory: 0 = YES_co, 1 = NO_co, 2 = YES_cur, 3 = NO_cur.
     function _companyWrappers(address proposal)
         internal
         view
