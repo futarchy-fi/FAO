@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/// @notice External verifiable randomness oracle for two-step randomized execution draws.
+interface IFutarchyRandomnessSource {
+    /// @notice Request a fresh verifiable random word bound to `context`.
+    /// @param context Domain-separated commitment (`keccak256(abi.encode(resolver, proposal,
+    /// questionId))`). @return requestId Non-zero identifier used to read fulfillment in Step 2.
+    function requestRandomness(bytes32 context) external returns (bytes32 requestId);
+
+    /// @notice Read whether `requestId` has been fulfilled and its verifiable random word.
+    function readRandomness(bytes32 requestId)
+        external
+        view
+        returns (bool fulfilled, bytes32 randomWord);
+}
+
 /// @notice Oracle interface used by FAOFutarchyProposal.resolve().
 /// @dev The concrete oracle in v0 is FutarchyTwapResolver, which reads UniV3 TWAP and
 /// reports payouts to the Conditional Tokens Framework.
@@ -32,4 +46,13 @@ interface IFAOFutarchyTwapResolver is IFAOFutarchyOracle {
         uint48 anchorTimestamp,
         int24 marginTicks
     ) external;
+
+    /// @notice Configure the Floor + 1/spread randomized NOOP policy for a bound proposal:
+    ///         `p(NOOP)(s) = 1` for `s <= margin`, and `max(floor, scale / (scale + s - margin))`
+    ///         for `s > margin`. Must be called in the same block as `bindProposal`, and requires
+    ///         a configured `IFutarchyRandomnessSource` on the resolver.
+    /// @param proposal Address of the bound FAOFutarchyProposal.
+    /// @param noopFloorBps Minimum NOOP probability in bps (`1000` = 10%, `< 10000`).
+    /// @param noopScaleTicks Hyperbolic scale `sigma` in UniV3 ticks (`100` ~= 1% price spread).
+    function setNoopPolicy(address proposal, uint16 noopFloorBps, int24 noopScaleTicks) external;
 }

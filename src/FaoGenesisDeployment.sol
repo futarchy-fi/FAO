@@ -106,7 +106,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant UNIV3_POOL_INIT_CODE_HASH =
         0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
     bytes32 public constant ARBITRATION_CODE_HASH =
-        0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d;
+        0x8b49c0fab27054e58962b3c3c7291d2f596a82eec42208b89d64938957ed49c3;
     bytes32 public constant VAULT_CODE_HASH =
         0xc2e21a37da3826323c7108ea500d06d878d4bef4b6decba1284bf379551b6615;
     bytes32 public constant RELEASE_STRATEGY_CODE_HASH =
@@ -116,7 +116,7 @@ contract FaoGenesisDeployment {
     bytes32 public constant ECON_GATEWAY_CODE_HASH =
         0xa15bd8851d728593851fc6fd2a3bb8c1a430484ca6a2b3667dda848b528e8f22;
     bytes32 public constant ECON_EVALUATOR_CODE_HASH =
-        0x043f6c134231a99b3222f366518cbd8996517dcef13b00c4973161d0fbabfee0;
+        0xd0758f7e01508c75620559b87943ebdfeb3c474e7d5c0f538fa8635653a92a9d;
     uint160 private constant MIN_SQRT_RATIO = 4_295_128_739;
     uint160 private constant MAX_SQRT_RATIO =
         1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;

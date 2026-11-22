@@ -4,16 +4,11 @@ pragma solidity ^0.8.20;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
-import {AlwaysZeroVotingStrategy} from "../src/AlwaysZeroVotingStrategy.sol";
-import {EconGateway} from "../src/EconGateway.sol";
-import {FAOEconomicEvaluationPipeline} from "../src/FAOEconomicEvaluationPipeline.sol";
 import {FAOFutarchyProposal} from "../src/FAOFutarchyProposal.sol";
 import {FAOSiteStackDeployer} from "../src/FAOSiteStackDeployer.sol";
 import {FaoGenesisDeployment} from "../src/FaoGenesisDeployment.sol";
 import {FaoSaleCurve} from "../src/FaoSaleCurve.sol";
-import {FutarchyArbitration} from "../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../src/GenesisVault.sol";
-import {SXArbitrationExecutionStrategy} from "../src/SXArbitrationExecutionStrategy.sol";
 import {EconomicDeploymentCodeHashes} from "../src/generated/EconomicDeploymentCodeHashes.sol";
 import {FlmCodeHashes} from "../src/generated/FlmCodeHashes.sol";
 
@@ -223,14 +218,14 @@ contract DeployFaoEconomicGenesis is Script {
         if (deployed == address(0)) revert DeploymentFailed();
     }
 
-    function _coreCodes() private pure returns (bytes[] memory codes) {
+    function _coreCodes() private view returns (bytes[] memory codes) {
         codes = new bytes[](6);
-        codes[0] = type(FutarchyArbitration).creationCode;
-        codes[1] = type(GenesisVault).creationCode;
-        codes[2] = type(SXArbitrationExecutionStrategy).creationCode;
-        codes[3] = type(AlwaysZeroVotingStrategy).creationCode;
-        codes[4] = type(EconGateway).creationCode;
-        codes[5] = type(FAOEconomicEvaluationPipeline).creationCode;
+        codes[0] = vm.readFileBinary("metadata/economic-creation-code/arbitration.bin");
+        codes[1] = vm.readFileBinary("metadata/economic-creation-code/vault.bin");
+        codes[2] = vm.readFileBinary("metadata/economic-creation-code/release_strategy.bin");
+        codes[3] = vm.readFileBinary("metadata/economic-creation-code/zero_voting.bin");
+        codes[4] = vm.readFileBinary("metadata/economic-creation-code/econ_gateway.bin");
+        codes[5] = vm.readFileBinary("metadata/economic-creation-code/econ_evaluator.bin");
     }
 
     function _flmCodes() private view returns (bytes[] memory codes) {

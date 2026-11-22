@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IFAOFutarchyOracle, IFAOFutarchyTwapResolver} from "./interfaces/IFAOFutarchyOracle.sol";
+import {
+    IFAOFutarchyOracle,
+    IFAOFutarchyTwapResolver,
+    IFutarchyRandomnessSource
+} from "./interfaces/IFAOFutarchyOracle.sol";
 import {IUniswapV3PoolLike} from "./interfaces/IUniswapV3PoolLike.sol";
 import {IConditionalTokensLike} from "./interfaces/IConditionalTokensLike.sol";
 import {FAOFutarchyProposal} from "./FAOFutarchyProposal.sol";
@@ -14,16 +18,26 @@ import {FAOFutarchyProposal} from "./FAOFutarchyProposal.sol";
 ///
 /// Lifecycle:
 ///   1. Orchestrator calls bindProposal(...) at promote time, registering the two
-///      pools, the company/currency token pair, and the anchor timestamp.
-///   2. Anyone calls resolve(proposal) once block.timestamp >= anchor + TIMEOUT.
-///   3. resolve() reads tick cumulatives over [windowEnd - TWAP_WINDOW, windowEnd]
-///      from both pools, normalizes ticks to "currency per company" orientation,
-///      decides accepted = (yesAvgTick - noAvgTick > margin), and reports payouts to CTF.
+///      pools, the company/currency token pair, and the anchor timestamp. For treasury
+///      proposals, the orchestrator atomically calls setNoopPolicy(...) in the same block,
+///      requiring a configured IFutarchyRandomnessSource on the resolver.
+///   2. Deterministic markets (no NOOP policy) and rejected markets (`yesAvgTick - noAvgTick <=
+/// margin`) resolve in a single step once `block.timestamp >= anchor + TIMEOUT`: resolve() reads
+/// tick
+///      cumulatives over [windowEnd - TWAP_WINDOW, windowEnd] from both pools, normalizes ticks to
+///      "currency per company" orientation, records `twapPassed`, and reports payouts to CTF.
+///   3. Randomized markets whose TWAP beats `margin` resolve in two steps:
+///      - Step 1 (`seal`): freezes `yesAvgTick`, `noAvgTick`, and `twapPassed = true`, and requests
+///        verifiable randomness from `randomnessSource`.
+///      - Step 2 (`resolve`): once `randomnessSource` fulfills the request, evaluates
+///        `p(NOOP)(s) = max(eps, sigma / (sigma + s - margin))` in 128-bit arithmetic and reports
+///        binary `[1, 0]` or `[0, 1]` payouts to CTF (with `resolveExpiredVrf` safe-biasing to NOOP
+///        if the external VRF remains unfulfilled past `VRF_TIMEOUT`).
 ///
 /// All timing parameters are constructor immutables — testnet branch sets
 /// TIMEOUT=2h, TWAP_WINDOW=1h; mainnet sets 72h/24h.
 ///
-/// See docs/onchain-futarchy-design.md §3.3 for the full resolution flow.
+/// See docs/onchain-futarchy-design.md §3.3 for the base resolution flow.
 contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     /// @notice Total time from anchor to resolution (windowEnd = anchor + TIMEOUT).
     uint32 public immutable TIMEOUT;
@@ -31,8 +45,12 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     uint32 public immutable TWAP_WINDOW;
     /// @notice ConditionalTokens deployment we report to.
     IConditionalTokensLike public immutable CTF;
+    /// @notice Deployer permitted to pre-bind `randomnessSource` before `orchestrator` is set.
+    address public immutable DEPLOYER;
     /// @notice The orchestrator address authorized to call bindProposal.
     address public orchestrator;
+    /// @notice Configured verifiable randomness source required for randomized NOOP policies.
+    IFutarchyRandomnessSource public randomnessSource;
 
     /// @notice Per-proposal binding written by the orchestrator at promote time.
     struct Binding {
@@ -67,13 +85,45 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
     mapping(address => Checkpoint) public windowStart;
 
+    /// @notice Frozen TWAP verdict and VRF request state (packed into 2 storage slots).
+    struct SealedDecision {
+        bool committed;
+        bool twapPassed;
+        uint16 noopFloorBps;
+        int24 noopScaleTicks;
+        int24 yesAvgTick;
+        int24 noAvgTick;
+        uint48 sealedAt;
+        bytes32 vrfRequestId;
+    }
+
+    mapping(address => SealedDecision) public sealedDecisions;
+
     /// @notice The checkpoint must be taken within TWAP_WINDOW / 4 of the scheduled start.
     uint256 public constant CHECKPOINT_GRACE_DIVISOR = 4;
+    uint16 public constant BPS_DENOMINATOR = 10_000;
+    int24 public constant MAX_NOOP_SCALE_TICKS = 10_000;
+    /// @notice Liveness escape delay if an external VRF never fulfills, freeing FLM liquidity
+    ///         well before `FutarchyArbitration.MAX_EVALUATION` (21 days).
+    uint256 public constant VRF_TIMEOUT = 7 days;
 
+    error NotDeployer();
     error NotOrchestrator();
     error OrchestratorAlreadySet();
+    error RandomnessAlreadySet();
+    error RandomnessSourceRequired();
+    error InvalidRandomnessSource();
+    error InvalidRandomnessRequest();
     error AlreadyBound(address proposal);
     error NotBound(address proposal);
+    error PolicyAlreadySet(address proposal);
+    error PolicyWindowClosed(address proposal);
+    error AlreadySealed(address proposal);
+    error NotSealed(address proposal);
+    error DrawNotSealed(address proposal);
+    error RandomnessNotReady(address proposal);
+    error VrfTimeoutNotReached(address proposal, uint256 readyAt);
+    error VrfAlreadyFulfilled(address proposal);
     error AlreadyResolved(address proposal);
     error AlreadyCheckpointed(address proposal);
     error CheckpointTooLate(address proposal, uint256 latest);
@@ -82,9 +132,11 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
     error InvalidPair(address pool, address token);
     error InvalidConfig(uint32 timeout, uint32 window);
     error InvalidMargin(int24 marginTicks);
+    error InvalidNoopConfig(uint16 floorBps, int24 scaleTicks);
     error InsufficientGas();
 
     event OrchestratorSet(address indexed orchestrator);
+    event RandomnessSourceSet(address indexed randomnessSource);
     event ProposalBound(
         address indexed proposal,
         address yesPool,
@@ -93,7 +145,21 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         bytes32 questionId,
         int24 marginTicks
     );
+    event ProposalNoopPolicySet(
+        address indexed proposal, uint16 noopFloorBps, int24 noopScaleTicks
+    );
     event WindowStartCheckpointed(address indexed proposal, uint48 timestamp);
+    event ProposalSealed(
+        address indexed proposal,
+        int24 yesAvgTick,
+        int24 noAvgTick,
+        bool twapPassed,
+        bytes32 vrfRequestId
+    );
+    event RandomDrawResolved(
+        address indexed proposal, bytes32 randomWord, bool noopDrawn, bool accepted
+    );
+    event ExpiredVrfSafeBiased(address indexed proposal, bool twapPassed);
     event ProposalResolved(
         address indexed proposal,
         bool accepted,
@@ -107,13 +173,57 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         TIMEOUT = timeout;
         TWAP_WINDOW = window;
         CTF = ctf;
+        DEPLOYER = msg.sender;
     }
 
-    /// @notice One-shot wiring: set the orchestrator that can call bindProposal.
+    /// @notice Pre-bind an external VRF source from the deploying stack helper before
+    /// `setOrchestrator` seals authority. Write-once.
+    function initRandomnessSource(IFutarchyRandomnessSource newRandomnessSource) external {
+        if (msg.sender != DEPLOYER) revert NotDeployer();
+        if (orchestrator != address(0) || address(randomnessSource) != address(0)) {
+            revert RandomnessAlreadySet();
+        }
+        if (
+            address(newRandomnessSource) == address(0)
+                || address(newRandomnessSource).code.length == 0
+        ) revert InvalidRandomnessSource();
+        randomnessSource = newRandomnessSource;
+        emit RandomnessSourceSet(address(newRandomnessSource));
+    }
+
+    /// @notice One-shot setter so the resolver can be deployed before the orchestrator
+    /// without a circular constructor dependency.
     function setOrchestrator(address newOrchestrator) external {
-        if (orchestrator != address(0)) revert OrchestratorAlreadySet();
+        _setOrchestrator(newOrchestrator, IFutarchyRandomnessSource(address(0)));
+    }
+
+    /// @notice One-shot setter binding both the orchestrator and an external VRF source.
+    function setOrchestratorWithRandomness(
+        address newOrchestrator,
+        IFutarchyRandomnessSource newRandomnessSource
+    ) external {
+        if (
+            address(newRandomnessSource) == address(0)
+                || address(newRandomnessSource).code.length == 0
+        ) revert InvalidRandomnessSource();
+        if (address(randomnessSource) != address(0)) revert RandomnessAlreadySet();
+        _setOrchestrator(newOrchestrator, newRandomnessSource);
+    }
+
+    function _setOrchestrator(
+        address newOrchestrator,
+        IFutarchyRandomnessSource newRandomnessSource
+    ) internal {
+        if (orchestrator != address(0)) {
+            revert OrchestratorAlreadySet();
+        }
+        if (newOrchestrator == address(0)) revert NotOrchestrator();
         orchestrator = newOrchestrator;
         emit OrchestratorSet(newOrchestrator);
+        if (address(newRandomnessSource) != address(0)) {
+            randomnessSource = newRandomnessSource;
+            emit RandomnessSourceSet(address(newRandomnessSource));
+        }
     }
 
     /// @inheritdoc IFAOFutarchyTwapResolver
@@ -151,6 +261,29 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         emit ProposalBound(proposal, yesPool, noPool, anchorTimestamp, qId, marginTicks);
     }
 
+    /// @inheritdoc IFAOFutarchyTwapResolver
+    function setNoopPolicy(address proposal, uint16 floorBps, int24 scaleTicks) external {
+        if (msg.sender != orchestrator) revert NotOrchestrator();
+        if (address(randomnessSource) == address(0)) revert RandomnessSourceRequired();
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        if (block.timestamp != b.anchorTimestamp) revert PolicyWindowClosed(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed || sd.noopFloorBps != 0 || sd.noopScaleTicks != 0) {
+            revert PolicyAlreadySet(proposal);
+        }
+        if (
+            floorBps >= BPS_DENOMINATOR || scaleTicks < 0 || scaleTicks > MAX_NOOP_SCALE_TICKS
+                || (floorBps == 0 && scaleTicks == 0)
+        ) {
+            revert InvalidNoopConfig(floorBps, scaleTicks);
+        }
+        sd.noopFloorBps = floorBps;
+        sd.noopScaleTicks = scaleTicks;
+        emit ProposalNoopPolicySet(proposal, floorBps, scaleTicks);
+    }
+
     /// @notice Record both pools' running tick totals as the start of the averaging window.
     /// @dev Anyone may call once, at or after `anchor + TIMEOUT - TWAP_WINDOW`. Whoever has a
     ///      bond on the proposal has the incentive to. If it is called late the window simply
@@ -176,19 +309,181 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         emit WindowStartCheckpointed(proposal, uint48(block.timestamp));
     }
 
+    /// @notice Step 1 for randomized proposals: freeze the TWAP verdict and request VRF randomness.
+    ///         If `!twapPassed` or no NOOP policy is set, finalizes immediately in one transaction.
+    function seal(address proposal) external {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed) revert AlreadySealed(proposal);
+
+        (int24 yesAvgTick, int24 noAvgTick, bool twapOk) = _evaluateWindow(proposal, b);
+        sd.committed = true;
+        sd.twapPassed = twapOk;
+        sd.yesAvgTick = yesAvgTick;
+        sd.noAvgTick = noAvgTick;
+        sd.sealedAt = uint48(block.timestamp);
+
+        if (!twapOk || (sd.noopFloorBps == 0 && sd.noopScaleTicks == 0)) {
+            emit ProposalSealed(proposal, yesAvgTick, noAvgTick, twapOk, bytes32(0));
+            _finalize(proposal, b, twapOk, yesAvgTick, noAvgTick);
+            return;
+        }
+
+        if (address(randomnessSource) == address(0)) revert RandomnessSourceRequired();
+        bytes32 reqId = randomnessSource.requestRandomness(
+            keccak256(abi.encode(address(this), proposal, b.questionId))
+        );
+        if (reqId == bytes32(0)) revert InvalidRandomnessRequest();
+        sd.vrfRequestId = reqId;
+
+        emit ProposalSealed(proposal, yesAvgTick, noAvgTick, true, reqId);
+    }
+
     /// @inheritdoc IFAOFutarchyOracle
-    /// @custom:spec INV-TWAP-002 — resolution determinism. See audit/specs/INVARIANTS.md.
+    /// @custom:spec INV-TWAP-002 — deterministic TWAP verdict (`twapPassed`) for all proposals;
+    /// deterministic CTF resolution when unrandomized or `s_bar <= margin`, and VRF-determined
+    /// binary CTF payout when a NOOP policy is bound and `s_bar > margin`.
     function resolve(address proposal) external {
         Binding storage b = bindings[proposal];
         if (b.anchorTimestamp == 0) revert NotBound(proposal);
         if (b.resolved) revert AlreadyResolved(proposal);
 
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (!sd.committed) {
+            (int24 yesAvgTick, int24 noAvgTick, bool twapOk) = _evaluateWindow(proposal, b);
+            if (twapOk && (sd.noopFloorBps != 0 || sd.noopScaleTicks != 0)) {
+                revert DrawNotSealed(proposal);
+            }
+            sd.committed = true;
+            sd.twapPassed = twapOk;
+            sd.yesAvgTick = yesAvgTick;
+            sd.noAvgTick = noAvgTick;
+            sd.sealedAt = uint48(block.timestamp);
+            _finalize(proposal, b, twapOk, yesAvgTick, noAvgTick);
+            return;
+        }
+
+        if (address(randomnessSource) == address(0)) revert RandomnessSourceRequired();
+        if (sd.vrfRequestId == bytes32(0)) revert RandomnessNotReady(proposal);
+        (bool fulfilled, bytes32 vrfWord) = randomnessSource.readRandomness(sd.vrfRequestId);
+        if (!fulfilled) revert RandomnessNotReady(proposal);
+
+        bytes32 word = keccak256(abi.encode(vrfWord, address(this), proposal, b.questionId));
+        uint256 excessSpread = uint256(
+            int256(sd.yesAvgTick) - int256(sd.noAvgTick) - int256(decisionMarginTicks[proposal])
+        );
+        uint256 epsBps = sd.noopFloorBps;
+        uint256 sigma = uint256(uint24(sd.noopScaleTicks));
+        uint256 r = uint256(uint128(uint256(word)));
+        uint256 scale128 = uint256(1) << 128;
+
+        bool noopDrawn = (r * BPS_DENOMINATOR < epsBps * scale128)
+            || (sigma > 0 && r * (sigma + excessSpread) < sigma * scale128);
+        bool accepted = !noopDrawn;
+
+        emit RandomDrawResolved(proposal, word, noopDrawn, accepted);
+        _finalize(proposal, b, accepted, sd.yesAvgTick, sd.noAvgTick);
+    }
+
+    /// @notice Liveness escape if the configured VRF oracle fails to fulfill (or reverts on
+    /// `requestRandomness`) for `VRF_TIMEOUT` past the window/seal: safe-biases execution and CTF
+    /// payouts to NOOP (`[0, 1]`) while preserving the deterministic `twapPassed` bond verdict so
+    /// neither FLM conditional liquidity nor the arbitration queue can stay wedged.
+    function resolveExpiredVrf(address proposal) external {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) revert NotBound(proposal);
+        if (b.resolved) revert AlreadyResolved(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.noopFloorBps == 0 && sd.noopScaleTicks == 0) revert NotSealed(proposal);
+
+        if (sd.committed) {
+            uint256 readyAt = uint256(sd.sealedAt) + VRF_TIMEOUT;
+            if (block.timestamp < readyAt) revert VrfTimeoutNotReached(proposal, readyAt);
+            uint256 gasBefore = gasleft();
+            try randomnessSource.readRandomness(sd.vrfRequestId) returns (bool fulfilled, bytes32) {
+                if (fulfilled) revert VrfAlreadyFulfilled(proposal);
+            } catch {
+                if (gasleft() < gasBefore / 64) revert InsufficientGas();
+            }
+            emit ExpiredVrfSafeBiased(proposal, sd.twapPassed);
+            _finalize(proposal, b, false, sd.yesAvgTick, sd.noAvgTick);
+            return;
+        }
+
+        (int24 yesAvgTick, int24 noAvgTick, bool twapOk) = _evaluateWindow(proposal, b);
+        uint256 windowEnd = uint256(b.anchorTimestamp) + TIMEOUT;
+        uint256 checkpointEnd = windowStart[proposal].timestamp == 0
+            ? windowEnd
+            : uint256(windowStart[proposal].timestamp) + TWAP_WINDOW;
+        uint256 baseEnd = checkpointEnd > windowEnd ? checkpointEnd : windowEnd;
+        uint256 unsealedReadyAt = baseEnd + VRF_TIMEOUT;
+        if (block.timestamp < unsealedReadyAt) {
+            revert VrfTimeoutNotReached(proposal, unsealedReadyAt);
+        }
+
+        sd.committed = true;
+        sd.twapPassed = twapOk;
+        sd.yesAvgTick = yesAvgTick;
+        sd.noAvgTick = noAvgTick;
+        sd.sealedAt = uint48(block.timestamp);
+        emit ExpiredVrfSafeBiased(proposal, twapOk);
+        _finalize(proposal, b, false, yesAvgTick, noAvgTick);
+    }
+
+    // ─── views
+    // ─────────────────────────────────────────────────────────────
+
+    function isRandomized(address proposal) public view returns (bool) {
+        SealedDecision storage sd = sealedDecisions[proposal];
+        return sd.noopFloorBps != 0 || sd.noopScaleTicks != 0;
+    }
+
+    function twapPassed(address proposal) external view returns (bool) {
+        if (bindings[proposal].anchorTimestamp == 0) revert NotBound(proposal);
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (!sd.committed) revert NotSealed(proposal);
+        return sd.twapPassed;
+    }
+
+    function windowEndOf(address proposal) external view returns (uint256) {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0) return 0;
+        return uint256(b.anchorTimestamp) + TIMEOUT;
+    }
+
+    function isReadyToResolve(address proposal) external view returns (bool) {
+        Binding storage b = bindings[proposal];
+        if (b.anchorTimestamp == 0 || b.resolved) return false;
+        SealedDecision storage sd = sealedDecisions[proposal];
+        if (sd.committed) {
+            if (address(randomnessSource) == address(0) || sd.vrfRequestId == bytes32(0)) {
+                return false;
+            }
+            try randomnessSource.readRandomness(sd.vrfRequestId) returns (bool fulfilled, bytes32) {
+                return fulfilled;
+            } catch {
+                return false;
+            }
+        }
+        if (block.timestamp < uint256(b.anchorTimestamp) + TIMEOUT) return false;
+        uint256 checkpointed = windowStart[proposal].timestamp;
+        return checkpointed == 0 || block.timestamp >= checkpointed + TWAP_WINDOW;
+    }
+
+    // ─── internals
+    // ─────────────────────────────────────────────────────────
+
+    function _evaluateWindow(address proposal, Binding storage b)
+        internal
+        view
+        returns (int24 yesAvgTick, int24 noAvgTick, bool twapOk)
+    {
         uint256 windowEnd = uint256(b.anchorTimestamp) + TIMEOUT;
         if (block.timestamp < windowEnd) revert TooEarly(proposal, windowEnd);
 
         (address yesCo, address noCo) = _companyWrappers(proposal);
-        int24 yesAvgTick;
-        int24 noAvgTick;
         bool yesFailed;
         bool noFailed;
         Checkpoint memory start = windowStart[proposal];
@@ -214,9 +509,17 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
         // Safe-bias it to NO; low-gas grief attempts revert inside _arithmeticMeanTick instead.
         // YES must beat NO by more than the proposal's margin; a tie or a near-tie keeps the
         // status quo.
-        bool accepted = !yesFailed && !noFailed
+        twapOk = !yesFailed && !noFailed
             && int256(yesAvgTick) - int256(noAvgTick) > int256(decisionMarginTicks[proposal]);
+    }
 
+    function _finalize(
+        address proposal,
+        Binding storage b,
+        bool accepted,
+        int24 yesAvgTick,
+        int24 noAvgTick
+    ) internal {
         b.resolved = true;
         b.accepted = accepted;
 
@@ -230,26 +533,6 @@ contract FAOTwapResolver is IFAOFutarchyTwapResolver {
 
         emit ProposalResolved(proposal, accepted, yesAvgTick, noAvgTick, b.questionId);
     }
-
-    // ─── views
-    // ─────────────────────────────────────────────────────────────
-
-    function windowEndOf(address proposal) external view returns (uint256) {
-        Binding storage b = bindings[proposal];
-        if (b.anchorTimestamp == 0) return 0;
-        return uint256(b.anchorTimestamp) + TIMEOUT;
-    }
-
-    function isReadyToResolve(address proposal) external view returns (bool) {
-        Binding storage b = bindings[proposal];
-        if (b.anchorTimestamp == 0 || b.resolved) return false;
-        if (block.timestamp < uint256(b.anchorTimestamp) + TIMEOUT) return false;
-        uint256 checkpointed = windowStart[proposal].timestamp;
-        return checkpointed == 0 || block.timestamp >= checkpointed + TWAP_WINDOW;
-    }
-
-    // ─── internals
-    // ─────────────────────────────────────────────────────────
 
     /// @dev Reads tick cumulatives over [windowEnd - TWAP_WINDOW, windowEnd] from `pool`
     /// and returns the arithmetic mean tick, normalized so that "currency per company"

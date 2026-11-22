@@ -9,6 +9,7 @@ import {SXArbitrationExecutionStrategy} from "./SXArbitrationExecutionStrategy.s
 interface IFAOSiteEvaluationArbitration {
     function activeEvaluationProposalId() external view returns (uint256);
     function resolveActiveEvaluation(bool accepted) external;
+    function resolveActiveEvaluation(bool accepted, bool yesWonBonds) external;
     function startNextEvaluation() external;
 }
 
@@ -22,11 +23,15 @@ interface IFAOSiteEvaluationOrchestrator {
         uint256 builderTip,
         int24 marginTicks
     ) external payable returns (uint256 proposalId, address proposal);
+
+    function setNoopPolicy(address proposal, uint16 noopFloorBps, int24 noopScaleTicks) external;
 }
 
 interface IFAOSiteEvaluationResolver {
     function CTF() external view returns (address);
+    function seal(address proposal) external;
     function resolve(address proposal) external;
+    function twapPassed(address proposal) external view returns (bool);
 }
 
 interface IFAOSiteEvaluationProposal {

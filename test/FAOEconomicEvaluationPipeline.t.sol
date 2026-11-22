@@ -15,6 +15,7 @@ contract EconomicEvaluationArbitrationMock {
     uint256 public lastCreatedProposalId;
     bool public resolved;
     bool public accepted;
+    bool public yesWonBonds;
 
     function createProposalWithId(uint256 proposalId, uint256) external returns (uint256) {
         lastCreatedProposalId = proposalId;
@@ -28,6 +29,14 @@ contract EconomicEvaluationArbitrationMock {
     function resolveActiveEvaluation(bool accepted_) external {
         resolved = true;
         accepted = accepted_;
+        yesWonBonds = accepted_;
+        activeEvaluationProposalId = 0;
+    }
+
+    function resolveActiveEvaluation(bool accepted_, bool yesWonBonds_) external {
+        resolved = true;
+        accepted = accepted_;
+        yesWonBonds = yesWonBonds_;
         activeEvaluationProposalId = 0;
     }
 }
@@ -76,6 +85,8 @@ contract EconomicEvaluationResolverMock {
     uint256 public denominator = 1;
     uint256 public yes = 1;
     uint256 public no;
+    bool public twapDecision = true;
+    uint256 public sealCalls;
 
     constructor(EconomicEvaluationConditionalTokensMock ctf_) {
         CTF = address(ctf_);
@@ -86,10 +97,28 @@ contract EconomicEvaluationResolverMock {
         denominator = denominator_;
         yes = yes_;
         no = no_;
+        twapDecision = yes_ > no_;
+    }
+
+    function setDecoupledDecision(uint256 denominator_, uint256 yes_, uint256 no_, bool twapPassed_)
+        external
+    {
+        denominator = denominator_;
+        yes = yes_;
+        no = no_;
+        twapDecision = twapPassed_;
+    }
+
+    function seal(address) external {
+        sealCalls++;
     }
 
     function resolve(address) external {
         ctf.setPayout(denominator, yes, no);
+    }
+
+    function twapPassed(address) external view returns (bool) {
+        return twapDecision;
     }
 }
 
@@ -121,6 +150,8 @@ contract EconomicEvaluationOrchestratorMock {
     string public lastMarketName;
     string public lastDescription;
     int24 public lastMarginTicks = type(int24).min;
+    uint16 public lastNoopFloorBps;
+    int24 public lastNoopScaleTicks;
 
     constructor(address admin_, address resolver_, address proposal_) {
         ADMIN = admin_;
@@ -135,10 +166,17 @@ contract EconomicEvaluationOrchestratorMock {
         int24 marginTicks
     ) external payable returns (uint256 proposalId, address proposal_) {
         lastMarginTicks = marginTicks;
+        lastNoopFloorBps = 0;
+        lastNoopScaleTicks = 0;
         lastMarketName = marketName;
         lastDescription = description;
         proposalId = createCalls++;
         proposal_ = proposal;
+    }
+
+    function setNoopPolicy(address, uint16 noopFloorBps, int24 noopScaleTicks) external {
+        lastNoopFloorBps = noopFloorBps;
+        lastNoopScaleTicks = noopScaleTicks;
     }
 }
 
@@ -402,6 +440,30 @@ contract FAOEconomicEvaluationPipelineTest is Test {
             )
         );
         pipeline.startEvaluation(proposalId, payload);
+    }
+
+    function testTreasuryDecisionUsesRandomizedNoopRuleAndDecouplesBondsFromExecution() public {
+        FAOTreasuryActions.TransferAction memory action = _transfer(bytes32(uint256(99)));
+        bytes memory payload = gateway.transferEvaluationPayload(action);
+        uint256 proposalId = uint256(keccak256(payload));
+        gateway.proposeTransfer(action);
+        arbitration.setActive(proposalId);
+
+        pipeline.startEvaluation(proposalId, payload);
+        assertEq(orchestrator.lastMarginTicks(), 100);
+        assertEq(orchestrator.lastNoopFloorBps(), 1000);
+        assertEq(orchestrator.lastNoopScaleTicks(), 100);
+
+        // Step 1: seal forwards to resolver.seal
+        pipeline.seal(proposalId);
+        assertEq(resolver.sealCalls(), 1);
+
+        // Step 2: TWAP check passed (twapPassed = true), while VRF drew NOOP (CTF = [0, 1])
+        resolver.setDecoupledDecision(1, 0, 1, true);
+        bool executed = pipeline.resolve(proposalId);
+        assertFalse(executed, "NOOP draw prevents treasury execution");
+        assertFalse(arbitration.accepted(), "arbitration execution flag is false");
+        assertTrue(arbitration.yesWonBonds(), "YES still wins escalation bonds on s_bar > mu");
     }
 
     function _expectInvalidTreasury(bytes memory payload) private {

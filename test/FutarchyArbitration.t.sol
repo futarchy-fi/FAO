@@ -26,7 +26,31 @@ contract TestEvaluator is IFutarchyArbitrationEvaluator {
     }
 }
 
+contract DecoupledTestEvaluator is IFutarchyArbitrationEvaluator {
+    address public immutable arbitration;
+    mapping(uint256 proposalId => bool accepted) public executionDecision;
+    mapping(uint256 proposalId => bool yesWonBonds) public bondDecision;
+
+    constructor(address arbitration_) {
+        arbitration = arbitration_;
+    }
+
+    function setDecisions(uint256 proposalId, bool accepted, bool yesWonBonds_) external {
+        executionDecision[proposalId] = accepted;
+        bondDecision[proposalId] = yesWonBonds_;
+    }
+
+    function resolve(uint256 proposalId) external returns (bool accepted) {
+        accepted = executionDecision[proposalId];
+        FutarchyArbitration(arbitration).resolveActiveEvaluation(accepted, bondDecision[proposalId]);
+    }
+}
+
 contract FutarchyArbitrationTest is Test {
+    event EvaluationResolved(
+        uint256 indexed proposalId, bool accepted, address indexed winner, uint256 payout
+    );
+
     FutarchyArbitration arb;
 
     address internal constant GNOSIS_WXDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d;
@@ -685,5 +709,46 @@ contract FutarchyArbitrationTest is Test {
         // Compile-time guard: ensure the enum includes EVALUATING.
         FutarchyArbitration.ProposalState s = FutarchyArbitration.ProposalState.EVALUATING;
         assertEq(uint256(s), uint256(FutarchyArbitration.ProposalState.EVALUATING));
+    }
+
+    function testDecoupledEvaluationPaysYesBondWhenTwapPassesEvenIfNoopDrawn() public {
+        DecoupledTestEvaluator eval = new DecoupledTestEvaluator(address(arb));
+        arb.setEvaluator(address(eval));
+
+        address yesSponsor = makeAddr("yes-sponsor");
+        address noChallenger = makeAddr("no-challenger");
+
+        uint256 proposalId = arb.createProposal(1e18);
+        vm.prank(yesSponsor);
+        arb.placeYesBond(proposalId, 50e18);
+        vm.prank(noChallenger);
+        arb.placeNoBond(proposalId);
+        vm.prank(yesSponsor);
+        arb.placeYesBond(proposalId, GNOSIS_BASE_X);
+
+        arb.startNextEvaluation();
+        // Deterministic TWAP check s_bar > mu passed (yesWonBonds = true),
+        // while VRF execution coin drew NOOP (accepted = false).
+        eval.setDecisions(proposalId, false, true);
+
+        vm.expectEmit(true, true, false, true, address(arb));
+        emit EvaluationResolved(proposalId, false, yesSponsor, 150e18);
+        bool accepted = eval.resolve(proposalId);
+
+        assertFalse(accepted);
+        assertTrue(arb.isSettled(proposalId));
+        assertFalse(arb.isAccepted(proposalId));
+        assertTrue(arb.bondWonByYes(proposalId));
+        assertEq(arb.withdrawable(yesSponsor), 50e18 + 150e18); // replaced 50 + pot (100 + 50)
+        assertEq(arb.withdrawable(noChallenger), 0);
+    }
+
+    function testDecoupledResolveRevertsForNonEvaluator() public {
+        uint256 proposalId = arb.createProposal(1e18);
+        _graduateProposal(proposalId);
+        arb.startNextEvaluation();
+
+        vm.expectRevert(FutarchyArbitration.NotEvaluator.selector);
+        arb.resolveActiveEvaluation(false, true);
     }
 }

@@ -8,8 +8,8 @@
     "ARBITRATION": {
       "source": "src/FutarchyArbitration.sol",
       "contract": "FutarchyArbitration",
-      "baseCreationCodeBytes": 7950,
-      "baseCreationCodeKeccak256": "0xa80c2c141dbba6ae2530fef063486fb4d7307f02fd085a98bfc76eabecbb7b5d"
+      "baseCreationCodeBytes": 8136,
+      "baseCreationCodeKeccak256": "0x8b49c0fab27054e58962b3c3c7291d2f596a82eec42208b89d64938957ed49c3"
     },
     "VAULT": {
       "source": "src/GenesisVault.sol",
@@ -38,14 +38,14 @@
     "ECON_EVALUATOR": {
       "source": "src/FAOEconomicEvaluationPipeline.sol",
       "contract": "FAOEconomicEvaluationPipeline",
-      "baseCreationCodeBytes": 8287,
-      "baseCreationCodeKeccak256": "0x043f6c134231a99b3222f366518cbd8996517dcef13b00c4973161d0fbabfee0"
+      "baseCreationCodeBytes": 9031,
+      "baseCreationCodeKeccak256": "0xd0758f7e01508c75620559b87943ebdfeb3c474e7d5c0f538fa8635653a92a9d"
     },
     "RECEIPT": {
       "source": "src/FaoGenesisDeployment.sol",
       "contract": "FaoGenesisDeployment",
-      "baseCreationCodeBytes": 24726,
-      "baseCreationCodeKeccak256": "0x5f35edaab397bcec1738151f5683eaceae5154d0de9495255cc8ba5db083fc8a"
+      "baseCreationCodeBytes": 24724,
+      "baseCreationCodeKeccak256": "0x2c1fee51e88c360ca014956a8bbae188a876c48141169a9ae0633fa0f6d66668"
     },
     "REGISTRAR": {
       "source": "src/FaoGenesisRegistrar.sol",
@@ -57,13 +57,13 @@
       "source": "src/FAOFutarchyProposal.sol",
       "contract": "FAOFutarchyProposal",
       "baseCreationCodeBytes": 4818,
-      "baseCreationCodeKeccak256": "0x2467ad9e8e6979ed8f5f1fc9c2a220c4c10c0dab9d08d3361a78242c602c7b45"
+      "baseCreationCodeKeccak256": "0xed8a0a2c94e7af4d6d98422469ba7022b264456bac0532850911dd9bbc45c6dc"
     },
     "STACK_DEPLOYER": {
       "source": "src/FAOSiteStackDeployer.sol",
       "contract": "FAOSiteStackDeployer",
-      "baseCreationCodeBytes": 18741,
-      "baseCreationCodeKeccak256": "0x9e26a0c32b4a7f8ec58ec476ea5b1b27773dce12e47b118daf1db6e1140627cd"
+      "baseCreationCodeBytes": 23865,
+      "baseCreationCodeKeccak256": "0xbb8a87239f7b893199d544382518047d636973a9f95c8aae79784dde5905cd29"
     }
   }
 }
