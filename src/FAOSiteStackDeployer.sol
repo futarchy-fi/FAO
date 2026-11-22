@@ -5,7 +5,10 @@ import {FAOFutarchyFactory} from "./FAOFutarchyFactory.sol";
 import {FAOOfficialProposalOrchestrator} from "./FAOOfficialProposalOrchestrator.sol";
 import {FAOTwapResolver} from "./FAOTwapResolver.sol";
 import {IConditionalTokensLike} from "./interfaces/IConditionalTokensLike.sol";
-import {IFAOFutarchyTwapResolver} from "./interfaces/IFAOFutarchyOracle.sol";
+import {
+    IFAOFutarchyTwapResolver,
+    IFutarchyRandomnessSource
+} from "./interfaces/IFAOFutarchyOracle.sol";
 import {IUniswapV3FactoryLike} from "./interfaces/IUniswapV3FactoryLike.sol";
 import {IWrapped1155FactoryLike} from "./interfaces/IWrapped1155FactoryLike.sol";
 
@@ -23,6 +26,10 @@ contract FAOSiteStackDeployer {
         ADAPTER_REPLACEABLE = adapterReplaceable;
     }
 
+    function randomnessSource() public view virtual returns (IFutarchyRandomnessSource) {
+        return IFutarchyRandomnessSource(address(0));
+    }
+
     function deployStack(
         address proposalImpl,
         IConditionalTokensLike ctf,
@@ -38,6 +45,10 @@ contract FAOSiteStackDeployer {
         uint32 twapWindow
     ) external returns (Deployed memory out) {
         FAOTwapResolver resolver = new FAOTwapResolver(timeout, twapWindow, ctf);
+        IFutarchyRandomnessSource vrf = randomnessSource();
+        if (address(vrf) != address(0)) {
+            resolver.initRandomnessSource(vrf);
+        }
         FAOFutarchyFactory factory =
             new FAOFutarchyFactory(proposalImpl, ctf, w1155, address(resolver));
         FAOOfficialProposalOrchestrator orchestrator = new FAOOfficialProposalOrchestrator(
@@ -56,5 +67,28 @@ contract FAOSiteStackDeployer {
         out.resolver = address(resolver);
         out.factory = address(factory);
         out.orchestrator = address(orchestrator);
+    }
+}
+
+/// @notice Stack helper variant whose runtime bytecode immutably pins an
+/// `IFutarchyRandomnessSource` (committed via `CoreConfig.stackDeployer.codehash` in
+/// `FaoGenesisDeployment`).
+contract FAOVrfStackDeployer is FAOSiteStackDeployer {
+    IFutarchyRandomnessSource internal immutable RANDOMNESS_SOURCE;
+
+    error InvalidRandomnessSource();
+
+    constructor(bool adapterReplaceable, IFutarchyRandomnessSource randomnessSource_)
+        FAOSiteStackDeployer(adapterReplaceable)
+    {
+        if (address(randomnessSource_) == address(0) || address(randomnessSource_).code.length == 0)
+        {
+            revert InvalidRandomnessSource();
+        }
+        RANDOMNESS_SOURCE = randomnessSource_;
+    }
+
+    function randomnessSource() public view override returns (IFutarchyRandomnessSource) {
+        return RANDOMNESS_SOURCE;
     }
 }

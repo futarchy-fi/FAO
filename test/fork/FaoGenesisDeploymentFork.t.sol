@@ -24,12 +24,13 @@ import {FaoShortFacility, IShortBeacon, IShortVault} from "../../src/FaoShortFac
 import {FaoTeamOptions, IOptionsBeacon, IOptionsVault} from "../../src/FaoTeamOptions.sol";
 import {FaoToken} from "../../src/FaoToken.sol";
 import {FaoGenesisRegistrar} from "../../src/FaoGenesisRegistrar.sol";
-import {FAOSiteStackDeployer} from "../../src/FAOSiteStackDeployer.sol";
+import {FAOSiteStackDeployer, FAOVrfStackDeployer} from "../../src/FAOSiteStackDeployer.sol";
 import {FutarchyArbitration} from "../../src/FutarchyArbitration.sol";
 import {GenesisVault} from "../../src/GenesisVault.sol";
 import {GenesisTreasuryExecutor} from "../../src/GenesisTreasuryExecutor.sol";
 import {SXArbitrationExecutionStrategy} from "../../src/SXArbitrationExecutionStrategy.sol";
 import {EconomicDeploymentCodeHashes} from "../../src/generated/EconomicDeploymentCodeHashes.sol";
+import {IFutarchyRandomnessSource} from "../../src/interfaces/IFAOFutarchyOracle.sol";
 import {IUniswapV3FactoryLike} from "../../src/interfaces/IUniswapV3FactoryLike.sol";
 import {IUniswapV3PoolLike} from "../../src/interfaces/IUniswapV3PoolLike.sol";
 import {newBoundCurve} from "../mocks/SaleCurveFixture.sol";
@@ -104,10 +105,34 @@ contract Lane4ForkTarget {
     }
 }
 
+contract ForkVrfSource is IFutarchyRandomnessSource {
+    uint256 public nonce;
+    mapping(bytes32 => bool) public isFulfilled;
+    mapping(bytes32 => bytes32) public words;
+
+    function requestRandomness(bytes32 context) external returns (bytes32 requestId) {
+        requestId = keccak256(abi.encode(context, ++nonce));
+    }
+
+    function fulfill(bytes32 requestId, bytes32 word) external {
+        isFulfilled[requestId] = true;
+        words[requestId] = word;
+    }
+
+    function readRandomness(bytes32 requestId)
+        external
+        view
+        returns (bool fulfilled, bytes32 randomWord)
+    {
+        return (isFulfilled[requestId], words[requestId]);
+    }
+}
+
 contract FaoGenesisDeploymentForkTest is Test {
     address internal saleCurve;
     address internal optionIssuer;
     address internal shortIssuer;
+    address internal vrfSource;
 
     address private constant SX_PROXY_FACTORY = 0x4B4F7f64Be813Ccc66AEFC3bFCe2baA01188631c;
     address private constant SX_SPACE_IMPLEMENTATION = 0xC3031A7d3326E47D49BfF9D374d74f364B29CE4D;
@@ -302,7 +327,11 @@ contract FaoGenesisDeploymentForkTest is Test {
         if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
         vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
 
-        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
+        FAOSiteStackDeployer stackDeployer = vrfSource == address(0)
+            ? new FAOSiteStackDeployer(false)
+            : FAOSiteStackDeployer(
+                new FAOVrfStackDeployer(false, IFutarchyRandomnessSource(vrfSource))
+            );
         FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
         // The curve exists before the configuration that names it; it is bound once the
         // receipt's address, and so its vault's, is known.
@@ -510,6 +539,7 @@ contract FaoGenesisDeploymentForkTest is Test {
         if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
         vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
 
+        vrfSource = address(new ForkVrfSource());
         (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
             _deployReceipt();
         GenesisVault vault = GenesisVault(payable(receipt.vault()));
@@ -577,8 +607,9 @@ contract FaoGenesisDeploymentForkTest is Test {
     }
 
     /// @dev Exercises the full two-step Floor + 1/spread treasury resolution on a live Sepolia
-    /// fork: a real UniV3 swap moves YES > NO + 100 ticks (~2.1% lead, p(NOOP) ~= 48%), and from
-    /// the pre-seal snapshot we verify both outcomes of the blockhash draw:
+    /// fork via `FAOVrfStackDeployer` + `IFutarchyRandomnessSource`: a real UniV3 swap moves
+    /// YES > NO + 100 ticks (~2.1% lead, p(NOOP) ~= 48%), and from the post-seal snapshot we
+    /// verify both outcomes of the VRF execution draw:
     ///   1. When NOOP is drawn, `accepted == false` (GenesisVault refuses execution and FLM
     ///      restores spot liquidity), while `bondWonByYes == true` pays YES both escalation bonds.
     ///   2. When execution is drawn, `accepted == true`, YES wins both bonds, and GenesisVault
@@ -587,6 +618,8 @@ contract FaoGenesisDeploymentForkTest is Test {
         if (!vm.envOr("RUN_SEPOLIA_FORK_TESTS", false)) return;
         vm.createSelectFork("https://ethereum-sepolia-rpc.publicnode.com");
 
+        ForkVrfSource vrf = new ForkVrfSource();
+        vrfSource = address(vrf);
         (FaoGenesisDeployment receipt, FaoGenesisDeployment.CoreConfig memory coreConfig,,) =
             _deployReceipt();
         GenesisVault vault = GenesisVault(payable(receipt.vault()));
@@ -654,10 +687,11 @@ contract FaoGenesisDeploymentForkTest is Test {
         resolver.checkpointWindowStart(market);
         vm.warp(vm.getBlockTimestamp() + 15 minutes + 1);
 
-        uint256 drawBlock = vm.getBlockNumber() + 2;
         evaluator.seal(id);
         assertTrue(resolver.twapPassed(market));
-        vm.roll(drawBlock + 1);
+        assertEq(address(resolver.randomnessSource()), address(vrf));
+        (,,,,,,, bytes32 reqId) = resolver.sealedDecisions(market);
+        assertTrue(reqId != bytes32(0));
 
         uint256 postSealSnap = vm.snapshotState();
         bool sawNoopDraw;
@@ -665,7 +699,7 @@ contract FaoGenesisDeploymentForkTest is Test {
 
         for (uint256 i = 0; i < 16 && (!sawNoopDraw || !sawPassDraw); ++i) {
             vm.revertToState(postSealSnap);
-            vm.setBlockhash(drawBlock, keccak256(abi.encode("sepolia-fork-draw", i)));
+            vrf.fulfill(reqId, keccak256(abi.encode("sepolia-fork-vrf-draw", i)));
             bool accepted = evaluator.resolve(id);
 
             if (!accepted && !sawNoopDraw) {
@@ -851,7 +885,11 @@ contract FaoGenesisDeploymentForkTest is Test {
             uint256 flmGas
         )
     {
-        FAOSiteStackDeployer stackDeployer = new FAOSiteStackDeployer(false);
+        FAOSiteStackDeployer stackDeployer = vrfSource == address(0)
+            ? new FAOSiteStackDeployer(false)
+            : FAOSiteStackDeployer(
+                new FAOVrfStackDeployer(false, IFutarchyRandomnessSource(vrfSource))
+            );
         FAOFutarchyProposal proposalImplementation = new FAOFutarchyProposal();
         address predictedReceipt =
             vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);

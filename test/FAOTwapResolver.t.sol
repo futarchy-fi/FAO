@@ -13,10 +13,21 @@ import {
 
 contract MockVrfSource is IFutarchyRandomnessSource {
     uint256 public nonce;
+    bool public revertRequests;
+    bool public revertReads;
     mapping(bytes32 => bool) public isFulfilled;
     mapping(bytes32 => bytes32) public words;
 
+    function setRevertRequests(bool v) external {
+        revertRequests = v;
+    }
+
+    function setRevertReads(bool v) external {
+        revertReads = v;
+    }
+
     function requestRandomness(bytes32 context) external returns (bytes32 requestId) {
+        require(!revertRequests, "vrf-request-down");
         requestId = keccak256(abi.encode(context, ++nonce));
     }
 
@@ -30,6 +41,7 @@ contract MockVrfSource is IFutarchyRandomnessSource {
         view
         returns (bool fulfilled, bytes32 randomWord)
     {
+        require(!revertReads, "vrf-read-down");
         return (isFulfilled[requestId], words[requestId]);
     }
 }
@@ -499,7 +511,18 @@ contract FAOTwapResolverTest is Test {
     // ─── two-step Floor + 1/spread randomized NOOP policy
     // ─────────────────────────────────────────────────────────────
 
-    function _bindRandom(
+    function _newVrfResolver()
+        internal
+        returns (FAOTwapResolver r, MockCTF localCtf, MockVrfSource vrf)
+    {
+        localCtf = new MockCTF();
+        vrf = new MockVrfSource();
+        r = new FAOTwapResolver(2 hours, 1 hours, IConditionalTokensLike(address(localCtf)));
+        r.setOrchestratorWithRandomness(ORCH, vrf);
+    }
+
+    function _bindRandomOn(
+        FAOTwapResolver r,
         address prop,
         address yp,
         address np,
@@ -509,15 +532,103 @@ contract FAOTwapResolverTest is Test {
         int24 scaleTicks
     ) internal {
         vm.startPrank(ORCH);
-        resolver.bindProposal(prop, yp, np, address(0xFA0), address(0xE7), anchor, marginTicks);
-        resolver.setNoopPolicy(prop, floorBps, scaleTicks);
+        r.bindProposal(prop, yp, np, address(0xFA0), address(0xE7), anchor, marginTicks);
+        r.setNoopPolicy(prop, floorBps, scaleTicks);
         vm.stopPrank();
     }
 
+    function test_setNoopPolicy_revertsWithoutConfiguredRandomnessSource() public {
+        yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, int24(250));
+        noPool = new MockUniV3PoolWithTwap(noCo, noCur, int24(50));
+        vm.startPrank(ORCH);
+        resolver.bindProposal(
+            address(proposal),
+            address(yesPool),
+            address(noPool),
+            address(0xFA0),
+            address(0xE7),
+            uint48(block.timestamp),
+            100
+        );
+        vm.expectRevert(FAOTwapResolver.RandomnessSourceRequired.selector);
+        resolver.setNoopPolicy(address(proposal), 1000, 100);
+        vm.stopPrank();
+    }
+
+    function test_setNoopPolicy_enforcesAuthCreationBlockWriteOnceAndBounds() public {
+        (FAOTwapResolver r,,) = _newVrfResolver();
+        yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, int24(250));
+        noPool = new MockUniV3PoolWithTwap(noCo, noCur, int24(50));
+        uint48 anchor = uint48(block.timestamp);
+
+        vm.prank(ORCH);
+        r.bindProposal(
+            address(proposal),
+            address(yesPool),
+            address(noPool),
+            address(0xFA0),
+            address(0xE7),
+            anchor,
+            100
+        );
+
+        // Non-orchestrator cannot set policy.
+        vm.expectRevert(FAOTwapResolver.NotOrchestrator.selector);
+        r.setNoopPolicy(address(proposal), 1000, 100);
+
+        // Invalid bounds rejected.
+        vm.startPrank(ORCH);
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTwapResolver.InvalidNoopConfig.selector, uint16(0), int24(0))
+        );
+        r.setNoopPolicy(address(proposal), 0, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FAOTwapResolver.InvalidNoopConfig.selector, uint16(10_000), int24(100)
+            )
+        );
+        r.setNoopPolicy(address(proposal), 10_000, 100);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FAOTwapResolver.InvalidNoopConfig.selector, uint16(500), int24(-1)
+            )
+        );
+        r.setNoopPolicy(address(proposal), 500, -1);
+
+        // Write-once in anchor block.
+        r.setNoopPolicy(address(proposal), 1000, 100);
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTwapResolver.PolicyAlreadySet.selector, address(proposal))
+        );
+        r.setNoopPolicy(address(proposal), 1000, 100);
+        vm.stopPrank();
+
+        // Second proposal: cannot attach a policy after the creation timestamp.
+        MockProposal later = new MockProposal(bytes32(uint256(77)), yesCo, noCo, yesCur, noCur);
+        vm.prank(ORCH);
+        r.bindProposal(
+            address(later),
+            address(yesPool),
+            address(noPool),
+            address(0xFA0),
+            address(0xE7),
+            anchor,
+            100
+        );
+        vm.warp(block.timestamp + 1);
+        vm.prank(ORCH);
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTwapResolver.PolicyWindowClosed.selector, address(later))
+        );
+        r.setNoopPolicy(address(later), 1000, 100);
+    }
+
     function test_random_rejectedBelowMarginResolvesInOneStepWithoutWaitingForDraw() public {
+        (FAOTwapResolver r, MockCTF localCtf,) = _newVrfResolver();
         yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, int24(150));
         noPool = new MockUniV3PoolWithTwap(noCo, noCur, int24(50)); // spread = 100 == margin
-        _bindRandom(
+        _bindRandomOn(
+            r,
             address(proposal),
             address(yesPool),
             address(noPool),
@@ -526,23 +637,29 @@ contract FAOTwapResolverTest is Test {
             1000,
             100
         );
-        vm.warp(block.timestamp + 2 hours);
-        resolver.resolve(address(proposal));
+        vm.expectRevert(
+            abi.encodeWithSelector(FAOTwapResolver.NotSealed.selector, address(proposal))
+        );
+        r.twapPassed(address(proposal));
 
-        (,,,,,, bool resolved, bool accepted) = resolver.bindings(address(proposal));
+        vm.warp(block.timestamp + 2 hours);
+        r.resolve(address(proposal));
+
+        (,,,,,, bool resolved, bool accepted) = r.bindings(address(proposal));
         assertTrue(resolved);
         assertFalse(accepted);
-        assertFalse(resolver.twapPassed(address(proposal)));
-        uint256[] memory payouts = ctf.reportedFor(QID);
+        assertFalse(r.twapPassed(address(proposal)));
+        uint256[] memory payouts = localCtf.reportedFor(QID);
         assertEq(payouts[0], 0);
         assertEq(payouts[1], 1);
     }
 
-    function test_random_passingTwapRequiresSealThenFutureBlockDrawAndFreezesTwap() public {
-        // +2% spread (200 ticks vs margin 100, sigma = 100, floor = 10%) => p(NOOP) = 100/200 = 50%
+    function test_random_passingTwapRequiresSealThenVrfDrawAndFreezesTwap() public {
+        (FAOTwapResolver r, MockCTF localCtf, MockVrfSource vrf) = _newVrfResolver();
         yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, int24(250));
         noPool = new MockUniV3PoolWithTwap(noCo, noCur, int24(50));
-        _bindRandom(
+        _bindRandomOn(
+            r,
             address(proposal),
             address(yesPool),
             address(noPool),
@@ -557,37 +674,38 @@ contract FAOTwapResolverTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(FAOTwapResolver.DrawNotSealed.selector, address(proposal))
         );
-        resolver.resolve(address(proposal));
+        r.resolve(address(proposal));
 
-        // Step 1: seal freezes ticks and sets drawBlock = block.number + 2.
-        uint64 expectedDrawBlock = uint64(block.number) + 2;
-        resolver.seal(address(proposal));
-        assertTrue(resolver.twapPassed(address(proposal)));
+        // Step 1: seal freezes ticks and requests VRF randomness.
+        r.seal(address(proposal));
+        assertTrue(r.twapPassed(address(proposal)));
+        (,,,,,,, bytes32 reqId) = r.sealedDecisions(address(proposal));
+        assertTrue(reqId != bytes32(0));
 
         // Post-seal trades cannot alter the frozen TWAP ticks or twapPassed.
         yesPool.setConstantTick(int24(-5000));
 
-        // Cannot resolve at drawBlock itself; needs block.number > drawBlock.
-        vm.roll(expectedDrawBlock);
+        // Unfulfilled VRF reverts RandomnessNotReady; reverting VRF view returns false cleanly.
         vm.expectRevert(
             abi.encodeWithSelector(FAOTwapResolver.RandomnessNotReady.selector, address(proposal))
         );
-        resolver.resolve(address(proposal));
+        r.resolve(address(proposal));
+        vrf.setRevertReads(true);
+        assertFalse(r.isReadyToResolve(address(proposal)));
+        vrf.setRevertReads(false);
 
-        // Advance past drawBlock so blockhash(expectedDrawBlock) is committed.
-        vm.roll(expectedDrawBlock + 1);
-        assertTrue(resolver.isReadyToResolve(address(proposal)));
-        resolver.resolve(address(proposal));
+        // Fulfill VRF and resolve Step 2.
+        vrf.fulfill(reqId, keccak256("vrf-seed"));
+        assertTrue(r.isReadyToResolve(address(proposal)));
+        r.resolve(address(proposal));
 
-        (,,,,,, bool resolved, bool accepted) = resolver.bindings(address(proposal));
-        (,,,, int24 frozenYes, int24 frozenNo,,) = resolver.sealedDecisions(address(proposal));
+        (,,,,,, bool resolved, bool accepted) = r.bindings(address(proposal));
+        (,,,, int24 frozenYes, int24 frozenNo,,) = r.sealedDecisions(address(proposal));
         assertEq(frozenYes, 250);
         assertEq(frozenNo, 50);
         assertTrue(resolved);
-        assertTrue(
-            resolver.twapPassed(address(proposal)), "TWAP verdict remains true regardless of coin"
-        );
-        uint256[] memory payouts = ctf.reportedFor(QID);
+        assertTrue(r.twapPassed(address(proposal)), "TWAP verdict remains true regardless of coin");
+        uint256[] memory payouts = localCtf.reportedFor(QID);
         assertEq(payouts[0], accepted ? 1 : 0);
         assertEq(payouts[1], accepted ? 0 : 1);
     }
@@ -597,22 +715,13 @@ contract FAOTwapResolverTest is Test {
         uint256[3] memory expectedPassPct = [uint256(50), uint256(80), uint256(90)];
 
         for (uint256 k = 0; k < 3; ++k) {
-            MockCTF localCtf = new MockCTF();
-            MockVrfSource vrf = new MockVrfSource();
-            FAOTwapResolver r =
-                new FAOTwapResolver(2 hours, 1 hours, IConditionalTokensLike(address(localCtf)));
-            r.setOrchestratorWithRandomness(ORCH, vrf);
+            (FAOTwapResolver r,, MockVrfSource vrf) = _newVrfResolver();
 
             MockProposal mp = new MockProposal(bytes32(k + 1), yesCo, noCo, yesCur, noCur);
             MockUniV3PoolWithTwap yp = new MockUniV3PoolWithTwap(yesCo, yesCur, spreads[k]);
             MockUniV3PoolWithTwap np = new MockUniV3PoolWithTwap(noCo, noCur, int24(0));
             uint48 anchor = uint48(block.timestamp);
-            vm.startPrank(ORCH);
-            r.bindProposal(
-                address(mp), address(yp), address(np), address(0xFA0), address(0xE7), anchor, 100
-            );
-            r.setNoopPolicy(address(mp), 1000, 100);
-            vm.stopPrank();
+            _bindRandomOn(r, address(mp), address(yp), address(np), anchor, 100, 1000, 100);
             vm.warp(uint256(anchor) + 2 hours);
             r.seal(address(mp));
             (,,,,,,, bytes32 reqId) = r.sealedDecisions(address(mp));
@@ -636,10 +745,12 @@ contract FAOTwapResolverTest is Test {
         }
     }
 
-    function test_random_rearmExpiredDrawPreservesFrozenTicksAndBlocksEarlyRearm() public {
+    function test_random_resolveExpiredVrfSafeBiasesToNoopWhilePreservingTwapVerdict() public {
+        (FAOTwapResolver r, MockCTF localCtf, MockVrfSource vrf) = _newVrfResolver();
         yesPool = new MockUniV3PoolWithTwap(yesCo, yesCur, int24(300));
         noPool = new MockUniV3PoolWithTwap(noCo, noCur, int24(50));
-        _bindRandom(
+        _bindRandomOn(
+            r,
             address(proposal),
             address(yesPool),
             address(noPool),
@@ -649,39 +760,39 @@ contract FAOTwapResolverTest is Test {
             100
         );
         vm.warp(block.timestamp + 2 hours);
-        resolver.seal(address(proposal));
-        (,,,, int24 frozenYes, int24 frozenNo, uint64 drawBlock,) =
-            resolver.sealedDecisions(address(proposal));
+        r.seal(address(proposal));
+        (,,,,,, uint48 sealedAt, bytes32 reqId) = r.sealedDecisions(address(proposal));
 
-        // Cannot rearm while blockhash is still within the serve window.
-        vm.roll(drawBlock + 10);
+        // Cannot trigger liveness escape before VRF_TIMEOUT (7 days).
+        vm.warp(uint256(sealedAt) + 7 days - 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                FAOTwapResolver.DrawNotExpired.selector, address(proposal), drawBlock
+                FAOTwapResolver.VrfTimeoutNotReached.selector,
+                address(proposal),
+                uint256(sealedAt) + 7 days
             )
         );
-        resolver.rearmExpiredDraw(address(proposal));
+        r.resolveExpiredVrf(address(proposal));
 
-        // Advance past the 256-block window (no EIP-2935 code in local VM).
-        vm.roll(uint256(drawBlock) + 300);
+        // If VRF fulfills, resolveExpiredVrf is blocked so only VRF result can settle.
+        vm.warp(uint256(sealedAt) + 7 days);
+        uint256 snap = vm.snapshotState();
+        vrf.fulfill(reqId, keccak256("late-fulfillment"));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                FAOTwapResolver.DrawExpired.selector, address(proposal), drawBlock
-            )
+            abi.encodeWithSelector(FAOTwapResolver.VrfAlreadyFulfilled.selector, address(proposal))
         );
-        resolver.resolve(address(proposal));
+        r.resolveExpiredVrf(address(proposal));
 
-        resolver.rearmExpiredDraw(address(proposal));
-        (, bool twapOk,,, int24 yesAfter, int24 noAfter, uint64 newDrawBlock,) =
-            resolver.sealedDecisions(address(proposal));
-        assertTrue(twapOk);
-        assertEq(yesAfter, frozenYes);
-        assertEq(noAfter, frozenNo);
-        assertEq(newDrawBlock, uint64(block.number) + 2);
-
-        vm.roll(uint256(newDrawBlock) + 1);
-        resolver.resolve(address(proposal));
-        (,,,,,, bool resolved,) = resolver.bindings(address(proposal));
+        // Unfulfilled after 7 days: safe-biases CTF to NOOP [0, 1] while keeping twapPassed ==
+        // true.
+        vm.revertToState(snap);
+        r.resolveExpiredVrf(address(proposal));
+        (,,,,,, bool resolved, bool accepted) = r.bindings(address(proposal));
         assertTrue(resolved);
+        assertFalse(accepted);
+        assertTrue(r.twapPassed(address(proposal)));
+        uint256[] memory payouts = localCtf.reportedFor(QID);
+        assertEq(payouts[0], 0);
+        assertEq(payouts[1], 1);
     }
 }
